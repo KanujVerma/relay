@@ -43,3 +43,13 @@ Continuous learning optimizes the copilot itself. The quality gate checks correc
 
 ## If context is lost
 Read HANDOFF.md, inspect live GitHub PR/issues, then read the associated contract files. Continue the explicitly active slice only. Conversation summaries are not authoritative implementation evidence.
+
+## Code Review Rules
+### OAuth and billing boundary
+- Flag authentication that permits inference without the granted plan scope, verified ID token, matching callback state/Host, or Bearer credential validation.
+- Flag browser-cookie reuse, undocumented ChatGPT backends, silent conventional API-key fallback, secrets in logs, and accidental paid model/CI requests. Supported pattern: user-authorized plan OAuth only.
+### Knowledge and response integrity
+- Flag fabrication of personal credentials, projects, implementer attribution, test results, or treating model-generated answers as evidence of user skill. Safe behavior: verify source and explicitly abstain on missing personal context.
+- Flag unchecked promotion of interview transcripts into confirmed personal history, ignoring user corrections, or failure to invalidate stale question answers.
+### Stream and data boundaries
+- Flag treating partial/failed SSE streams as successful without response.completed, leaking private files/tokens, or capturing meeting content without required consent. Keep review high-signal; leave formatting to CI.

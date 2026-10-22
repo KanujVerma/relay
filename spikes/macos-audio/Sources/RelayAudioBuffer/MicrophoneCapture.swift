@@ -8,6 +8,27 @@ import Foundation
 /// ring packet and silently discard every callback. No dynamic arrays,
 /// blocking, disk I/O or inference occur in this function.
 public enum MicrophonePCMBridge {
+    /// Construct the audio tap callback outside MicrophoneCapture's @MainActor
+    /// isolation. AVAudioEngine calls the tap from a realtime audio thread,
+    /// NOT the main actor, so a closure created directly in start() can cause
+    /// Swift 6's dynamic actor executor check to report a data race.
+    ///
+    /// The explicit @Sendable type prevents inheriting main-actor isolation.
+    /// Only the preallocated owned PCM queue and numeric generation are captured.
+    public static func makeTapHandler(
+        queue: OwnedPCMQueue,
+        streamGeneration: UInt64
+    ) -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
+        { buffer, time in
+            _ = publish(
+                buffer: buffer,
+                time: time,
+                queue: queue,
+                generation: streamGeneration
+            )
+        }
+    }
+
     @discardableResult
     public static func publish(
         buffer: AVAudioPCMBuffer,
@@ -134,18 +155,14 @@ public final class MicrophoneCapture {
 
         generation &+= 1
         let currentGeneration = generation
-        let queue = self.queue
-
+        // Build a non-actor-isolated @Sendable callback before installing it.
+        // The Core Audio callback must never be an @MainActor closure.
+        let handler = MicrophonePCMBridge.makeTapHandler(
+            queue: self.queue, streamGeneration: currentGeneration
+        )
         input.installTap(
-            onBus: 0, bufferSize: 1024, format: format
-        ) { buffer, time in
-            _ = MicrophonePCMBridge.publish(
-                buffer: buffer,
-                time: time,
-                queue: queue,
-                generation: currentGeneration
-            )
-        }
+            onBus: 0, bufferSize: 1024, format: format, block: handler
+        )
         newEngine.prepare()
         do {
             try newEngine.start()

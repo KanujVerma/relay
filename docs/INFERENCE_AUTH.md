@@ -34,6 +34,14 @@ Python CLI code is now available in relay_spike/ with offline tests in tests/tes
 
 The goal is a small text-only local OAuth/streaming proof with synthetic questions. No GUI, live audio, user files, API key fallback or external billable integration. Measure monotonic first-output-token and completed-response latency. Test offline errors with mocks and report truthfully that offline simulation is not a live account authorization.
 
+## Slice 01A-R: automatic refresh (issue #30, prototype not yet merged)
+- Official [Accounts and sessions](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions): Near access-token expiry, POST `grant_type=refresh_token` with the saved issued `client_id`, the latest `refresh_token`, and `resource=https://api.openai.com/v1` to the same OAuth token endpoint. Do not send `scope` and do not use `dynamic_agent_client`. A successful refresh replaces **both** access and refresh tokens. Access lifetime is roughly one hour, refresh lifetime is a rolling 30 days when renewed.
+- `active_access_token()` will do at most one token endpoint request per expiry event, serialized via an owner-only `flock` lock across Mac CLI processes. The second process re-reads credentials after the first rotates and avoids duplicate token reuse.
+- Fail closed before storage on non-Bearer responses, missing `chatgpt.tokens.use.direct` or `offline_access`, invalid expiry, mismatched returned client ID, or absent/unrotated tokens. Write credential files with permissions 0600 using atomic replace and flushed file contents; this is **not** macOS Keychain.
+- For confirmed terminal codes `invalid_grant`, `invalid_refresh_token`, `token_expired`, `refresh_token_expired`, `refresh_token_invalidated`, and `refresh_token_reused`, wipe unusable tokens while retaining the saved issued client ID and subject for reauthorization. Preserve credentials on network failures or other 5xx. No blind retries or inference fallback.
+- A missing `PyJWT[crypto]` install is detected **before** opening an OAuth browser. Set up the active venv with `python3 -m pip install -r requirements-spike.txt`.
+- Official [Token reference](https://developers.openai.com/siwc/token-sharing-open-source/token-reference) and [Errors and recovery](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery) govern lifetime and terminal failure conditions. This branch has only offline tests until the user explicitly exercises a real Mac refresh. Existing preview entitlements are not guaranteed indefinitely.
+
 ## Error/limit handling
 Consent denied or missing scope: no inference. Invalid_grant: discard code, reauthorize. Expired tokens: refresh per documented protocol or require explicit login. Usage-limit events (including subscription_sharing_usage_limit_exceeded and subscription_sharing_usage_unavailable): stop and explain account limit. Model unavailable: select from actual available list. Stream error/incomplete: never call partial output a validated answer. Network errors: no uncontrolled retries that duplicate inference.
 
@@ -43,7 +51,7 @@ Consent denied or missing scope: no inference. Invalid_grant: discard code, reau
 - No ordinary API key supported in the experimental CLI. Usage still counts against plan entitlement; do not assert unlimited access.
 
 ## Still worth testing for production
-- Repeatability across restarts, expired sessions, token rotation and revocation.
+- Repeatability across restarts and live rotated refresh/revocation: deterministic offline implementation in issue #30 requires an owner-run Mac proof.
 - Account-specific quotas/rate limits and model changes.
 - Broader repeated comparative latency/correctness on harder concise prompts for Luna versus Sol. The initial 2026-10-22 three-case paired benchmark is recorded in [MODEL_STRATEGY.md](MODEL_STRATEGY.md).
 - Account suitability for recurring personal use, changes to preview terms.

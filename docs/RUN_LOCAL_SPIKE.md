@@ -26,6 +26,12 @@ If the CLI says plan usage scope is missing, or a model/usage limit prevents com
 - No token or callback code is printed. Do not enable HTTP debug logging or submit browser callback URLs to GitHub.
 - DO NOT run this against genuine interview transcript/user documents while repository remains public; the current test uses synthetic SQL text.
 
+## Troubleshooting expired tokens / missing login dependencies
+- After `git pull` and activating `.venv`, run `python3 -m pip install -r requirements-spike.txt`. This installs `PyJWT[crypto]`, needed to verify OpenAI's ID token. The new sign-in path will check this **before** opening the browser.
+- On a subsequent `models`, `infer`, `benchmark --execute`, or `live-qa --execute`, `active_access_token()` renews an expiring session automatically when it has a valid `refresh_token`; it does not spend model usage just to refresh. Never paste any stored OAuth token or callback URL into an issue.
+- If the server reports `invalid_grant` or another terminal refresh error, the spike removes unusable secrets but retains its issued OAuth registration and asks for browser reauthorization.
+- Network and temporary server errors preserve the saved credential record rather than destroying it or retrying indefinitely.
+
 ## Offline versus real testing
 - CI can validate PKCE, callback state/client-ID rejection, credential modes/scope checks and SSE completion/error behavior without external requests.
 - CI **cannot** prove live account entitlement, cryptographic verification against live OpenAI keys, model availability, usage limits or measured network latency. A successful local authorization and response.completed event are required.
@@ -41,7 +47,7 @@ Record ONLY non-sensitive outcomes:
 - Environment: macOS version and Python version. No account tokens, callback links, full access logs or private prompt data.
 
 ## Known deliberate limitations
-- No automatic token refresh in this one-shot spike: sign in again if expired.
+- The issue #30 prototype attempts **one automatic rotating OAuth refresh** near expiry when the saved session includes a valid refresh grant (after updating Relay). A missing/revoked/30-day-expired refresh token still requires deliberate `python3 -m relay_spike auth`. CI does not contact OpenAI. Production Keychain, persistent multi-account selection and remote token revocation remain separate work.
 - No live-audio, personal memory, agents, Google Drive or UI integration.
 - No long conversation history, retry loop, model ranking or response QA yet.
 - The upstream Sign in with ChatGPT feature is preview and account/workspace eligibility is not assumed.

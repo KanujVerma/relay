@@ -1,3 +1,4 @@
+import AVFoundation
 import XCTest
 @testable import RelayAudioBuffer
 
@@ -103,6 +104,46 @@ final class OwnedPCMQueueTests: XCTestCase {
                                                 frames: 8, sampleRate: 0,
                                                 hostTime: 0, streamGeneration: 1))
         }
+        XCTAssertNil(queue.dequeue())
+    }
+
+    func testOversizedMicTapBufferIsSplitIntoOwnedPackets() throws {
+        let format = try XCTUnwrap(AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 48_000,
+            channels: 1,
+            interleaved: false
+        ))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(
+            pcmFormat: format, frameCapacity: 5000
+        ))
+        buffer.frameLength = 5000
+        let channel = try XCTUnwrap(buffer.floatChannelData)[0]
+        for index in 0..<5000 { channel[index] = Float(index) / 5000 }
+
+        let queue = try OwnedPCMQueue(source: .microphone, maximumFrames: 2048)
+        let result = MicrophonePCMBridge.publish(
+            buffer: buffer, time: AVAudioTime(hostTime: 1_000_000),
+            queue: queue, generation: 19
+        )
+        XCTAssertEqual(result.accepted, 3)
+        XCTAssertEqual(result.dropped, 0)
+
+        // The original capture buffer can now be overwritten/recycled.
+        channel[0] = 9999
+        let first = try XCTUnwrap(queue.dequeue())
+        let second = try XCTUnwrap(queue.dequeue())
+        let third = try XCTUnwrap(queue.dequeue())
+        XCTAssertEqual([first.frameCount, second.frameCount, third.frameCount],
+                       [2048, 2048, 904])
+        XCTAssertEqual([first.sequence, second.sequence, third.sequence],
+                       [1, 2, 3])
+        XCTAssertEqual(first.interleavedSamples[0], 0)
+        XCTAssertGreaterThan(second.hostTime, first.hostTime)
+        XCTAssertGreaterThan(third.hostTime, second.hostTime)
+        XCTAssertTrue([first, second, third].allSatisfy {
+            $0.streamGeneration == 19
+        })
         XCTAssertNil(queue.dequeue())
     }
 

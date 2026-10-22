@@ -14,9 +14,9 @@ from relay_spike.technical_gate import (
 class TechnicalGateTests(unittest.TestCase):
     def test_hand_reviewed_fixture_labels(self):
         report = evaluate_fixture_rows(load_fixture_rows())
-        self.assertEqual(report["total"], 56)
+        self.assertEqual(report["total"], 58)
         self.assertEqual(report["expected_publish"], 18)
-        self.assertEqual(report["expected_withhold"], 38)
+        self.assertEqual(report["expected_withhold"], 40)
         self.assertEqual(report["published_of_expected"], 18)
         self.assertEqual(report["unsafe_published"], 0)
         self.assertTrue(report["all_guards_met"])
@@ -38,6 +38,22 @@ class TechnicalGateTests(unittest.TestCase):
                     self.assertTrue(
                         review_technical_candidate(row["case_id"], row["candidate"]).publishable
                     )
+
+    def test_compositional_grammar_accepts_new_safe_combinations(self):
+        known = {x["candidate"] for x in load_fixture_rows()}
+        safe_new = (
+            ("D02", "WHERE restricts individual records prior to grouping whereas "
+                    "HAVING selects aggregate results after aggregation."),
+            ("E09", "Binary search requires a sorted array and halves the range "
+                    "each iteration. The iterative algorithm uses O(log n) time "
+                    "and O(1) auxiliary space."),
+        )
+        for case_id, candidate in safe_new:
+            with self.subTest(case_id=case_id):
+                self.assertNotIn(candidate, known)
+                output = review_technical_candidate(case_id, candidate)
+                self.assertTrue(output.publishable)
+                self.assertEqual(output.rendered_text, _SAFE_RENDER[case_id])
 
     def test_all_negative_candidates_are_withheld_with_no_leak(self):
         for row in load_fixture_rows():
@@ -121,8 +137,8 @@ class TechnicalGateTests(unittest.TestCase):
     def test_review_regressions_for_extra_sql_and_coding_contradictions(self):
         for row_id in ("D02-N15", "D02-N16", "D02-N17",
                        "E09-N15", "E09-N16", "E09-N17",
-                       "D02-N18", "D02-N19", "D02-N20", "D02-N21",
-                       "E09-N18", "E09-N19"):
+                       "D02-N18", "D02-N19", "D02-N20", "D02-N21", "D02-N22",
+                       "E09-N18", "E09-N19", "E09-N20"):
             row = next(r for r in load_fixture_rows() if r["id"] == row_id)
             with self.subTest(case=row_id):
                 verdict = review_technical_candidate(row["case_id"], row["candidate"])

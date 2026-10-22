@@ -27,9 +27,9 @@ Status: most flows remain design only. Slice 01B-B0 adds an **offline-only deter
 8. On user-permitted retention, capture question/answer/feedback events for learning. Audio retention off by default.
 
 ## Offline answer-quality contract, Slice 01B-B0
-- Inputs carry question/fixture identity, role/category, completed response status, answer text, active and candidate turn versions, verified-source IDs, optional conservative multipart indicators and risk flags. All supplied strings are untrusted data, not instructions.
+- Inputs carry question/fixture identity, role/category, completed response status, answer text, **active and candidate turn IDs as well as versions**, verified-source IDs, a mandatory-for-PASS trusted personal-attribution classification (unknown fails closed), optional conservative multipart indicators and risk flags. All supplied strings are untrusted data, not instructions.
 - Decision is `pass`, `needs_revision`, or `abstain`. **Pass means a deterministic presentation/safety gate succeeded, never that a model answer is factually correct.** Heuristic keyword matches likewise do not prove semantic coverage.
-- Missing/incomplete content, stale versions and absent verified personal context fail closed. Even when personal source IDs exist, they are only pointers and must not certify the claim until a later source-grounding check.
+- Missing/incomplete content, stale turn **ID or version**, unknown attribution classification and absent verified personal context fail closed. Even when personal source IDs exist, they are only pointers and must not certify the claim until a later source-grounding check.
 - Code-first outputs can be warned as harder to scan; overly long/tabled answers need revision. Categories such as coding, multipart, behavioral and caller-marked high-risk SQL may recommend selective deeper QA, **not execute another inference request**.
 - **B1 integration requirement:** re-check that the turn is still active immediately before display. A successful offline check earlier in a stream is not sufficient to display stale material after an interruption. Measure first *useful* validated text, not first nonempty token. Add transparent fallback if second review or account use is unavailable.
 

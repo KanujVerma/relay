@@ -1,6 +1,6 @@
 # Proposed flows and edge-case contracts
 
-Status: most flows remain design only. Slice 01B-B0 added the offline QA gate; **Slice 01B-B1 (PR #16)** integrates that gate into a **synthetic SSE adapter**. Neither is connected to the actual OAuth CLI, native UI, audio capture or a Personal Brain.
+Status: most flows remain design only. Slice 01B-B0 added the offline QA gate; **Slice 01B-B1 (merged PR #16)** integrates that gate into a **synthetic SSE adapter**. Neither is connected to the actual OAuth CLI, native UI, audio capture or a Personal Brain.
 
 ## Personal Brain onboarding
 1. Select current target role and optional job description.

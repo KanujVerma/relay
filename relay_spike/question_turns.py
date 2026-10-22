@@ -310,6 +310,11 @@ class QuestionTurnMachine:
                          or self._leading_partial[0] != event.segment_id)
                     and (self._active is None
                          or self._active.current_segment_id != event.segment_id)):
+                remembered = self._seen.get(event.segment_id)
+                if remembered is not None and remembered.status == "final":
+                    return TurnDecision("ignored", "superseded_segment_revision")
+                if event.end_ms <= self._last_final_end:
+                    return TurnDecision("ignored", "late_final_after_newer_utterance")
                 return TurnDecision("ignored", "superseded_source_start")
             digest = _fingerprint(event)
             prior = self._seen.get(event.segment_id)

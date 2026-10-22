@@ -22,7 +22,7 @@ let package = Package(
         .target(
             name: "RelayLocalASR",
             dependencies: [
-                .product(name: "RelayAudioBuffer", package: "RelayAudioSpike"),
+                .product(name: "RelayAudioBuffer", package: "macos-audio"),
                 .product(name: "FluidAudio", package: "FluidAudio")
             ]
         ),
@@ -30,14 +30,14 @@ let package = Package(
             name: "RelayLocalASRCLI",
             dependencies: [
                 "RelayLocalASR",
-                .product(name: "RelayAudioBuffer", package: "RelayAudioSpike")
+                .product(name: "RelayAudioBuffer", package: "macos-audio")
             ]
         ),
         .testTarget(
             name: "RelayLocalASRTests",
             dependencies: [
                 "RelayLocalASR",
-                .product(name: "RelayAudioBuffer", package: "RelayAudioSpike")
+                .product(name: "RelayAudioBuffer", package: "macos-audio")
             ]
         )
     ]

@@ -23,6 +23,7 @@ DecisionState = Literal["ready", "pending", "ignored", "needs_review", "cancelle
 MAX_EVENT_CHARS = 1200
 MAX_SEEN_SEGMENTS = 128
 MAX_CONTEXT_CHARS = 2400
+MAX_DEPENDENT_SEGMENTS = 16
 MIN_QUESTION_CONFIDENCE = 0.60
 
 # Hints only, the authoritative question always remains verbatim.
@@ -65,6 +66,9 @@ class QuestionSnapshot:
     prompt: str
     parts_hint: tuple[str, ...]
     parts_are_heuristic: bool
+    dependency_segment_ids: tuple[str, ...] = ()
+    start_ms: int = 0
+    end_ms: int = 0
 
 
 @dataclass(frozen=True)
@@ -226,18 +230,12 @@ class QuestionTurnMachine:
         # partial could lose its final status and escape reopening quarantine.
         protected = set(self._reopened)
         if self._active is not None:
-            protected.update((
-                self._active.current_segment_id,
-                self._active.root_segment_id,
-            ))
+            protected.update(self._active.dependency_segment_ids)
         if self._leading_partial is not None:
             protected.add(self._leading_partial[0])
         if self._interrupted is not None:
-            protected.update((
-                self._interrupted[0],
-                self._interrupted[1].current_segment_id,
-                self._interrupted[1].root_segment_id,
-            ))
+            protected.add(self._interrupted[0])
+            protected.update(self._interrupted[1].dependency_segment_ids)
         while len(self._seen) > MAX_SEEN_SEGMENTS:
             evicted = next((
                 sid for sid in self._seen if sid not in protected
@@ -308,11 +306,21 @@ class QuestionTurnMachine:
                     return TurnDecision("ignored", "pending_context_retracted")
             interrupted_dep = (
                 self._interrupted is not None and event.status == "retracted"
-                and event.segment_id in (
-                    self._interrupted[1].current_segment_id,
-                    self._interrupted[1].root_segment_id,
-                )
+                and event.segment_id in
+                self._interrupted[1].dependency_segment_ids
             )
+            # An unclassified final inside the active question's source-time
+            # interval cannot be dismissed as an old harmless finalized
+            # segment just because its end precedes the question end.
+            if (event.status == "final" and event.intent == "unknown"
+                    and self._active is not None
+                    and event.segment_id != self._active.current_segment_id
+                    and event.start_ms < self._active.end_ms
+                    and event.end_ms > self._active.start_ms):
+                self.turns.cancel()
+                self._active = None
+                self._interrupted = None
+                return TurnDecision("needs_review", "unclassified_overlapping_remote_utterance")
             # Until the newest tentative question finishes, an older
             # finalized segment must not regain authority merely because no
             # other *final* advanced the timestamp watermark yet.
@@ -391,10 +399,8 @@ class QuestionTurnMachine:
                 # revision's quarantine, including when _active is None
                 # while a finalized segment is being reopened.
                 current_dependency = (
-                    self._active is not None and event.segment_id in (
-                        self._active.current_segment_id,
-                        self._active.root_segment_id,
-                    )
+                    self._active is not None and event.segment_id in
+                    self._active.dependency_segment_ids
                 )
                 leading_dependency = (
                     self._leading_partial is not None and
@@ -431,10 +437,22 @@ class QuestionTurnMachine:
                             and self._interrupted is not None
                             and event.intent in ("correction", "follow_up")):
                         self._interrupted = (event.segment_id, self._interrupted[1])
-                    self._leading_partial = (event.segment_id, event.start_ms,
-                                             event.end_ms)
+                    # Timestamp revisions cannot advance a segment's
+                    # original leading time. Preserve the first observed end
+                    # too, so an older corrected partial cannot suppress a
+                    # clearly newer complete question after its initial end.
+                    old_cursor = self._leading_partial
+                    seen = self._seen[event.segment_id]
+                    first_start = seen.first_start_ms
+                    first_end = (
+                        old_cursor[2] if old_cursor is not None and
+                        old_cursor[0] == event.segment_id else event.end_ms
+                    )
+                    self._leading_partial = (
+                        event.segment_id, first_start, first_end
+                    )
                     self._latest_question_start_ms = max(
-                        self._latest_question_start_ms, event.start_ms
+                        self._latest_question_start_ms, first_start
                     )
                     if event.intent == "question":
                         self._interrupted = None
@@ -543,6 +561,16 @@ class QuestionTurnMachine:
                 self.turns.cancel()
                 self._active = None
                 return TurnDecision("needs_review", "turn_context_too_long")
+            dependencies = (
+                tuple(dict.fromkeys((*previous.dependency_segment_ids,
+                                     event.segment_id)))
+                if previous is not None else (event.segment_id,)
+            )
+            if len(dependencies) > MAX_DEPENDENT_SEGMENTS:
+                self.turns.cancel()
+                self._active = None
+                self._interrupted = None
+                return TurnDecision("needs_review", "correction_chain_too_long")
             token = self.turns.activate(logical_id, next_version)
             snapshot = QuestionSnapshot(
                 token=token, source_channel="remote",
@@ -551,6 +579,8 @@ class QuestionTurnMachine:
                 root_question=root_text, current_utterance=current_text,
                 prompt=prompt, parts_hint=_parts_hint(current_text),
                 parts_are_heuristic=True,
+                dependency_segment_ids=dependencies,
+                start_ms=event.start_ms, end_ms=event.end_ms,
             )
             self._active = snapshot
             self._latest_question_start_ms = max(

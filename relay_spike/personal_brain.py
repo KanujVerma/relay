@@ -10,6 +10,8 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass
 from hashlib import sha256
+import re
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
@@ -219,9 +221,18 @@ class BrainStore:
             version = 1
         if version == 1:
             try:
-                self.db.executescript("BEGIN IMMEDIATE;\n" + EVIDENCE_SCHEMA +
-                                      "\nPRAGMA user_version=2;\nCOMMIT;")
-            except sqlite3.Error:
+                # Unlike executescript(COMMIT), this checks legacy v1 orphans
+                # BEFORE marking v2 successful. EVIDENCE_SCHEMA consists only
+                # of static CREATE TABLE/INDEX statements, no SQL triggers.
+                self.db.execute("BEGIN IMMEDIATE")
+                for statement in EVIDENCE_SCHEMA.split(";"):
+                    if statement.strip():
+                        self.db.execute(statement)
+                if self.db.execute("PRAGMA foreign_key_check").fetchone() is not None:
+                    raise BrainError("Personal Brain foreign-key integrity check failed.")
+                self.db.execute("PRAGMA user_version=2")
+                self.db.execute("COMMIT")
+            except (sqlite3.Error, BrainError):
                 if self.db.in_transaction:
                     self.db.execute("ROLLBACK")
                 raise BrainError("Personal Brain migration failed.") from None
@@ -417,6 +428,12 @@ class BrainStore:
             has_resume_evidence = self.db.execute(
                 "SELECT 1 FROM candidate_evidence WHERE fact_id=?", (fact_id,)
             ).fetchone() is not None
+            owner_source = self._get("source", candidate["source_id"])
+            if owner_source["kind"] == "resume" and not has_resume_evidence:
+                # Pending legacy v1 résumés (and new add_candidate shortcuts)
+                # have no reviewed offsets/digest. Previously confirmed v1
+                # records are preserved, but no new ones can use this route.
+                raise MissingEvidence("Résumé candidate must be restaged with evidence.")
             if has_resume_evidence and (
                     self.__resume_review_gate is None or
                     reviewer_token is not self.__resume_review_gate):
@@ -430,8 +447,13 @@ class BrainStore:
                     raise BrainError("Incomplete reviewed approval evidence.")
                 if reviewed_actor not in ("self", "team", "teammate"):
                     raise MissingEvidence("Reviewer must resolve attribution.")
-                reviewed_claim_key = _required(reviewed_claim_key, "approved claim key",
-                                               limit=160)
+                reviewed_claim_key = unicodedata.normalize(
+                    "NFKC", _required(reviewed_claim_key, "approved claim key",
+                                      limit=160)
+                ).casefold().strip()
+                if (len(reviewed_claim_key) > 160 or
+                        re.fullmatch(r"[a-z0-9][a-z0-9._:-]*", reviewed_claim_key) is None):
+                    raise BrainError("Approved claim key must be canonical ASCII.")
                 row = self.db.execute(
                     "SELECT snippet_sha256,source_sha256 FROM candidate_evidence "
                     "WHERE fact_id=?", (fact_id,),
@@ -462,11 +484,22 @@ class BrainStore:
                 if exp["revoked_at"] is not None:
                     raise MissingEvidence("Experience is revoked.")
                 self._source_usable(exp["source_id"])
-            active = self.db.execute(
-                "SELECT fact_id FROM verified_fact WHERE claim_key=?"
-                " AND invalidated_at IS NULL",
-                (candidate["claim_key"],),
-            ).fetchone()
+            # The DB unique index catches exact duplicate keys. Normalize
+            # comparisons against pre-v2 mixed-case/Unicode legacy entries
+            # too, under BEGIN IMMEDIATE, before any supersession occurs.
+            comparison = unicodedata.normalize(
+                "NFKC", candidate["claim_key"]
+            ).casefold().strip()
+            conflicts = [
+                row for row in self.db.execute(
+                    "SELECT fact_id,claim_key FROM verified_fact "
+                    "WHERE invalidated_at IS NULL AND claim_key IS NOT NULL"
+                ) if unicodedata.normalize("NFKC", row["claim_key"]).casefold().strip()
+                    == comparison
+            ]
+            if len(conflicts) > 1:
+                raise FactConflict("Multiple existing verified claim collisions.")
+            active = conflicts[0] if conflicts else None
             if active is None and replaces_fact_id is not None:
                 raise FactConflict("No active fact exists to supersede.")
             if active is not None:

@@ -1,6 +1,6 @@
 # Proposed flows and edge-case contracts
 
-Status: most flows remain design only. Slice 01B-B0 adds an **offline-only deterministic QA gate** under relay_spike/qa.py; it is not connected to live streaming, a UI, audio, or a Personal Brain yet.
+Status: most flows remain design only. Slice 01B-B0 added the offline QA gate; **Slice 01B-B1 (PR #16)** integrates that gate into a **synthetic SSE adapter**. Neither is connected to the actual OAuth CLI, native UI, audio capture or a Personal Brain.
 
 ## Personal Brain onboarding
 1. Select current target role and optional job description.
@@ -31,7 +31,18 @@ Status: most flows remain design only. Slice 01B-B0 adds an **offline-only deter
 - Decision is `pass`, `needs_revision`, or `abstain`. **Pass means a deterministic presentation/safety gate succeeded, never that a model answer is factually correct.** Heuristic keyword matches likewise do not prove semantic coverage.
 - Missing/incomplete content, stale turn **ID or version**, unknown attribution classification and absent verified personal context fail closed. Even when personal source IDs exist, they are only pointers and must not certify the claim until a later source-grounding check.
 - Code-first outputs can be warned as harder to scan; overly long/tabled answers need revision. Categories such as coding, multipart, behavioral and caller-marked high-risk SQL may recommend selective deeper QA, **not execute another inference request**.
-- **B1 integration requirement:** re-check that the turn is still active immediately before display. A successful offline check earlier in a stream is not sufficient to display stale material after an interruption. Measure first *useful* validated text, not first nonempty token. Add transparent fallback if second review or account use is unavailable.
+- **B1 implementation:** re-check that the active turn ID, version and monotonic activation generation are unchanged at the synchronous presentation boundary. A QA PASS earlier in a stream is insufficient to display stale material. Track first output, a weak first-scannable provisional sentence candidate, stream completion, QA completion and presentation independently; true first **useful** validated text still requires independent/human assessment.
+
+## Synthetic SSE-to-QA adapter, Slice 01B-B1
+
+Implemented in [streaming_qa.py](../relay_spike/streaming_qa.py), with offline-only tests in [test_streaming_qa.py](../tests/test_streaming_qa.py):
+1. Activate a named question turn (ID, version, generation) in a small thread-safe coordinator. Replacement or cancellation invalidates the older turn, including reuse of an identical ID/version.
+2. Feed mock or caller-supplied SSE lines through the **existing** `consume_stream` terminal semantics. A stream is complete only on `response.completed`; failed, incomplete, malformed, conflicting duplicate or overly large streams fail closed. Matching SSE sequence-number replays are ignored, and deltas after a terminal completion are not presented.
+3. Assemble completed text in memory, silently time the first emitted text and first **heuristic scannable lead sentence**, and apply deterministic B0 QA using synthetic fixture metadata. No early text is displayed. A scannable candidate is **not** proven correct or usable in an actual interview.
+4. Each synthetic test must explicitly supply a **trusted** personal-attribution classification to permit PASS; the default `uncertain` prevents a clean final answer. Personal/behavioral cases with no approved evidence abstain, and source-ID strings alone cannot certify a personal claim.
+5. At publication, take an atomic freshness check against active ID, version and generation. Return only `final_unverified`, `needs_revision`, `unavailable` or `suppressed`. Non-PASS output is never exposed raw; a superseded response calls no presentation callback. Callback must synchronously commit the local view; delayed UI queues must themselves re-check the token.
+6. The provisional development `ModelPolicy` selects Luna by default and permits Sol explicitly; QA can recommend Sol for human-triggered review but **never invokes** a second model. No automatic API usage occurs.
+7. No production first-useful-answer metric or general correctness claim exists yet. `first_scannable_candidate_ms` is a weak display-format proxy; `first_useful_verified_ms` remains null. The native UI, validated attribution classifier and real-audio end-to-end timing are separate later slices.
 
 ## Required edge cases
 - Overlapping speech, microphone echo, incorrect speaker separation: state uncertainty.

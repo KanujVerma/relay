@@ -83,6 +83,7 @@ class _Segment:
     revision: int
     status: EventStatus
     fingerprint: bytes
+    first_start_ms: int  # Earliest observed source start, never revised forward.
 
 
 def _validate(event: TranscriptEvent) -> None:
@@ -212,11 +213,47 @@ class QuestionTurnMachine:
             self._seen.clear()
 
     def _remember(self, e: TranscriptEvent, digest: bytes) -> None:
-        self._seen[e.segment_id] = _Segment(e.revision, e.status, digest)
+        existing = self._seen.get(e.segment_id)
+        first_start = min(
+            existing.first_start_ms, e.start_ms
+        ) if existing is not None else e.start_ms
+        self._seen[e.segment_id] = _Segment(
+            e.revision, e.status, digest, first_start
+        )
         self._seen.move_to_end(e.segment_id)
-        if len(self._seen) > MAX_SEEN_SEGMENTS:
-            evicted, _ = self._seen.popitem(last=False)
-            self._reopened.discard(evicted)
+        # Preserve the active/current segment's terminal metadata even after
+        # hundreds of non-question statements. Otherwise a higher-revision
+        # partial could lose its final status and escape reopening quarantine.
+        protected = set(self._reopened)
+        if self._active is not None:
+            protected.update((
+                self._active.current_segment_id,
+                self._active.root_segment_id,
+            ))
+        if self._leading_partial is not None:
+            protected.add(self._leading_partial[0])
+        if self._interrupted is not None:
+            protected.update((
+                self._interrupted[0],
+                self._interrupted[1].current_segment_id,
+                self._interrupted[1].root_segment_id,
+            ))
+        while len(self._seen) > MAX_SEEN_SEGMENTS:
+            evicted = next((
+                sid for sid in self._seen if sid not in protected
+            ), None)
+            if evicted is None:
+                # Too many simultaneously protected pieces cannot be safely
+                # represented in bounded memory; never relax the limit.
+                self.turns.cancel()
+                self._active = None
+                self._interrupted = None
+                self._blocked_generation = self._remote_generation
+                self._seen.clear()
+                self._reopened.clear()
+                self._leading_partial = None
+                raise InvalidTranscript("Active ASR segment capacity exceeded.")
+            del self._seen[evicted]
 
     def ingest(self, event: TranscriptEvent) -> TurnDecision:
         """Ready means a tentative, complete remote question can be routed.
@@ -303,8 +340,13 @@ class QuestionTurnMachine:
             # time of the newer accepted B, A's *start* still predates B.
             # Exempt the currently active, leading or reopened segment
             # because its ASR may revise its original timestamps.
+            remembered_start = self._seen.get(event.segment_id)
+            effective_start_ms = (
+                min(event.start_ms, remembered_start.first_start_ms)
+                if remembered_start is not None else event.start_ms
+            )
             if (event.status == "final"
-                    and event.start_ms < self._latest_question_start_ms
+                    and effective_start_ms < self._latest_question_start_ms
                     and event.segment_id not in self._reopened
                     and (self._leading_partial is None
                          or self._leading_partial[0] != event.segment_id)

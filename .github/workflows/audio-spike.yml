@@ -25,3 +25,5 @@ jobs:
         run: swift test --package-path spikes/macos-audio
       - name: Verify zero-permission default invocation
         run: swift run --package-path spikes/macos-audio relay-audio-spike
+      - name: Build bundled app with microphone purpose description (no capture)
+        run: bash spikes/macos-audio/scripts/build-mic-app.sh

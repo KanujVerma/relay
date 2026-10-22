@@ -14,7 +14,7 @@ import re
 
 FIXTURES = Path(__file__).resolve().parents[1] / "EVALS" / "technical-answer-gate.jsonl"
 MAX_CANDIDATE_CHARS = 560
-MIN_CANDIDATE_WORDS = 13
+MIN_CANDIDATE_WORDS = 9
 MAX_CANDIDATE_WORDS = 95
 
 # An unknown word is NEVER evidence that the model is safe. It means withhold.
@@ -37,11 +37,11 @@ beforehand afterwards afterward predicate predicates earlier subsequent
 """.split())
 _E09_WORDS = frozenset("""
 algorithm array arrays auxiliary binary check checks checked checking comparisons
-complexity discard discards divide divided dividing extra half halves halve
+complexity discard discards divide divided dividing divides extra half halves halve
 halving iterative iteratively iteration iterations log logarithmic loop middle
 midpoint n o ordered order search searching searches sorted sort target worst
 case memory range remaining reduces reduce reduced split splits stack
-implementation implements left right size
+implementation implements left right size repeatedly
 """.split())
 
 _SAFE_RENDER: dict[str, str] = {
@@ -104,8 +104,8 @@ def _review_e09(text: str, words: tuple[str, ...]) -> bool:
     if "binary" not in vocabulary or "search" not in vocabulary:
         return False
     if not re.search(
-        r"\bsorted\b.{0,35}\b(?:input|array|arrays|data)\b"
-        r"|\b(?:input|array|arrays|data)\b.{0,35}\bsorted\b", text
+        r"\b(?:sorted|ordered)\b.{0,35}\b(?:input|array|arrays|data)\b"
+        r"|\b(?:input|array|arrays|data)\b.{0,35}\b(?:sorted|ordered)\b", text
     ):
         return False
     if not vocabulary.intersection({

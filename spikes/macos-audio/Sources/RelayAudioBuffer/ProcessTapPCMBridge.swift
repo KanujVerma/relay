@@ -83,7 +83,7 @@ public enum ProcessTapPCMBridge {
                 return (0, 1)
             }
             frameCount = Int(buffers[0].mDataByteSize) / bytesPerFrame
-            first = data.assumingMemoryBound(to: Float.self)
+            first = UnsafePointer(data.assumingMemoryBound(to: Float.self))
         } else {
             guard buffers.count == channels, let data = buffers[0].mData else {
                 return (0, 1)
@@ -91,11 +91,11 @@ public enum ProcessTapPCMBridge {
             let bytes = Int(buffers[0].mDataByteSize)
             guard bytes % sampleBytes == 0 else { return (0, 1) }
             frameCount = bytes / sampleBytes
-            first = data.assumingMemoryBound(to: Float.self)
+            first = UnsafePointer(data.assumingMemoryBound(to: Float.self))
             if channels == 2 {
                 guard Int(buffers[1].mDataByteSize) == bytes,
                       let other = buffers[1].mData else { return (0, 1) }
-                second = other.assumingMemoryBound(to: Float.self)
+                second = UnsafePointer(other.assumingMemoryBound(to: Float.self))
             }
         }
         if frameCount == 0 { return (0, 0) } // silence/no frames is not permission.

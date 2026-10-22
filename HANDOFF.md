@@ -22,6 +22,9 @@ Name Relay. Real authorized interview performance, not tutoring. Epic Software D
 ## Known risks
 Plan eligibility, available models, usage caps, full auth safety, streaming latency, audio routing, local ASR performance under 16 GB RAM, connector permissions, prompt injection and deletion semantics.
 
+## Slice 01A callback hardening
+A small follow-up changes the local CLI to ignore wrong-state/wrong-Host callback requests and reject missing or malformed token records. Offline regression cases accompany the changes. PR status and live account entitlement must be checked before calling the work complete.
+
 ## New code in Slice 01A
 - relay_spike/auth.py: interactive browser PKCE registration, OAuth code exchange, JWKS-based ID-token verification, protected local token file and plan scope checks.
 - relay_spike/stream.py: model-catalog parsing, preview-safe response payload, strict terminal SSE validation and monotonic response timings.

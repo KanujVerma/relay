@@ -8,6 +8,7 @@ This module performs no authentication, I/O, networking, or model inference.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Literal
 
 from .benchmark import format_metrics
@@ -23,6 +24,15 @@ REVIEW_CATEGORIES = frozenset({
     "coding", "edge_case", "ambiguity", "multi_part", "correction",
     "personal", "behavioral",
 })
+
+# A deliberately conservative trigger for autobiographical work-attribution language
+# in otherwise technical answers. This is only a heuristic, not a semantic proof.
+FIRST_PERSON_WORK_CLAIM = re.compile(
+    r"\b(?:I\s+(?:built|implemented|developed|created|led|owned|shipped|managed|"
+    r"designed|delivered|worked\s+on)|in\s+my\s+(?:role|job|experience)|"
+    r"my\s+(?:team|employer|project|professional\s+experience))\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -144,7 +154,11 @@ def assess(data: QAInput) -> QAResult:
         warnings.append("code_first_answer_may_be_hard_to_scan")
 
     # Evidence IDs are pointers, NOT evidence that any claim is supported.
-    personal = data.category in PERSONAL_CATEGORIES or "personal_claim" in data.risk_flags
+    inferred_personal_attribution = bool(FIRST_PERSON_WORK_CLAIM.search(data.answer))
+    if inferred_personal_attribution:
+        warnings.append("possible_first_person_work_claim_heuristic")
+    personal = (data.category in PERSONAL_CATEGORIES or
+                "personal_claim" in data.risk_flags or inferred_personal_attribution)
     if personal and not data.verified_source_ids:
         reasons.append("missing_verified_personal_context")
         return result("abstain")

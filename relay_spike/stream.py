@@ -36,15 +36,22 @@ def visible_models(catalog: dict) -> list[dict]:
     return result
 
 
-def response_payload(model: str, question: str) -> dict:
+def response_payload(model: str, question: str, *, instructions: str | None = None) -> dict:
     if not model.strip() or not question.strip():
         raise StreamError("Model and question must not be empty.")
-    return {
+    payload = {
         "model": model,
         "input": [{"role": "user", "content": question}],
         "store": False,
         "stream": True,
     }
+    # The ChatGPT-plan preview supports top-level instructions; do not send a
+    # system input item, max_output_tokens, temperature, or service_tier.
+    if instructions is not None:
+        if not isinstance(instructions, str) or not instructions.strip():
+            raise StreamError("Instructions must be a nonempty string when provided.")
+        payload["instructions"] = instructions
+    return payload
 
 
 def sse_events(byte_lines):
@@ -126,9 +133,9 @@ def consume_stream(byte_lines, *, started: float, clock=time.monotonic,
 
 
 def stream_answer(access_token: str, model: str, question: str, *, on_delta=None,
-                  timeout: float = 75.0) -> dict:
+                  timeout: float = 75.0, instructions: str | None = None) -> dict:
     # There is deliberately no support for OPENAI_API_KEY or API-key billing.
-    body = json.dumps(response_payload(model, question)).encode("utf-8")
+    body = json.dumps(response_payload(model, question, instructions=instructions)).encode("utf-8")
     req = Request(RESPONSES, data=body, headers={
         "Authorization": "Bearer " + access_token,
         "Content-Type": "application/json",

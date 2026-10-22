@@ -64,6 +64,10 @@ public actor PCMTranscriptWorker {
     private var pendingMono: [Float] = []
     private var utteranceFrames: Int = 0
     private var segmentID: UInt64 = 0
+    // Swift actors are reentrant across awaits. Invalidate in-flight ASR
+    // before cancelled/replaced audio can return a stale final transcript.
+    private var invalidationEpoch: UInt64 = 0
+    private var cancelledThroughGeneration: UInt64?
 
     /// 'authorizedCapture' must come from a real host consent event in the
     /// shipping app. This prototype accepts an explicit caller assertion only.
@@ -81,8 +85,14 @@ public actor PCMTranscriptWorker {
             return [event(.unavailable, generation: frame.streamGeneration)]
         }
         guard frame.source == source else {
-            // Never let a mic/unknown stream enter a remote-source recognizer.
-            return [event(.unavailable, generation: frame.streamGeneration)]
+            // Fail closed and invalidate any partial pending source context.
+            let marker = event(.unavailable, generation: frame.streamGeneration)
+            await reset()
+            return [marker]
+        }
+        if let cancelledThroughGeneration,
+           frame.streamGeneration <= cancelledThroughGeneration {
+            return []
         }
         if let generation, frame.streamGeneration < generation {
             // Old callback after device restart. No state mutation.
@@ -124,13 +134,22 @@ public actor PCMTranscriptWorker {
             }
             pendingMono.append(contentsOf: samples)
             let window = max(1, Int(frame.sampleRate * windowSeconds))
+            let ticket = invalidationEpoch
             var finals: [FinalTranscriptEvent] = []
             while pendingMono.count >= window {
                 let piece = Array(pendingMono.prefix(window))
                 pendingMono.removeFirst(window)
                 let mono16k = try converter.normalizeWindow(piece, from: frame.sampleRate)
-                if try await backend.accept(mono16k) {
-                    if let final = await finalize(generation: frame.streamGeneration) {
+                let reachedEou = try await backend.accept(mono16k)
+                guard ticket == invalidationEpoch,
+                      generation == frame.streamGeneration else {
+                    // Cancel/correction or stream switch while CoreML awaited.
+                    return []
+                }
+                if reachedEou {
+                    if let final = await finalize(
+                        generation: frame.streamGeneration, ticket: ticket
+                    ) {
                         finals.append(final)
                     }
                 }
@@ -152,12 +171,15 @@ public actor PCMTranscriptWorker {
             return nil
         }
         do {
+            let ticket = invalidationEpoch
             if !pendingMono.isEmpty {
                 let audio = try converter.normalizeWindow(pendingMono, from: sampleRate)
                 _ = try await backend.accept(audio)
+                guard ticket == invalidationEpoch,
+                      self.generation == generation else { return nil }
                 pendingMono.removeAll(keepingCapacity: true)
             }
-            return await finalize(generation: generation)
+            return await finalize(generation: generation, ticket: ticket)
         } catch {
             let marker = event(.unavailable, generation: generation)
             await reset()
@@ -166,12 +188,21 @@ public actor PCMTranscriptWorker {
     }
 
     public func cancel() async {
+        // A cancelled callback generation must not be reaccepted if queued
+        // packets arrive after the session was explicitly stopped.
+        if let generation {
+            cancelledThroughGeneration = max(
+                cancelledThroughGeneration ?? 0, generation
+            )
+        }
         await reset()
     }
 
-    private func finalize(generation: UInt64) async -> FinalTranscriptEvent? {
+    private func finalize(generation: UInt64, ticket: UInt64) async -> FinalTranscriptEvent? {
         do {
             let result = try await backend.finish()
+            guard ticket == invalidationEpoch,
+                  self.generation == generation else { return nil }
             let text = result.trimmingCharacters(in: .whitespacesAndNewlines)
             segmentID &+= 1
             let final = text.isEmpty ? nil : event(
@@ -179,6 +210,8 @@ public actor PCMTranscriptWorker {
             )
             // This reset clears decoder context, not the model weights.
             await backend.reset()
+            guard ticket == invalidationEpoch,
+                  self.generation == generation else { return nil }
             pendingMono.removeAll(keepingCapacity: true)
             utteranceFrames = 0
             startHostTime = nil
@@ -209,7 +242,7 @@ public actor PCMTranscriptWorker {
     }
 
     private func reset() async {
-        await backend.reset()
+        invalidationEpoch &+= 1
         pendingMono.removeAll(keepingCapacity: true)
         utteranceFrames = 0
         startHostTime = nil
@@ -217,5 +250,6 @@ public actor PCMTranscriptWorker {
         previousSequence = nil
         sampleRate = nil
         generation = nil
+        await backend.reset()
     }
 }

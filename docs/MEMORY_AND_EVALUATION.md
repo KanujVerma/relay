@@ -14,7 +14,7 @@ Question themes, clarifications, user-corrected assistant errors, answer verbosi
 
 ## Implemented subset and future draft entities
 
-For the actual SQLite v1 subset and trust boundary, use [PERSONAL_BRAIN_STORAGE.md](PERSONAL_BRAIN_STORAGE.md). The current implemented tables are source, experience (source-linked grouping only), candidate_fact, verified_fact and append-only history_event. A claim does not become verified without a separate explicit user confirmation reference from a future trusted UI. Teammate/team facts cannot be represented as the user's personal implementation. A source revocation invalidates dependent verified records and redacts source-backed text. The complete story schema below is still a design sketch.
+For the actual SQLite v1 subset and trust boundary, use [PERSONAL_BRAIN_STORAGE.md](PERSONAL_BRAIN_STORAGE.md). The current implemented tables are source, experience (source-linked grouping only), candidate_fact, verified_fact and append-only history_event. A claim does not become verified without a separate explicit user confirmation reference from a future trusted UI. Teammate/team facts cannot be represented as the user's personal implementation. A source revocation invalidates dependent verified records and redacts **all** dependent candidate text/keys, including cross-source facts linked through its experience grouping. The complete story schema below is still a design sketch.
 - source: id, provider, external ID, selected scope, checksum, observed time, consent, revoked time, sensitivity.
 - fact: id, claim, actor/owner of work, source ID, observed time, confidence, confirmed/rejected/superseded, revision.
 - experience: id, project, role, situation, personal action, choices, outcome, user verification time.

@@ -13,7 +13,7 @@ From the repo root, with an existing local Python environment:
     python3 -m relay_spike live-qa
     python3 -m relay_spike live-qa --case E09 --model gpt-6-luna --effort low
 
-Both commands validate the EVALS fixture and print a JSON plan with one potential request. They **do not** authenticate, read stored credentials, query models or invoke inference.
+Both commands validate one of two pre-reviewed D02/E09 synthetic smoke fixtures and print a JSON plan with one potential request. All other fixture IDs are rejected before authentication. The real model may produce technically reasonable but nonmatching text, which is intentionally withheld until a trusted general-purpose reviewer exists. They **do not** authenticate, read stored credentials, query models or invoke inference.
 
 ## One deliberate local Mac inference
 
@@ -29,7 +29,7 @@ Optional: pass --effort low or --effort medium. This command checks the current 
 - The CLI prints one JSON report **after** the request/QA/presentation path finishes. Only state = final_unverified can contain answer text; needs_revision, unavailable and suppressed contain no raw answer.
 - QA PASS means the basic formatting, terminal completion, turn identity and narrow attribution checks succeeded. It does **not** mean the SQL/code was correct, that all subquestions were truly answered, or that an actual first useful answer arrived.
 - First-text, scannable-candidate, completed, QA-decided and presented times are milliseconds since **before the HTTPS request**. The scannable-candidate marker is a heuristic, not text presented to a viewer. First-useful-verified remains null. No audio capture, native rendering, p95 or interviewer turn detection is included.
-- A small independent first-person wording screen is used only for reviewed non-personal EVALS fixture questions. Any first-person term fails closed. This is not a model-authored claim verifier: all biographical facts must still follow the Personal Brain approval and source lifecycle.
+- A strict **whole-answer positive allowlist** only recognizes exact, pre-reviewed D02/E09 non-autobiographical smoke responses. Every other generated answer, even a reasonable paraphrase without first-person words, stays uncertain or suspected personal and cannot be displayed. The work-history keyword screen is only an additional suspicion signal, not a source of trusted absence. This is not a general model-authored claim verifier: real biographical facts require Personal Brain approval and provenance.
 - Return code 0 means final_unverified; 2 means a complete/handled model attempt did not produce an allowed display; 1 means validation/auth/transport error. Auth and HTTP error messages are sanitized and never print raw model deltas on this command.
 
 ## Offline regression checks

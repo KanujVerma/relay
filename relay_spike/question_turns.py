@@ -165,6 +165,7 @@ class QuestionTurnMachine:
         self._last_final_end = -1
         self._seen: OrderedDict[str, _Segment] = OrderedDict()
         self._reopened: set[str] = set()
+        self._leading_partial: tuple[str, int] | None = None
         self._active: QuestionSnapshot | None = None
         self._interrupted: tuple[str, QuestionSnapshot] | None = None
 
@@ -181,6 +182,7 @@ class QuestionTurnMachine:
             self._active = None
             self._interrupted = None
             self._reopened.clear()
+            self._leading_partial = None
             self._stopped = True
             self._blocked_generation = self._remote_generation
 
@@ -194,6 +196,7 @@ class QuestionTurnMachine:
             self._active = None
             self._interrupted = None
             self._reopened.clear()
+            self._leading_partial = None
             self._stopped = False
             self._remote_generation = None
             self._blocked_generation = None
@@ -229,6 +232,7 @@ class QuestionTurnMachine:
                 self._interrupted = None
                 self._seen.clear()
                 self._reopened.clear()
+                self._leading_partial = None
                 self._last_final_end = -1
                 self._remote_generation = event.stream_generation
                 self._blocked_generation = None
@@ -240,9 +244,17 @@ class QuestionTurnMachine:
                 self._interrupted = None
                 self._seen.clear()
                 self._reopened.clear()
+                self._leading_partial = None
                 self._blocked_generation = event.stream_generation
                 return TurnDecision("cancelled", "asr_discontinuity")
 
+            # Until the newest tentative question finishes, an older
+            # finalized segment must not regain authority merely because no
+            # other *final* advanced the timestamp watermark yet.
+            if (self._leading_partial is not None
+                    and event.segment_id != self._leading_partial[0]
+                    and event.status in ("final", "retracted")):
+                return TurnDecision("ignored", "superseded_by_newer_partial")
             digest = _fingerprint(event)
             prior = self._seen.get(event.segment_id)
             if prior is not None:
@@ -256,6 +268,7 @@ class QuestionTurnMachine:
                         self._active = None
                         self._interrupted = None
                         self._reopened.clear()
+                        self._leading_partial = None
                         self._blocked_generation = event.stream_generation
                         return TurnDecision("conflict", "conflicting_segment_revision")
                 if prior.status == "final" and event.status == "partial":
@@ -271,9 +284,9 @@ class QuestionTurnMachine:
                     self._reopened.add(event.segment_id)
                     return TurnDecision("pending", "final_reopened_as_partial")
             if event.status == "retracted":
-                if (prior is not None and
-                        self._active is not None and
-                        self._active.current_segment_id != event.segment_id):
+                if (self._active is not None and
+                        self._active.current_segment_id != event.segment_id and
+                        self._active.root_segment_id != event.segment_id):
                     # A delayed retraction of a superseded segment must not
                     # erase a newer finalized question's active answer.
                     return TurnDecision("ignored", "superseded_segment_retraction")
@@ -282,15 +295,26 @@ class QuestionTurnMachine:
                 self._active = None
                 self._interrupted = None
                 self._reopened.clear()
+                self._leading_partial = None
                 self._blocked_generation = event.stream_generation
                 return TurnDecision("cancelled", "transcript_retracted")
             if event.status == "partial":
+                # Ignore a delayed update to an older partial after a newer
+                # tentative remote question has taken priority.
+                if (self._leading_partial is not None
+                        and event.segment_id != self._leading_partial[0]
+                        and event.start_ms < self._leading_partial[1]):
+                    return TurnDecision("ignored", "superseded_partial_revision")
                 self._remember(event, digest)
-                # A *tentatively classified* remote question or correction
-                # invalidates an in-flight answer before it becomes final.
-                # Preserve only the original context for a matching finalized
-                # correction/follow-up, never as an authorized partial answer.
+                # A new tentative question/correction invalidates in-flight
+                # answers immediately, before any of its partial text is used.
                 if event.intent in ("question", "correction", "follow_up"):
+                    if (self._leading_partial is not None
+                            and self._leading_partial[0] != event.segment_id
+                            and self._interrupted is not None
+                            and event.intent in ("correction", "follow_up")):
+                        self._interrupted = (event.segment_id, self._interrupted[1])
+                    self._leading_partial = (event.segment_id, event.start_ms)
                     if event.intent == "question":
                         self._interrupted = None
                     if self._active is not None:
@@ -302,6 +326,9 @@ class QuestionTurnMachine:
                         self.turns.cancel()
                         self._active = None
                 return TurnDecision("pending", "partial_text_not_authoritative")
+            if (self._leading_partial is not None
+                    and event.segment_id == self._leading_partial[0]):
+                self._leading_partial = None
             # Partial events also have a ledger entry: a later-arriving final
             # from that older partial must not become current after newer
             # accepted questions. The replay hash alone is not ordering.

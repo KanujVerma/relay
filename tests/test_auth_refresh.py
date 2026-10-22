@@ -114,8 +114,8 @@ class RefreshTests(LocalAuthCase):
 
     def test_atomic_rotation_syncs_both_file_and_parent_directory(self):
         self.save()
-        real_fsync = os.fsync
-        with patch.object(auth.os, "fsync", wraps=real_fsync) as sync, \
+        real_sync = auth._durable_sync
+        with patch.object(auth, "_durable_sync", wraps=real_sync) as sync, \
              patch.object(auth, "request_json", return_value=replacement()):
             self.assertEqual(auth.active_access_token(), "test-access-replacement")
         self.assertGreaterEqual(sync.call_count, 2)
@@ -160,19 +160,19 @@ class RefreshTests(LocalAuthCase):
             finally:
                 os.close(fd)
 
-    def test_directory_fsync_failure_is_reported_not_silently_accepted(self):
+    def test_directory_sync_failure_is_reported_not_silently_accepted(self):
         self.save()
-        original_fsync = os.fsync
+        original_sync = auth._durable_sync
         operations = []
 
         def fail_directory_sync(fd):
             operations.append(os.fstat(fd).st_mode)
             if len(operations) == 2:
                 raise OSError("filesystem cannot sync directories")
-            return original_fsync(fd)
+            return original_sync(fd)
 
         with patch.object(auth, "request_json", return_value=replacement()), \
-             patch.object(auth.os, "fsync", side_effect=fail_directory_sync):
+             patch.object(auth, "_durable_sync", side_effect=fail_directory_sync):
             with self.assertRaisesRegex(auth.AuthError, "durably sync"):
                 auth.active_access_token()
         # Atomic rename happened before the durability diagnostic.

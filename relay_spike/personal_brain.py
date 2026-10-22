@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+from hashlib import sha256
+import re
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
@@ -35,7 +38,7 @@ class InvalidState(BrainError):
 ACTORS = frozenset(("self", "teammate", "team", "unknown"))
 SOURCES = frozenset(("user_statement", "resume", "github", "drive",
                      "model_suggestion", "transcript"))
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE source (
@@ -99,6 +102,23 @@ CREATE TRIGGER immutable_history_delete BEFORE DELETE ON history_event
 BEGIN SELECT RAISE(ABORT, 'history events are immutable'); END;
 """
 
+# Provenance metadata only. Claim text is stored in candidate_fact and is
+# purged by existing rejection/revocation lifecycle. This table never stores
+# a full selected document body, model response, or real file pathname.
+EVIDENCE_SCHEMA = """
+CREATE TABLE candidate_evidence (
+    fact_id TEXT PRIMARY KEY REFERENCES candidate_fact(id),
+    source_id TEXT NOT NULL REFERENCES source(id),
+    source_sha256 TEXT NOT NULL CHECK(length(source_sha256)=64),
+    snippet_sha256 TEXT NOT NULL CHECK(length(snippet_sha256)=64),
+    span_start INTEGER NOT NULL CHECK(span_start>=0),
+    span_end INTEGER NOT NULL CHECK(span_end>span_start),
+    review_revision INTEGER NOT NULL DEFAULT 1 CHECK(review_revision>=1)
+);
+CREATE INDEX candidate_evidence_source_idx ON candidate_evidence(source_id);
+CREATE UNIQUE INDEX candidate_evidence_one_span_per_source ON candidate_evidence(source_id,span_start,span_end);
+"""
+
 
 @dataclass(frozen=True)
 class UserConfirmation:
@@ -158,6 +178,10 @@ class BrainStore:
     """
 
     def __init__(self, path: str | Path = ":memory:") -> None:
+        # A future trusted host binds at most one in-process review gateway.
+        # This protects accidental direct v2 confirmation, not malicious
+        # Python with arbitrary access to this store or the OS user session.
+        self.__resume_review_gate: object | None = None
         self.db = sqlite3.connect(str(path), isolation_level=None)
         try:
             self.db.row_factory = sqlite3.Row
@@ -185,25 +209,51 @@ class BrainStore:
         if version > SCHEMA_VERSION or version < 0:
             raise BrainError("Unsupported Personal Brain schema version.")
         if version == 0:
-            # executescript commits implicitly; explicitly wrap the whole schema
-            # to avoid claiming version 1 after a partially applied migration.
+            # Keep pre-existing v1 on-disk databases compatible. Each step is
+            # transactional; v2 never claims to be installed if its DDL fails.
             try:
                 self.db.executescript("BEGIN IMMEDIATE;\n" + SCHEMA +
                                       "\nPRAGMA user_version=1;\nCOMMIT;")
             except sqlite3.Error:
-                self.db.execute("ROLLBACK")
+                if self.db.in_transaction:
+                    self.db.execute("ROLLBACK")
+                raise BrainError("Personal Brain migration failed.") from None
+            version = 1
+        if version == 1:
+            try:
+                # Unlike executescript(COMMIT), this checks legacy v1 orphans
+                # BEFORE marking v2 successful. EVIDENCE_SCHEMA consists only
+                # of static CREATE TABLE/INDEX statements, no SQL triggers.
+                self.db.execute("BEGIN IMMEDIATE")
+                for statement in EVIDENCE_SCHEMA.split(";"):
+                    if statement.strip():
+                        self.db.execute(statement)
+                if self.db.execute("PRAGMA foreign_key_check").fetchone() is not None:
+                    raise BrainError("Personal Brain foreign-key integrity check failed.")
+                self.db.execute("PRAGMA user_version=2")
+                self.db.execute("COMMIT")
+            except (sqlite3.Error, BrainError):
+                if self.db.in_transaction:
+                    self.db.execute("ROLLBACK")
                 raise BrainError("Personal Brain migration failed.") from None
         if self.db.execute("PRAGMA foreign_key_check").fetchone() is not None:
             raise BrainError("Personal Brain foreign-key integrity check failed.")
 
     @contextmanager
     def _transaction(self) -> Iterator[None]:
-        self.db.execute("BEGIN IMMEDIATE")
+        # A batch owns the outer write lock; individual ledger operations use
+        # savepoints so they cannot commit part of that batch independently.
+        savepoint = "brain_" + uuid4().hex if self.db.in_transaction else None
+        self.db.execute("SAVEPOINT " + savepoint if savepoint else "BEGIN IMMEDIATE")
         try:
             yield
-            self.db.execute("COMMIT")
+            self.db.execute("RELEASE SAVEPOINT " + savepoint if savepoint else "COMMIT")
         except BaseException:
-            self.db.execute("ROLLBACK")
+            if savepoint:
+                self.db.execute("ROLLBACK TO SAVEPOINT " + savepoint)
+                self.db.execute("RELEASE SAVEPOINT " + savepoint)
+            else:
+                self.db.execute("ROLLBACK")
             raise
 
     def _get(self, table: str, row_id: str) -> sqlite3.Row:
@@ -313,8 +363,65 @@ class BrainStore:
             )
         return fact_id
 
+    def _bind_resume_review_gate(self, gate: object) -> None:
+        """Register exactly one trusted-host adapter for this store lifetime."""
+        if gate is None or self.__resume_review_gate is not None:
+            raise InvalidState("Résumé review boundary is already bound or invalid.")
+        self.__resume_review_gate = gate
+
+    def stage_resume_candidate(self, *, source_id: str, claim_key: str,
+                               claim_text: str, actor: str, observed_at: str,
+                               document_sha256: str, span_start: int,
+                               span_end: int) -> str:
+        """Atomically stage a selected *synthetic-text* résumé snippet only.
+
+        This is not an approval. The external caller must verify the exact
+        selected document digest and offsets before supplying these values.
+        """
+        claim_key = _required(claim_key, "candidate key", limit=160)
+        claim_text = _required(claim_text, "candidate text", limit=2000)
+        observed_at = _observed(observed_at)
+        if actor not in ACTORS:
+            raise BrainError("Invalid attribution.")
+        if (type(span_start) is not int or type(span_end) is not int or
+                span_start < 0 or span_end <= span_start or
+                span_end - span_start != len(claim_text)):
+            raise BrainError("Invalid candidate source span.")
+        if (not isinstance(document_sha256, str) or
+                len(document_sha256) != 64 or
+                any(char not in "0123456789abcdef" for char in document_sha256)):
+            raise BrainError("Invalid selected-source checksum.")
+        with self._transaction():
+            self._source_usable(source_id)
+            source = self._get("source", source_id)
+            if source["kind"] != "resume" or source["checksum"] != document_sha256:
+                raise MissingEvidence("Source content/revision does not match.")
+            fact_id = uuid4().hex
+            self.db.execute(
+                "INSERT INTO candidate_fact "
+                "(id,source_id,claim_key,claim_text,actor,observed_at,created_at)"
+                " VALUES (?,?,?,?,?,?,?)",
+                (fact_id, source_id, claim_key, claim_text, actor, observed_at, _now()),
+            )
+            try:
+                self.db.execute(
+                    "INSERT INTO candidate_evidence "
+                    "(fact_id,source_id,source_sha256,snippet_sha256,span_start,span_end)"
+                    " VALUES (?,?,?,?,?,?)",
+                    (fact_id, source_id, document_sha256,
+                     sha256(claim_text.encode("utf-8")).hexdigest(),
+                     span_start, span_end),
+                )
+            except sqlite3.IntegrityError:
+                raise InvalidState("Source span has already been staged.") from None
+        return fact_id
+
     def confirm_fact(self, fact_id: str, *, confirmation: UserConfirmation,
-                     replaces_fact_id: str | None = None) -> None:
+                     replaces_fact_id: str | None = None,
+                     reviewed_actor: str | None = None,
+                     reviewed_claim_key: str | None = None,
+                     expected_snippet_sha256: str | None = None,
+                     reviewer_token: object | None = None) -> None:
         """Confirm explicitly, optionally superseding exactly one trusted claim.
 
         Contradictory candidates for an existing key must use replaces_fact_id.
@@ -325,6 +432,57 @@ class BrainStore:
             candidate = self._get("candidate_fact", fact_id)
             if candidate["state"] != "candidate":
                 raise InvalidState("Only pending candidate facts can be confirmed.")
+            has_resume_evidence = self.db.execute(
+                "SELECT 1 FROM candidate_evidence WHERE fact_id=?", (fact_id,)
+            ).fetchone() is not None
+            owner_source = self._get("source", candidate["source_id"])
+            if owner_source["kind"] == "resume" and not has_resume_evidence:
+                # Pending legacy v1 résumés (and new add_candidate shortcuts)
+                # have no reviewed offsets/digest. Previously confirmed v1
+                # records are preserved, but no new ones can use this route.
+                raise MissingEvidence("Résumé candidate must be restaged with evidence.")
+            if has_resume_evidence and (
+                    self.__resume_review_gate is None or
+                    reviewer_token is not self.__resume_review_gate):
+                raise MissingEvidence("Use the registered host review boundary.")
+            if not has_resume_evidence and reviewer_token is not None:
+                raise BrainError("Review authorization cannot apply to legacy facts.")
+            if any(value is not None for value in
+                   (reviewed_actor, reviewed_claim_key, expected_snippet_sha256)):
+                if not all(value is not None for value in
+                           (reviewed_actor, reviewed_claim_key, expected_snippet_sha256)):
+                    raise BrainError("Incomplete reviewed approval evidence.")
+                if reviewed_actor not in ("self", "team", "teammate"):
+                    raise MissingEvidence("Reviewer must resolve attribution.")
+                reviewed_claim_key = unicodedata.normalize(
+                    "NFKC", _required(reviewed_claim_key, "approved claim key",
+                                      limit=160)
+                ).casefold().strip()
+                if (len(reviewed_claim_key) > 160 or
+                        re.fullmatch(r"[a-z0-9][a-z0-9._:-]*", reviewed_claim_key) is None):
+                    raise BrainError("Approved claim key must be canonical ASCII.")
+                row = self.db.execute(
+                    "SELECT snippet_sha256,source_sha256 FROM candidate_evidence "
+                    "WHERE fact_id=?", (fact_id,),
+                ).fetchone()
+                if (row is None or row["snippet_sha256"] != expected_snippet_sha256
+                        or row["snippet_sha256"] !=
+                        sha256(candidate["claim_text"].encode("utf-8")).hexdigest()):
+                    raise MissingEvidence("Reviewed snapshot is stale or invalid.")
+                source = self._get("source", candidate["source_id"])
+                if source["checksum"] != row["source_sha256"]:
+                    raise MissingEvidence("Selected source revision changed.")
+                self.db.execute(
+                    "UPDATE candidate_fact SET actor=?,claim_key=? WHERE id=?",
+                    (reviewed_actor, reviewed_claim_key, fact_id),
+                )
+                candidate = self._get("candidate_fact", fact_id)
+            elif self.db.execute(
+                "SELECT 1 FROM candidate_evidence WHERE fact_id=?", (fact_id,)
+            ).fetchone() is not None:
+                # Resume-derived candidates can never use the legacy confirmation
+                # shortcut; they require an explicit reviewed actor + digest.
+                raise MissingEvidence("Résumé candidate needs a reviewed snapshot.")
             if candidate["actor"] == "unknown":
                 raise MissingEvidence("Attribution must be explicitly resolved.")
             self._source_usable(candidate["source_id"])
@@ -333,11 +491,22 @@ class BrainStore:
                 if exp["revoked_at"] is not None:
                     raise MissingEvidence("Experience is revoked.")
                 self._source_usable(exp["source_id"])
-            active = self.db.execute(
-                "SELECT fact_id FROM verified_fact WHERE claim_key=?"
-                " AND invalidated_at IS NULL",
-                (candidate["claim_key"],),
-            ).fetchone()
+            # The DB unique index catches exact duplicate keys. Normalize
+            # comparisons against pre-v2 mixed-case/Unicode legacy entries
+            # too, under BEGIN IMMEDIATE, before any supersession occurs.
+            comparison = unicodedata.normalize(
+                "NFKC", candidate["claim_key"]
+            ).casefold().strip()
+            conflicts = [
+                row for row in self.db.execute(
+                    "SELECT fact_id,claim_key FROM verified_fact "
+                    "WHERE invalidated_at IS NULL AND claim_key IS NOT NULL"
+                ) if unicodedata.normalize("NFKC", row["claim_key"]).casefold().strip()
+                    == comparison
+            ]
+            if len(conflicts) > 1:
+                raise FactConflict("Multiple existing verified claim collisions.")
+            active = conflicts[0] if conflicts else None
             if active is None and replaces_fact_id is not None:
                 raise FactConflict("No active fact exists to supersede.")
             if active is not None:
@@ -378,6 +547,7 @@ class BrainStore:
                 "claim_key=NULL WHERE id=?",
                 (fact_id,),
             )
+            self.db.execute("DELETE FROM candidate_evidence WHERE fact_id=?", (fact_id,))
             self._event("fact_rejected", fact_id=fact_id, confirmation_id=ref)
 
     def revoke_fact(self, fact_id: str, *, confirmation: UserConfirmation) -> None:
@@ -398,6 +568,7 @@ class BrainStore:
                 "UPDATE candidate_fact SET state='revoked',claim_key=NULL,"
                 "claim_text=NULL WHERE id=?", (fact_id,),
             )
+            self.db.execute("DELETE FROM candidate_evidence WHERE fact_id=?", (fact_id,))
             self._event("fact_revoked", fact_id=fact_id, confirmation_id=ref)
 
     def revoke_source(self, source_id: str, *, confirmation: UserConfirmation) -> None:
@@ -439,6 +610,9 @@ class BrainStore:
                     "UPDATE candidate_fact SET state='revoked',"
                     "claim_text=NULL,claim_key=NULL WHERE id=?",
                     (fact_id,),
+                )
+                self.db.execute(
+                    "DELETE FROM candidate_evidence WHERE fact_id=?", (fact_id,),
                 )
                 self._event("source_invalidated", fact_id=fact_id)
             self.db.execute(

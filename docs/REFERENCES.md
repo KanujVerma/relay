@@ -33,5 +33,11 @@ Verified/reviewed on 2026-10-22 unless otherwise noted. External projects are CA
 - https://github.com/asg017/sqlite-vec : pre-v1, MIT/Apache SQLite vector search extension; no embeddings in the 02A-A factual ledger, defer until benchmarks justify retrieval complexity.
 - [PERSONAL_BRAIN_STORAGE.md](PERSONAL_BRAIN_STORAGE.md) : decision matrix and exact implemented-vs-deferred data lifecycle; no upstream code copied.
 
+## Future selected-file résumé conversion, evaluated 2026-10-22
+- https://github.com/docling-project/docling : MIT library with page/layout-aware PDF/DOCX structure. Deferred to actual selected-file extraction slice, not needed for synthetic text QA.
+- https://github.com/microsoft/markitdown : MIT lightweight local PDF/DOCX and document-to-Markdown conversion. When adopted, use its restricted local or stream APIs and retain source offsets.
+- https://github.com/Unstructured-IO/unstructured : element-level metadata and document structure reference. Assess current license/dependency size before considering reuse.
+- [RESUME_CANDIDATES.md](RESUME_CANDIDATES.md) : actual B0 parser and consent contract; no third-party conversion source copied.
+
 ## Source reliability discipline
 Official documentation governs protocol; project README governs upstream intent; real measured local tests govern practical behavior. Anecdotal interview reports are weak priors, not a guarantee that a company will ask a specific question. Record citation URL, verification date, version, OS, benchmark methodology and observed result before promoting proposed technology to settled ADR.

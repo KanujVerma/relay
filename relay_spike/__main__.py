@@ -10,6 +10,7 @@ from .benchmark import (BenchmarkError, DEFAULT_CASES, DEFAULT_EFFORTS, DEFAULT_
                         instructions_for, make_plan, summary)
 from .stream import (MODELS, StreamError, stream_answer, visible_models,
                      validated_reasoning_effort)
+from .live_qa import run_live_synthetic_case, validate_live_case
 
 
 def main(argv=None) -> int:
@@ -33,6 +34,16 @@ def main(argv=None) -> int:
         "--question", default="In SQL, what is the difference between WHERE and HAVING?",
         help="Synthetic question only. No personal or confidential details in Slice 01A.",
     )
+    live = commands.add_parser(
+        "live-qa", help="One synthetic OAuth inference through QA; dry-run by default."
+    )
+    live.add_argument("--case", default="D02", help="Reviewed technical EVALS case ID.")
+    live.add_argument("--model", default="gpt-6-luna",
+                      choices=["gpt-6-luna", "gpt-6.1-sol"])
+    live.add_argument("--effort", default="default",
+                      choices=["default", "low", "medium"])
+    live.add_argument("--execute", action="store_true",
+                      help="Explicitly authorize ONE real ChatGPT-plan inference.")
     commands.add_parser("disconnect", help="Delete local OAuth credential record.")
     benchmark = commands.add_parser(
         "benchmark", help="Compare synthetic prompts; DRY-RUN unless --execute."
@@ -66,6 +77,48 @@ def main(argv=None) -> int:
         if args.command == "disconnect":
             disconnect()
             return 0
+        if args.command == "live-qa":
+            case = validate_live_case(args.case, args.model, args.effort)
+            if not args.execute:
+                print(json.dumps({
+                    "dry_run": True, "requests_if_executed": 1,
+                    "case_id": case["id"], "model": args.model,
+                    "requested_reasoning_effort": args.effort,
+                    "note": "No authentication, network or model inference was invoked.",
+                }, sort_keys=True))
+                return 0
+            access_token = active_access_token()  # Requires validated plan scope.
+            visible = visible_models(request_json(MODELS, token=access_token))
+            if args.model not in {item["slug"] for item in visible}:
+                raise StreamError("Selected model is not in the OAuth account catalog.")
+            outcome = run_live_synthetic_case(
+                access_token, case_id=case["id"], model=args.model,
+                effort=args.effort, on_present=lambda _event: None,
+            )
+            assessed, presented = outcome.assessment, outcome.presentation
+            print(json.dumps({
+                "dry_run": False, "requests_executed": 1,
+                "case_id": case["id"], "model": args.model,
+                "requested_reasoning_effort": args.effort,
+                "state": presented.state,
+                "qa_status": assessed.qa.status if assessed.qa else None,
+                "qa_reasons": list(assessed.qa.reasons) if assessed.qa else [],
+                "stream_completed": assessed.completed,
+                "first_text_ms": assessed.first_text_ms,
+                "first_scannable_candidate_ms": assessed.first_scannable_candidate_ms,
+                "completed_ms": assessed.completed_ms,
+                "qa_decided_ms": assessed.qa_decided_ms,
+                "presented_ms": presented.presented_ms,
+                "first_useful_verified_ms": None,
+                "second_review_recommended": bool(
+                    assessed.qa and assessed.qa.second_review_recommended
+                ),
+                "second_review_executed": False,
+                "answer": presented.text if presented.state == "final_unverified" else None,
+                "note": "QA PASS only clears deterministic guards; technical "
+                        "correctness and interview usefulness remain unverified.",
+            }, sort_keys=True, indent=2))
+            return 0 if presented.state == "final_unverified" else 2
         if args.command == "benchmark":
             models = tuple(x.strip() for x in args.models.split(","))
             case_ids = tuple(x.strip() for x in args.cases.split(","))

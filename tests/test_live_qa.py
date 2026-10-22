@@ -128,6 +128,8 @@ class BridgeUnitTests(unittest.TestCase):
             "In my internship the retention metric was different.",
             "The dashboard I created increased growth.",
             "We created the dataset and our team presented it.",
+            "Built three client dashboards at the previous internship.",
+            "Designed the production reporting tool at a former employer.",
             "for i in range(3): print(i)",  # Conservative on code identifiers.
         ):
             with self.subTest(text=text):

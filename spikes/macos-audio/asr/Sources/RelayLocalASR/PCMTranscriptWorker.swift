@@ -73,8 +73,8 @@ public actor PCMTranscriptWorker {
     private var resetInProgress = false
     // Swift actors can accept new calls while CoreML finish()/reset() awaits.
     // Those later packets must never be appended to the ending utterance.
-    private var finalizationInProgress = false
-    private var finalizationInterrupted = false
+    private var processingInProgress = false
+    private var processingInterrupted = false
 
     /// 'authorizedCapture' must come from a real host consent event in the
     /// shipping app. This prototype accepts an explicit caller assertion only.
@@ -89,13 +89,13 @@ public actor PCMTranscriptWorker {
 
     public func ingest(_ frame: PCMFrame) async -> [FinalTranscriptEvent] {
         guard !cancelled, !resetInProgress else { return [] }
-        if finalizationInProgress {
-            // Never append a new utterance to an in-flight finish() result.
+        if processingInProgress {
+            // Never append audio while an existing ingest/finish awaits.
             // Explicitly invalidate that final if a concurrent caller drops
             // samples here. The worker remains bounded and discards no content
             // while pretending it completed a question.
-            let firstInterruption = !finalizationInterrupted
-            finalizationInterrupted = true
+            let firstInterruption = !processingInterrupted
+            processingInterrupted = true
             if !firstInterruption { return [] }
             return [FinalTranscriptEvent(
                 status: .discontinuity,
@@ -120,6 +120,11 @@ public actor PCMTranscriptWorker {
             // Old callback after device restart. No state mutation.
             return []
         }
+        processingInProgress = true
+        defer {
+            processingInProgress = false
+            processingInterrupted = false
+        }
         var transition: FinalTranscriptEvent?
         let sequenceChanged = previousSequence.map {
             frame.sequence != ($0 &+ 1)
@@ -131,7 +136,8 @@ public actor PCMTranscriptWorker {
             // packet of the new segment instead of discarding it as well.
             let priorEpoch = invalidationEpoch
             await reset()
-            guard !cancelled, invalidationEpoch == priorEpoch &+ 1 else {
+            guard !cancelled, !processingInterrupted,
+                  invalidationEpoch == priorEpoch &+ 1 else {
                 // reset() is async; a concurrent stop/turn correction could
                 // have superseded this ingestion during the backend reset.
                 return []
@@ -166,9 +172,15 @@ public actor PCMTranscriptWorker {
                 pendingMono.removeFirst(window)
                 let mono16k = try converter.normalizeWindow(piece, from: frame.sampleRate)
                 let reachedEou = try await backend.accept(mono16k)
-                guard ticket == invalidationEpoch,
+                guard !cancelled, !processingInterrupted,
+                      ticket == invalidationEpoch,
                       generation == frame.streamGeneration else {
-                    // Cancel/correction or stream switch while CoreML awaited.
+                    // Do not publish an old accept() result or retain samples
+                    // after a concurrent ingest/cancel invalidated this call.
+                    if processingInterrupted, !cancelled,
+                       ticket == invalidationEpoch {
+                        await reset()
+                    }
                     return []
                 }
                 if reachedEou {
@@ -186,6 +198,10 @@ public actor PCMTranscriptWorker {
             guard !cancelled, operationEpoch == invalidationEpoch,
                   generation == nil || generation == frame.streamGeneration
             else { return [] }
+            if processingInterrupted {
+                await reset()
+                return []
+            }
             let marker = event(.unavailable, generation: frame.streamGeneration)
             await reset()
             return [marker]
@@ -196,10 +212,19 @@ public actor PCMTranscriptWorker {
     /// are flushed on the worker, never from a HAL callback. No text from a
     /// cancelled/discontinuous generation is reconstructed from stale buffers.
     public func finishAtStop() async -> FinalTranscriptEvent? {
+        if processingInProgress {
+            processingInterrupted = true
+            return nil
+        }
         guard authorized, !cancelled, !resetInProgress,
               let generation, let sampleRate else {
             await reset()
             return nil
+        }
+        processingInProgress = true
+        defer {
+            processingInProgress = false
+            processingInterrupted = false
         }
         let ticket = invalidationEpoch
         do {
@@ -211,8 +236,15 @@ public actor PCMTranscriptWorker {
             if !pendingMono.isEmpty {
                 let audio = try converter.normalizeWindow(pendingMono, from: sampleRate)
                 reachedEou = try await backend.accept(audio)
-                guard ticket == invalidationEpoch,
-                      self.generation == generation else { return nil }
+                guard !cancelled, !processingInterrupted,
+                      ticket == invalidationEpoch,
+                      self.generation == generation else {
+                    if processingInterrupted, !cancelled,
+                       ticket == invalidationEpoch {
+                        await reset()
+                    }
+                    return nil
+                }
                 pendingMono.removeAll(keepingCapacity: true)
             }
             guard reachedEou else {
@@ -226,6 +258,10 @@ public actor PCMTranscriptWorker {
         } catch {
             guard !cancelled, ticket == invalidationEpoch,
                   self.generation == generation else { return nil }
+            if processingInterrupted {
+                await reset()
+                return nil
+            }
             let marker = event(.unavailable, generation: generation)
             await reset()
             return marker
@@ -240,18 +276,13 @@ public actor PCMTranscriptWorker {
     }
 
     private func finalize(generation: UInt64, ticket: UInt64) async -> FinalTranscriptEvent? {
-        guard !finalizationInProgress, !cancelled else { return nil }
-        finalizationInProgress = true
-        finalizationInterrupted = false
-        defer {
-            finalizationInProgress = false
-            finalizationInterrupted = false
-        }
+        // The caller owns processingInProgress across every backend await.
+        guard processingInProgress, !cancelled else { return nil }
         do {
             let result = try await backend.finish()
             guard !cancelled, ticket == invalidationEpoch,
                   self.generation == generation else { return nil }
-            if finalizationInterrupted {
+            if processingInterrupted {
                 await reset()
                 return nil
             }
@@ -260,7 +291,7 @@ public actor PCMTranscriptWorker {
             await backend.reset()
             guard !cancelled, ticket == invalidationEpoch,
                   self.generation == generation else { return nil }
-            if finalizationInterrupted {
+            if processingInterrupted {
                 await reset()
                 return nil
             }
@@ -274,9 +305,14 @@ public actor PCMTranscriptWorker {
             endHostTime = nil
             return final
         } catch {
-            guard !cancelled, !finalizationInterrupted,
-                  ticket == invalidationEpoch,
+            guard !cancelled, ticket == invalidationEpoch,
                   self.generation == generation else { return nil }
+            if processingInterrupted {
+                // finish() can throw while a second call waits. Reset the
+                // decoder before returning, but never expose old text.
+                await reset()
+                return nil
+            }
             let marker = event(.unavailable, generation: generation)
             await reset()
             return marker

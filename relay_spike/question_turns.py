@@ -270,9 +270,16 @@ class QuestionTurnMachine:
                         self.turns.cancel()
                         self._active = None
                 return TurnDecision("pending", "partial_text_not_authoritative")
-            if event.end_ms <= self._last_final_end and prior is None:
+            # Partial events also have a ledger entry: a later-arriving final
+            # from that older partial must not become current after newer
+            # accepted questions. The replay hash alone is not ordering.
+            if (event.end_ms <= self._last_final_end
+                    and (prior is None or prior.status != "final")):
                 return TurnDecision("ignored", "late_final_after_newer_utterance")
             if prior is not None and prior.status == "final":
+                if (self._active is None or
+                        self._active.current_segment_id != event.segment_id):
+                    return TurnDecision("ignored", "superseded_segment_revision")
                 self.turns.cancel()
                 self._active = None
                 self._interrupted = None
@@ -284,6 +291,13 @@ class QuestionTurnMachine:
             self._last_final_end = max(self._last_final_end, event.end_ms)
             if event.intent not in ("question", "correction", "follow_up"):
                 self._interrupted = None
+                if event.intent == "unknown" and self._active is not None:
+                    # An unclassified completed remote utterance may alter
+                    # the previous question; keep it out of live display
+                    # rather than allow an unreviewed stale answer to win.
+                    self.turns.cancel()
+                    self._active = None
+                    return TurnDecision("needs_review", "unclassified_remote_utterance")
                 return TurnDecision("ignored", "no_explicit_question_intent")
             if (event.confidence is not None
                     and event.confidence < MIN_QUESTION_CONFIDENCE):

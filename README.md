@@ -23,6 +23,6 @@
 - [ROLE_PACKS/junior-data-analytics.md](ROLE_PACKS/junior-data-analytics.md)
 
 ## Checks and next step
-Run: python3 EVALS/validate.py, python3 EVALS/verify_docs.py, and python3 -m unittest discover -s tests -v (offline checks only). The minimal experimental CLI is in [relay_spike/](relay_spike/) and the safe local verification procedure is [docs/RUN_LOCAL_SPIKE.md](docs/RUN_LOCAL_SPIKE.md). Slice 01A local feasibility is user-reported successful; next is Slice 01B-A controlled Luna-vs-Sol comparison and compact answer output. See [HANDOFF.md](HANDOFF.md). No separately charged API calls or private data in CI.
+Run: python3 EVALS/validate.py, python3 EVALS/verify_docs.py, and python3 -m unittest discover -s tests -v (offline checks only). The minimal experimental CLI is in [relay_spike/](relay_spike/) and the safe local verification procedure is [docs/RUN_LOCAL_SPIKE.md](docs/RUN_LOCAL_SPIKE.md). Slice 01A local feasibility was user-reported successful. Slice 01B-A introduces concise-response instructions and a dry-run-first Luna-vs-Sol comparison CLI. No new local real-model benchmark has been observed. See [docs/RUN_LOCAL_MODEL_BENCHMARK.md](docs/RUN_LOCAL_MODEL_BENCHMARK.md). See [HANDOFF.md](HANDOFF.md). No separately charged API calls or private data in CI.
 
 Consent and privacy matter: the app will not guarantee undetectability or facilitate undisclosed live assessment help where prohibited.

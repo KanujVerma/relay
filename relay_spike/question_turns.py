@@ -130,16 +130,24 @@ def _parts_hint(text: str) -> tuple[str, ...]:
     return pieces if 2 <= len(pieces) <= 4 else (text,)
 
 
-def _prompt(kind: QuestionIntent, current: str, prior: str | None) -> str:
+def _prompt(kind: QuestionIntent, current: str, prior: str | None,
+            root: str | None) -> str:
     # Not a semantic SQL/constraint merger; preserve source wording as data.
     if kind == "correction":
         if prior is None:
             return "Current interviewer restart (verbatim): " + current
-        return ("Latest interviewer correction (verbatim, authoritative): " + current
-                + "\nSuperseded question (context only, NOT current requirements): " + prior)
+        text = ("Latest interviewer correction (verbatim, authoritative): " + current
+                + "\nSuperseded question (immediately previous accepted wording; "
+                  "use only unchanged parts when explicit): " + prior)
+        if root is not None and root != prior:
+            text += "\nOriginal question (older, superseded context only): " + root
+        return text
     if kind == "follow_up" and prior is not None:
-        return ("Current interviewer follow-up (verbatim): " + current
+        text = ("Current interviewer follow-up (verbatim): " + current
                 + "\nPrevious accepted question (context, not new instructions): " + prior)
+        if root is not None and root != prior:
+            text += "\nOriginal question (earlier context only): " + root
+        return text
     return "Current interviewer question (verbatim): " + current
 
 
@@ -156,6 +164,7 @@ class QuestionTurnMachine:
         self._stopped = False
         self._last_final_end = -1
         self._seen: OrderedDict[str, _Segment] = OrderedDict()
+        self._reopened: set[str] = set()
         self._active: QuestionSnapshot | None = None
         self._interrupted: tuple[str, QuestionSnapshot] | None = None
 
@@ -171,6 +180,7 @@ class QuestionTurnMachine:
             self.turns.cancel()
             self._active = None
             self._interrupted = None
+            self._reopened.clear()
             self._stopped = True
             self._blocked_generation = self._remote_generation
 
@@ -183,6 +193,7 @@ class QuestionTurnMachine:
             self.turns.cancel()
             self._active = None
             self._interrupted = None
+            self._reopened.clear()
             self._stopped = False
             self._remote_generation = None
             self._blocked_generation = None
@@ -193,7 +204,8 @@ class QuestionTurnMachine:
         self._seen[e.segment_id] = _Segment(e.revision, e.status, digest)
         self._seen.move_to_end(e.segment_id)
         if len(self._seen) > MAX_SEEN_SEGMENTS:
-            self._seen.popitem(last=False)
+            evicted, _ = self._seen.popitem(last=False)
+            self._reopened.discard(evicted)
 
     def ingest(self, event: TranscriptEvent) -> TurnDecision:
         """Ready means a tentative, complete remote question can be routed.
@@ -216,6 +228,7 @@ class QuestionTurnMachine:
                 self._active = None
                 self._interrupted = None
                 self._seen.clear()
+                self._reopened.clear()
                 self._last_final_end = -1
                 self._remote_generation = event.stream_generation
                 self._blocked_generation = None
@@ -226,6 +239,7 @@ class QuestionTurnMachine:
                 self._active = None
                 self._interrupted = None
                 self._seen.clear()
+                self._reopened.clear()
                 self._blocked_generation = event.stream_generation
                 return TurnDecision("cancelled", "asr_discontinuity")
 
@@ -241,15 +255,27 @@ class QuestionTurnMachine:
                         self.turns.cancel()
                         self._active = None
                         self._interrupted = None
+                        self._reopened.clear()
                         self._blocked_generation = event.stream_generation
                         return TurnDecision("conflict", "conflicting_segment_revision")
                 if prior.status == "final" and event.status == "partial":
-                    return TurnDecision("ignored", "partial_after_final")
+                    if (self._active is None or
+                            self._active.current_segment_id != event.segment_id):
+                        return TurnDecision("ignored", "superseded_segment_revision")
+                    # A higher revision reopening a finalized segment is
+                    # tentative but makes the prior completed answer unsafe.
+                    self.turns.cancel()
+                    self._active = None
+                    self._interrupted = None
+                    self._remember(event, digest)
+                    self._reopened.add(event.segment_id)
+                    return TurnDecision("pending", "final_reopened_as_partial")
             if event.status == "retracted":
                 self._remember(event, digest)
                 self.turns.cancel()
                 self._active = None
                 self._interrupted = None
+                self._reopened.clear()
                 self._blocked_generation = event.stream_generation
                 return TurnDecision("cancelled", "transcript_retracted")
             if event.status == "partial":
@@ -275,7 +301,17 @@ class QuestionTurnMachine:
             # accepted questions. The replay hash alone is not ordering.
             if (event.end_ms <= self._last_final_end
                     and (prior is None or prior.status != "final")):
+                self._reopened.discard(event.segment_id)
                 return TurnDecision("ignored", "late_final_after_newer_utterance")
+            if event.segment_id in self._reopened:
+                self._reopened.discard(event.segment_id)
+                self._remember(event, digest)
+                self._last_final_end = max(self._last_final_end, event.end_ms)
+                if self._active is not None:
+                    return TurnDecision("ignored", "superseded_segment_revision")
+                # A previously finalized transcript was reopened. Don't
+                # silently re-authorize it on new words or guessed intent.
+                return TurnDecision("needs_review", "final_transcript_revised")
             # Two different remote speakers can overlap in the same output
             # channel. A new question/follow-up whose source time overlaps
             # the prior finalized utterance is not safely ordered. Corrections
@@ -344,10 +380,10 @@ class QuestionTurnMachine:
                 next_version = previous.token.version + 1
                 root_text = previous.root_question
                 root_segment = previous.root_segment_id
-                reference = (root_text if event.intent == "correction"
-                             else previous.current_utterance)
+                reference = previous.current_utterance
             current_text = event.text.strip()
-            prompt = _prompt(event.intent, current_text, reference)
+            root_context = root_text if reference is not None else None
+            prompt = _prompt(event.intent, current_text, reference, root_context)
             if len(prompt) > MAX_CONTEXT_CHARS:
                 self.turns.cancel()
                 self._active = None

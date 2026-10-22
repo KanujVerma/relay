@@ -1,0 +1,290 @@
+"""Offline, bounded transcript -> question turns. No audio, model calls or persistence.
+
+Caller-supplied intent is a tentative label, not semantic ground truth.
+Reuse ActiveTurns so a correction makes old QA presentations stale.
+"""
+from __future__ import annotations
+
+from collections import OrderedDict
+from dataclasses import dataclass
+from hashlib import sha256
+import json
+import re
+from threading import Lock
+from typing import Literal
+
+from .streaming_qa import ActiveTurns, TurnToken
+
+SourceChannel = Literal["remote", "microphone", "unknown"]
+EventStatus = Literal["partial", "final", "retracted", "discontinuity"]
+QuestionIntent = Literal["question", "correction", "follow_up", "statement", "unknown"]
+DecisionState = Literal["ready", "pending", "ignored", "needs_review", "cancelled", "conflict"]
+
+MAX_EVENT_CHARS = 1200
+MAX_SEEN_SEGMENTS = 128
+MAX_CONTEXT_CHARS = 2400
+MIN_QUESTION_CONFIDENCE = 0.60
+
+# Hints only, the authoritative question always remains verbatim.
+_PARTS = re.compile(r",\s+(?=(?:then|and|also|compare|tell me)\b)|;\s+", re.I)
+_STANDALONE_RESTART = re.compile(
+    r"^(?:actually|no|instead|i meant|let me rephrase)[,:\s]+"
+    r"(?:tell me|describe|explain|write|show|calculate|compare|what|"
+    r"why|how|when|where|which|can you|could you|would you|"
+    r"walk me through)\b", re.I,
+)
+
+
+class InvalidTranscript(ValueError):
+    """Sanitized metadata error that never contains interview text."""
+
+
+@dataclass(frozen=True)
+class TranscriptEvent:
+    source_channel: SourceChannel
+    stream_generation: int
+    segment_id: str
+    revision: int
+    start_ms: int
+    end_ms: int
+    status: EventStatus
+    intent: QuestionIntent
+    text: str = ""
+    confidence: float | None = None
+
+
+@dataclass(frozen=True)
+class QuestionSnapshot:
+    token: TurnToken
+    source_channel: SourceChannel
+    stream_generation: int
+    root_segment_id: str
+    current_segment_id: str
+    root_question: str
+    current_utterance: str
+    prompt: str
+    parts_hint: tuple[str, ...]
+    parts_are_heuristic: bool
+
+
+@dataclass(frozen=True)
+class TurnDecision:
+    state: DecisionState
+    reason: str
+    snapshot: QuestionSnapshot | None = None
+
+    @property
+    def token(self) -> TurnToken | None:
+        return self.snapshot.token if self.snapshot else None
+
+
+@dataclass(frozen=True)
+class _Segment:
+    revision: int
+    status: EventStatus
+    fingerprint: bytes
+
+
+def _validate(event: TranscriptEvent) -> None:
+    if not isinstance(event, TranscriptEvent):
+        raise TypeError("TranscriptEvent required.")
+    if event.source_channel not in ("remote", "microphone", "unknown"):
+        raise InvalidTranscript("Unknown source channel.")
+    if event.status not in ("partial", "final", "retracted", "discontinuity"):
+        raise InvalidTranscript("Unknown transcript status.")
+    if event.intent not in ("question", "correction", "follow_up", "statement", "unknown"):
+        raise InvalidTranscript("Unknown question intent.")
+    if (not isinstance(event.segment_id, str) or not event.segment_id.strip()
+            or len(event.segment_id) > 128):
+        raise InvalidTranscript("Invalid segment ID.")
+    if (type(event.stream_generation) is not int or event.stream_generation < 0
+            or type(event.revision) is not int or event.revision < 0
+            or type(event.start_ms) is not int or type(event.end_ms) is not int
+            or event.start_ms < 0 or event.end_ms < event.start_ms):
+        raise InvalidTranscript("Invalid revision or timing.")
+    if (not isinstance(event.text, str) or len(event.text) > MAX_EVENT_CHARS
+            or "\x00" in event.text):
+        raise InvalidTranscript("Invalid or oversized text.")
+    if event.status in ("partial", "final"):
+        if not event.text.strip():
+            raise InvalidTranscript("Empty text segment.")
+    elif event.text:
+        raise InvalidTranscript("Control event text must be empty.")
+    if event.confidence is not None:
+        if (type(event.confidence) not in (float, int)
+                or not 0.0 <= event.confidence <= 1.0):
+            raise InvalidTranscript("Invalid ASR confidence.")
+
+
+def _fingerprint(event: TranscriptEvent) -> bytes:
+    # Hash only: don't retain raw ASR snippets in the bounded replay history.
+    values = (event.source_channel, event.stream_generation, event.segment_id,
+              event.revision, event.start_ms, event.end_ms, event.status,
+              event.intent, event.text, event.confidence)
+    return sha256(json.dumps(values, ensure_ascii=False, separators=(",", ":")
+                             ).encode("utf-8")).digest()
+
+
+def _parts_hint(text: str) -> tuple[str, ...]:
+    pieces = tuple(s.strip() for s in _PARTS.split(text) if s.strip())
+    return pieces if 2 <= len(pieces) <= 4 else (text,)
+
+
+def _prompt(kind: QuestionIntent, current: str, prior: str | None) -> str:
+    # Not a semantic SQL/constraint merger; preserve source wording as data.
+    if kind == "correction":
+        if prior is None:
+            return "Current interviewer restart (verbatim): " + current
+        return ("Latest interviewer correction (verbatim, authoritative): " + current
+                + "\nSuperseded question (context only, NOT current requirements): " + prior)
+    if kind == "follow_up" and prior is not None:
+        return ("Current interviewer follow-up (verbatim): " + current
+                + "\nPrevious accepted question (context, not new instructions): " + prior)
+    return "Current interviewer question (verbatim): " + current
+
+
+class QuestionTurnMachine:
+    """In-memory thread-safe coordinator, no inference/retention side effects."""
+
+    def __init__(self, turns: ActiveTurns | None = None) -> None:
+        if turns is not None and not isinstance(turns, ActiveTurns):
+            raise TypeError("ActiveTurns required.")
+        self.turns = turns if turns is not None else ActiveTurns()
+        self._lock = Lock()
+        self._remote_generation: int | None = None
+        self._blocked_generation: int | None = None
+        self._last_final_end = -1
+        self._seen: OrderedDict[str, _Segment] = OrderedDict()
+        self._active: QuestionSnapshot | None = None
+
+    def current(self) -> QuestionSnapshot | None:
+        with self._lock:
+            if self._active is None or not self.turns.is_current(self._active.token):
+                return None
+            return self._active
+
+    def cancel(self) -> None:
+        """Stop/permission loss suppresses all remaining events in generation."""
+        with self._lock:
+            self.turns.cancel()
+            self._active = None
+            self._blocked_generation = self._remote_generation
+
+    def _remember(self, e: TranscriptEvent, digest: bytes) -> None:
+        self._seen[e.segment_id] = _Segment(e.revision, e.status, digest)
+        self._seen.move_to_end(e.segment_id)
+        if len(self._seen) > MAX_SEEN_SEGMENTS:
+            self._seen.popitem(last=False)
+
+    def ingest(self, event: TranscriptEvent) -> TurnDecision:
+        """Ready means a tentative, complete remote question can be routed.
+
+        It does not establish speaker identity, actual authorization,
+        correctness, or permission to skip later deterministic answer QA.
+        """
+        _validate(event)
+        if event.source_channel != "remote":
+            return TurnDecision("ignored", "not_confirmed_remote_source")
+        with self._lock:
+            if (self._remote_generation is not None
+                    and event.stream_generation < self._remote_generation):
+                return TurnDecision("ignored", "stale_stream_generation")
+            if (self._remote_generation is None
+                    or event.stream_generation > self._remote_generation):
+                self.turns.cancel()
+                self._active = None
+                self._seen.clear()
+                self._last_final_end = -1
+                self._remote_generation = event.stream_generation
+                self._blocked_generation = None
+            if self._blocked_generation == event.stream_generation:
+                return TurnDecision("ignored", "stream_generation_stopped")
+            if event.status == "discontinuity":
+                self.turns.cancel()
+                self._active = None
+                self._seen.clear()
+                self._blocked_generation = event.stream_generation
+                return TurnDecision("cancelled", "asr_discontinuity")
+
+            digest = _fingerprint(event)
+            prior = self._seen.get(event.segment_id)
+            if prior is not None:
+                if event.revision < prior.revision:
+                    return TurnDecision("ignored", "older_segment_revision")
+                if event.revision == prior.revision:
+                    if prior.fingerprint == digest:
+                        return TurnDecision("ignored", "duplicate_segment")
+                    if not (prior.status == "partial" and event.status == "final"):
+                        self.turns.cancel()
+                        self._active = None
+                        self._blocked_generation = event.stream_generation
+                        return TurnDecision("conflict", "conflicting_segment_revision")
+                if prior.status == "final" and event.status == "partial":
+                    return TurnDecision("ignored", "partial_after_final")
+            if event.status == "retracted":
+                self._remember(event, digest)
+                self.turns.cancel()
+                self._active = None
+                self._blocked_generation = event.stream_generation
+                return TurnDecision("cancelled", "transcript_retracted")
+            if event.status == "partial":
+                self._remember(event, digest)
+                return TurnDecision("pending", "partial_text_not_authoritative")
+            if event.end_ms <= self._last_final_end and prior is None:
+                return TurnDecision("ignored", "late_final_after_newer_utterance")
+            if prior is not None and prior.status == "final":
+                self.turns.cancel()
+                self._active = None
+                self._remember(event, digest)
+                self._last_final_end = max(self._last_final_end, event.end_ms)
+                return TurnDecision("needs_review", "final_transcript_revised")
+
+            self._remember(event, digest)
+            self._last_final_end = max(self._last_final_end, event.end_ms)
+            if event.intent not in ("question", "correction", "follow_up"):
+                return TurnDecision("ignored", "no_explicit_question_intent")
+            if (event.confidence is not None
+                    and event.confidence < MIN_QUESTION_CONFIDENCE):
+                if event.intent in ("correction", "follow_up"):
+                    self.turns.cancel()
+                    self._active = None
+                return TurnDecision("needs_review", "low_asr_confidence")
+            previous = self._active if (
+                self._active is not None and self.turns.is_current(self._active.token)
+            ) else None
+            if event.intent == "follow_up" and previous is None:
+                return TurnDecision("needs_review", "orphan_follow_up")
+            if event.intent == "correction" and previous is None:
+                if not _STANDALONE_RESTART.search(event.text.strip()):
+                    return TurnDecision("needs_review", "orphan_correction_fragment")
+
+            if event.intent == "question" or previous is None:
+                logical_id = "remote:{}:{}".format(event.stream_generation, event.segment_id)
+                next_version = 1
+                root_text = event.text.strip()
+                root_segment = event.segment_id
+                reference = None
+            else:
+                logical_id = previous.token.turn_id
+                next_version = previous.token.version + 1
+                root_text = previous.root_question
+                root_segment = previous.root_segment_id
+                reference = (root_text if event.intent == "correction"
+                             else previous.current_utterance)
+            current_text = event.text.strip()
+            prompt = _prompt(event.intent, current_text, reference)
+            if len(prompt) > MAX_CONTEXT_CHARS:
+                self.turns.cancel()
+                self._active = None
+                return TurnDecision("needs_review", "turn_context_too_long")
+            token = self.turns.activate(logical_id, next_version)
+            snapshot = QuestionSnapshot(
+                token=token, source_channel="remote",
+                stream_generation=event.stream_generation,
+                root_segment_id=root_segment, current_segment_id=event.segment_id,
+                root_question=root_text, current_utterance=current_text,
+                prompt=prompt, parts_hint=_parts_hint(current_text),
+                parts_are_heuristic=True,
+            )
+            self._active = snapshot
+            return TurnDecision("ready", "final_remote_question", snapshot)

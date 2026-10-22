@@ -131,6 +131,27 @@ final class LocalASRWorkerTests: XCTestCase {
         XCTAssertTrue(isEmptyResult5.isEmpty)
     }
 
+    func testExplicitCancelRejectsOldQueuedGeneration() async throws {
+        let fake = FakeEou(eouAt: 1)
+        let ring = try OwnedPCMQueue(source: .remoteAudio)
+        let worker = PCMTranscriptWorker(
+            source: .remoteAudio, authorizedCapture: true, backend: fake
+        )
+        let first = await worker.ingest(try packet(ring, generation: 7))
+        XCTAssertTrue(first.isEmpty)
+        await worker.cancel()
+
+        // A producer may still emit late callbacks from generation #7.
+        let late = await worker.ingest(try packet(ring, generation: 7))
+        XCTAssertTrue(late.isEmpty)
+        let fresh = await worker.ingest(try packet(ring, generation: 8))
+        XCTAssertEqual(fresh.map(\.status), [.discontinuity])
+        let onward = await worker.ingest(try packet(ring, generation: 8))
+        XCTAssertTrue(onward.isEmpty)
+        let untrusted = await worker.finishAtStop()
+        XCTAssertNotEqual(untrusted?.streamGeneration, 7)
+    }
+
     func testUnauthorizedAndWrongSourceNeverCallASR() async throws {
         let fake = FakeEou(eouAt: 1)
         let ring = try OwnedPCMQueue(source: .microphone)

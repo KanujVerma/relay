@@ -30,3 +30,6 @@ Consent and privacy matter: the app will not guarantee undetectability or facili
 
 ## Slice 01B-B2 development: one synthetic real-OAuth QA run
 The prototype `live-qa` command uses the current account's authorized ChatGPT-plan OAuth scope, but **does nothing remotely unless `--execute` is passed**. See [docs/RUN_LOCAL_LIVE_QA.md](docs/RUN_LOCAL_LIVE_QA.md). It applies existing deterministic QA to one of two pre-reviewed D02/E09 synthetic questions, never verified personal data, and surfaces only exact allowlisted complete `final_unverified` text. Technically reasonable paraphrases are withheld until a trusted classifier is implemented. No real-user Mac execution, production reliability, first-useful latency, semantic correctness, native audio or session overlay has been validated in this PR.
+
+## OAuth renewal (Slice 01A-R, under review)
+The existing `relay_spike` sign-in still needs `PyJWT[crypto]`. Install it inside your active virtual environment using `python3 -m pip install -r requirements-spike.txt`. Issue [#30](https://github.com/KanujVerma/relay/issues/30) implements near-expiry refresh-token rotation with a protected local inter-process lock, terminal revocation handling, and no API-key fallback. Offline tests do not prove a real Mac OAuth refresh; credentials currently remain in a protected CLI file rather than Keychain.

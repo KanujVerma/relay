@@ -240,6 +240,24 @@ class BrainStoreTests(unittest.TestCase):
             "SELECT state FROM candidate_fact WHERE id=?", (claim,)
         ).fetchone()["state"], "revoked")
 
+    def test_source_revocation_scrubs_superseded_historical_keys(self):
+        sid = self.consented_source()
+        old = self.candidate(sid, "sensitive.project_key", "Initial candidate work.")
+        new = self.candidate(sid, "sensitive.project_key", "Corrected ownership work.")
+        self.brain.confirm_fact(old, confirmation=self.approval())
+        self.brain.confirm_fact(new, confirmation=self.approval(),
+                                replaces_fact_id=old)
+        self.assertEqual(self.brain.verified_claims()[0].fact_id, new)
+        self.brain.revoke_source(sid, confirmation=self.approval())
+        rows = self.brain.db.execute(
+            "SELECT fact_id,claim_key,invalidation_reason FROM verified_fact"
+        ).fetchall()
+        self.assertEqual({r["fact_id"] for r in rows}, {old, new})
+        self.assertTrue(all(r["claim_key"] is None for r in rows))
+        self.assertTrue(all(r["invalidation_reason"] for r in rows))
+        self.assertNotIn("sensitive.project_key",
+                         repr(self.brain.verified_claims()))
+
     def test_history_is_immutable_and_does_not_store_claim_text(self):
         sid = self.consented_source()
         fact = self.candidate(sid, "synthetic.claim", "Private-synthetic-only-text")

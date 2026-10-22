@@ -32,10 +32,13 @@ FIRST_PERSON_TERMS = re.compile(
 # a literal "I" or "we". False negatives are possible: NOT a trust classifier
 # suitable for real interview or Personal Brain text.
 WORK_HISTORY_TERMS = re.compile(
-    r"\b(?:built|developed|designed|created|led|owned|managed|shipped|"
-    r"delivered|interned|internship|graduated|employer|employed|worked|"
-    r"responsible|contributed|coworker|teammate|cofounder|co-founder|"
-    r"portfolio|resume|résumé|career|previous|professional|experience)\b",
+    r"\b(?:built|implemented|developed|designed|created|led|owned|"
+    r"managed|shipped|delivered|interned|internship|graduated|"
+    r"employer|employed|worked|responsible|contributed|coworker|"
+    r"teammate|cofounder|co-founder|portfolio|resume|résumé|"
+    r"career|previous|professional|experience|production|"
+    r"improved|increased|reduced|achieved|launched|optimized|"
+    r"engineer|developer|analyst|consultant|job|role)\b",
     re.IGNORECASE,
 )
 
@@ -47,9 +50,13 @@ def synthetic_nonpersonal_classification(answer: str, category: str) -> str:
     input. Any first-person wording, including quoted or code text, makes the
     output uncertain. This does NOT validate technical answer correctness.
     """
-    if (category not in TECHNICAL_CATEGORIES or not isinstance(answer, str)
-            or not answer.strip() or FIRST_PERSON_TERMS.search(answer)
-            or WORK_HISTORY_TERMS.search(answer)):
+    if category not in TECHNICAL_CATEGORIES or not isinstance(answer, str) or not answer.strip():
+        return "uncertain"
+    # Suspected biography, including implicit/third-person work claims, is
+    # treated as personal and abstains without verified personal source IDs.
+    if WORK_HISTORY_TERMS.search(answer):
+        return "present"
+    if FIRST_PERSON_TERMS.search(answer):
         return "uncertain"
     return "absent"
 

@@ -1,6 +1,6 @@
 # Proposed flows and edge-case contracts
 
-Status: design only. These are instructions for future implementation, not completed code.
+Status: most flows remain design only. Slice 01B-B0 adds an **offline-only deterministic QA gate** under relay_spike/qa.py; it is not connected to live streaming, a UI, audio, or a Personal Brain yet.
 
 ## Personal Brain onboarding
 1. Select current target role and optional job description.
@@ -25,6 +25,13 @@ Status: design only. These are instructions for future implementation, not compl
 6. Ask supported model for concise talking points and optional details; quality-check coverage, unsupported claims and technical constraints.
 7. Stream validated useful content into minimal panel; invalidate stale previous turn when corrected.
 8. On user-permitted retention, capture question/answer/feedback events for learning. Audio retention off by default.
+
+## Offline answer-quality contract, Slice 01B-B0
+- Inputs carry question/fixture identity, role/category, completed response status, answer text, active and candidate turn versions, verified-source IDs, optional conservative multipart indicators and risk flags. All supplied strings are untrusted data, not instructions.
+- Decision is `pass`, `needs_revision`, or `abstain`. **Pass means a deterministic presentation/safety gate succeeded, never that a model answer is factually correct.** Heuristic keyword matches likewise do not prove semantic coverage.
+- Missing/incomplete content, stale versions and absent verified personal context fail closed. Even when personal source IDs exist, they are only pointers and must not certify the claim until a later source-grounding check.
+- Code-first outputs can be warned as harder to scan; overly long/tabled answers need revision. Categories such as coding, multipart, behavioral and caller-marked high-risk SQL may recommend selective deeper QA, **not execute another inference request**.
+- **B1 integration requirement:** re-check that the turn is still active immediately before display. A successful offline check earlier in a stream is not sufficient to display stale material after an interruption. Measure first *useful* validated text, not first nonempty token. Add transparent fallback if second review or account use is unavailable.
 
 ## Required edge cases
 - Overlapping speech, microphone echo, incorrect speaker separation: state uncertainty.

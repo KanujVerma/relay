@@ -99,9 +99,11 @@ public actor PCMTranscriptWorker {
             return []
         }
         var transition: FinalTranscriptEvent?
+        let sequenceChanged = previousSequence.map {
+            frame.sequence != ($0 &+ 1)
+        } ?? false
         if (generation != nil && generation != frame.streamGeneration)
-            || (previousSequence != nil
-                && frame.sequence != previousSequence! &+ 1)
+            || sequenceChanged
             || (sampleRate != nil && sampleRate != frame.sampleRate) {
             // Invalidate incomplete prior audio, but reuse this valid first
             // packet of the new segment instead of discarding it as well.

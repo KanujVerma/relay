@@ -99,6 +99,14 @@ public actor PCMTranscriptWorker {
             return []
         }
         var transition: FinalTranscriptEvent?
+        if let cancelledThroughGeneration,
+           frame.streamGeneration > cancelledThroughGeneration {
+            // A genuinely new callback generation is the sole way back
+            // after an explicit session cancellation. Tell downstream that
+            // prior segment boundaries cannot be joined.
+            self.cancelledThroughGeneration = nil
+            transition = event(.discontinuity, generation: frame.streamGeneration)
+        }
         let sequenceChanged = previousSequence.map {
             frame.sequence != ($0 &+ 1)
         } ?? false

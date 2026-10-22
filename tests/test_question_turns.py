@@ -582,6 +582,57 @@ class TurnSafety(unittest.TestCase):
         self.assertFalse(self.machine.turns.is_current(first.token))
         self.assertIsNone(self.machine.current())
 
+    def test_retracted_root_invalidates_partial_correction_dependency(self):
+        initial = self.machine.ingest(remote(
+            "root", "List five customers by revenue.",
+            start_ms=0, end_ms=200,
+        ))
+        partial = self.machine.ingest(remote(
+            "pending-correction", "No, list five by",
+            intent="correction", status="partial",
+            start_ms=220, end_ms=280,
+        ))
+        self.assertEqual(partial.state, "pending")
+        self.assertFalse(self.machine.turns.is_current(initial.token))
+        retracted = self.machine.ingest(remote(
+            "root", "", revision=2, status="retracted",
+            intent="unknown", start_ms=0, end_ms=310,
+        ))
+        self.assertEqual(retracted.state, "cancelled")
+        self.assertEqual(retracted.reason, "transcript_retracted")
+        for revision in (1, 2):
+            with self.subTest(revision=revision):
+                completed = self.machine.ingest(remote(
+                    "pending-correction", "No, list five by distinct orders.",
+                    intent="correction", status="final", revision=revision,
+                    start_ms=220, end_ms=520,
+                ))
+                self.assertEqual(completed.state, "needs_review")
+                self.assertEqual(completed.reason, "pending_context_retracted")
+                self.assertIsNone(self.machine.current())
+        # A segment-level retraction must not disable the whole stream.
+        fresh = self.machine.ingest(remote(
+            "new-unrelated", "Explain a database index.",
+            intent="question", start_ms=600, end_ms=900,
+        ))
+        self.assertEqual(fresh.state, "ready")
+
+    def test_retraction_current_question_allows_later_same_generation(self):
+        first = self.machine.ingest(remote(
+            "first", "Explain query planning.", end_ms=200,
+        ))
+        retracted = self.machine.ingest(remote(
+            "first", "", status="retracted", revision=2,
+            intent="unknown", start_ms=0, end_ms=250,
+        ))
+        self.assertEqual(retracted.state, "cancelled")
+        self.assertFalse(self.machine.turns.is_current(first.token))
+        subsequent = self.machine.ingest(remote(
+            "next", "Explain database normalization.",
+            intent="question", start_ms=300, end_ms=650,
+        ))
+        self.assertEqual(subsequent.state, "ready")
+
     def test_explicit_stop_blocks_any_generation_until_explicit_resume(self):
         first = self.machine.ingest(remote(
             "old", "Explain arrays.", end_ms=100

@@ -1,4 +1,4 @@
-name: macOS audio spike compile and ring tests
+name: macOS audio spike build and synthetic PCM tests
 
 on:
   pull_request:
@@ -10,20 +10,34 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: macos-audio-${{ github.ref }}
+  cancel-in-progress: true
+
 # Hosted macOS runners are expensive once Relay becomes private.
 # This check is intentionally enabled only while the repository is public.
 jobs:
   swift-audio-tests:
     if: ${{ !github.event.repository.private }}
-    runs-on: macos-15
+    # Use the separate standard Intel pool for noninteractive API/Swift checks.
+    # Real-time performance and permission still require the owner's M2 Pro.
+    runs-on: macos-15-intel
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - name: Show Swift toolchain
         run: swift --version
-      - name: Compile microphone-only spike and run ring tests
+      - name: Compile selected-app tap and run synthetic PCM tests
         run: swift test --package-path spikes/macos-audio
       - name: Verify zero-permission default invocation
         run: swift run --package-path spikes/macos-audio relay-audio-spike
-      - name: Build bundled app with microphone purpose description (no capture)
-        run: bash spikes/macos-audio/scripts/build-mic-app.sh
+      - name: Build bundled app with both audio purpose descriptions (no capture)
+        run: |
+          bash spikes/macos-audio/scripts/build-mic-app.sh
+          APP="$(swift build -c debug --package-path spikes/macos-audio --show-bin-path)/RelayAudioSpike.app"
+          plutil -extract NSMicrophoneUsageDescription raw -o - "$APP/Contents/Info.plist"
+          plutil -extract NSAudioCaptureUsageDescription raw -o - "$APP/Contents/Info.plist"
+      - name: Reject invalid selected-app ID without requesting audio
+        run: |
+          APP="$(swift build -c debug --package-path spikes/macos-audio --show-bin-path)/RelayAudioSpike.app"
+          "$APP/Contents/MacOS/relay-audio-spike" --system-app '*' --seconds 1

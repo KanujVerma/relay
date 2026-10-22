@@ -20,6 +20,12 @@ let package = Package(
             name: "RelayAudioBuffer",
             dependencies: [
                 .product(name: "TPCircularBuffer", package: "TPCircularBuffer")
+            ],
+            linkerSettings: [
+                .linkedFramework("CoreAudio"),
+                .linkedFramework("AudioToolbox"),
+                .linkedFramework("AVFoundation"),
+                .linkedFramework("AppKit")
             ]
         ),
         .executableTarget(

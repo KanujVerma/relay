@@ -111,6 +111,55 @@ public final class OwnedPCMQueue: @unchecked Sendable {
         return true
     }
 
+    /// Core Audio may deliver interleaved Float32 instead of two planar
+    /// channels. Preserve its contiguous bytes without allocating in the IOProc.
+    /// Exactly one producer is permitted on this queue.
+    @discardableResult
+    public func enqueueInterleaved(
+        samples: UnsafePointer<Float>,
+        frames: Int,
+        channels: Int,
+        sampleRate: Double,
+        hostTime: UInt64,
+        streamGeneration: UInt64
+    ) -> Bool {
+        nextSequence &+= 1
+        guard frames > 0, frames <= maximumFrames,
+              (1...2).contains(channels),
+              sampleRate.isFinite, sampleRate > 0 else {
+            return false
+        }
+        let sampleCount = frames * channels
+        let occupied = PacketHeader.bytes + sampleCount * MemoryLayout<Float>.stride
+        let aligned = (occupied + 7) & ~7
+        guard aligned <= Int(UInt32.max) else { return false }
+        var available: UInt32 = 0
+        guard let head = TPCircularBufferHead(storage, &available),
+              available >= UInt32(aligned) else {
+            return false
+        }
+        var packet = PacketHeader(
+            magic: PacketHeader.magicConstant,
+            totalBytes: UInt32(aligned),
+            sequence: nextSequence,
+            hostTime: hostTime,
+            generation: streamGeneration,
+            sampleRate: sampleRate,
+            sourceCode: source.rawValue,
+            channelCount: UInt32(channels),
+            frameCount: UInt32(frames),
+            reserved: 0
+        )
+        withUnsafeBytes(of: &packet) { bytes in
+            head.copyMemory(from: bytes.baseAddress!, byteCount: PacketHeader.bytes)
+        }
+        head.advanced(by: PacketHeader.bytes)
+            .assumingMemoryBound(to: Float.self)
+            .update(from: samples, count: sampleCount)
+        TPCircularBufferProduce(storage, UInt32(aligned))
+        return true
+    }
+
     /// Consumer-only. The returned array owns its samples and remains valid
     /// after the circular buffer slot has been reused by future callbacks.
     /// Allocation is safe here because this MUST NOT run on the capture thread.

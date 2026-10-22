@@ -1,7 +1,6 @@
 """Slice 01B-B0 offline QA safeguards, all data intentionally synthetic."""
 from __future__ import annotations
 
-from dataclasses import replace
 import unittest
 
 from relay_spike.qa import QAInput, CoverageIndicator, assess
@@ -72,6 +71,24 @@ class GatingTests(unittest.TestCase):
     def test_personal_attribution_flag_takes_precedence_over_general_category(self):
         req = example("D02", risk_flags=("personal_claim",))
         self.assertEqual(assess(req).status, "abstain")
+
+    def test_technical_answer_with_fabricated_first_person_work_claim_fails_closed(self):
+        out = assess(example(
+            "D01", "sql",
+            answer=("A join can duplicate order-level revenue. I implemented "
+                    "this reporting system at my company and improved revenue by 70%.")
+        ))
+        self.assertEqual(out.status, "abstain")
+        self.assertIn("missing_verified_personal_context", out.reasons)
+        self.assertIn("possible_first_person_work_claim_heuristic", out.warnings)
+        self.assertFalse(out.second_review_recommended)
+
+        # Generic explanatory first person is not, by itself, an asserted job fact.
+        generic = assess(example(
+            "D02", "sql",
+            answer="I would apply WHERE to source rows, and HAVING after aggregation."
+        ))
+        self.assertEqual(generic.status, "pass")
 
     def test_multi_part_e04_heuristic_flags_missing_collision_or_worst_case(self):
         indicators = (

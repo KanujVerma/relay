@@ -1,9 +1,16 @@
-name: Slice 00 contract fixtures
+name: Contract and documentation checks
 
 on:
   pull_request:
     paths:
       - 'EVALS/**'
+      - 'docs/**'
+      - 'AGENTS.md'
+      - 'README.md'
+      - 'HANDOFF.md'
+      - 'PRODUCT.md'
+      - 'ARCHITECTURE.md'
+      - 'ROLE_PACKS/**'
       - '.github/workflows/contract.yml'
   push:
     branches: [main]
@@ -27,3 +34,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate fixture schema and coverage
         run: python3 EVALS/validate.py
+      - name: Validate documentation and local links
+        run: python3 EVALS/verify_docs.py

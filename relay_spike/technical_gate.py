@@ -41,7 +41,7 @@ complexity discard discards divide divided dividing divides extra half halves ha
 halving iterative iteratively iteration iterations log logarithmic loop middle
 midpoint n o ordered order search searching searches sorted sort target worst
 case memory range remaining reduces reduce reduced split splits stack
-implementation implements left right size repeatedly
+implementation implements left right size repeatedly 1
 """.split())
 
 _SAFE_RENDER: dict[str, str] = {
@@ -118,6 +118,20 @@ def _review_e09(text: str, words: tuple[str, ...]) -> bool:
     if not (
         re.search(r"\bo\s*\(\s*1\s*\)", text)
         or re.search(r"\bconstant\b.{0,40}\b(?:space|memory)\b", text)
+    ):
+        return False
+    # Bind the complexity to the relevant quantity, not just words nearby.
+    # A reversed O(1)-time/O(log n)-space claim is not an acceptable answer.
+    if re.search(
+        r"\bo\s*\(\s*1\s*\)\s*(?:time|complexity)\b"
+        r"|\btime(?:\s+complexity)?\s+(?:is|of|:)\s*o\s*\(\s*1\s*\)",
+        text,
+    ):
+        return False
+    if re.search(
+        r"\bo\s*\(\s*log\s*n\s*\)\s*(?:auxiliary|extra)?\s*(?:space|memory)\b"
+        r"|\b(?:space|memory)(?:\s+complexity)?\s+(?:is|of|:)\s*o\s*\(\s*log\s*n\s*\)",
+        text,
     ):
         return False
     if "time" not in vocabulary or not vocabulary.intersection({"space", "auxiliary"}):

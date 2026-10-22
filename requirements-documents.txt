@@ -1,0 +1,3 @@
+markitdown[pdf,docx]==0.1.9
+docling-slim[format-pdf,format-docx]==2.142.0
+python-docx==1.2.0

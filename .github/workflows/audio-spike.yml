@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: macos-audio-${{ github.ref }}
+  cancel-in-progress: true
+
 # Hosted macOS runners are expensive once Relay becomes private.
 # This check is intentionally enabled only while the repository is public.
 jobs:

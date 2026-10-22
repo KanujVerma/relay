@@ -75,8 +75,8 @@ class PlanTests(unittest.TestCase):
         self.assertTrue(rows[0]["under_word_ceiling"])
         result = benchmark.summary(rows)
         self.assertEqual(result["gpt-6-luna / default"]["median_total_ms"], 700)
-        self.assertTrue(result["gpt-6-luna"]["p95_not_reported"])
-        self.assertIsNone(result["gpt-6-luna"]["p95_total_ms"])
+        self.assertTrue(result["gpt-6-luna / default"]["p95_not_reported"])
+        self.assertIsNone(result["gpt-6-luna / default"]["p95_total_ms"])
 
     def test_failed_stream_does_not_get_quality_score(self):
         with self.assertRaises(benchmark.BenchmarkError):

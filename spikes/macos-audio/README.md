@@ -1,6 +1,6 @@
-# Relay audio spike 03A-1A: owned PCM bridge + microphone
+# Relay audio spike 03A-1A/1B: owned PCM, microphone, selected-app output
 
-**Status: experimental.** This is only the microphone half of the proposed macOS audio pipeline. It is NOT a finished interview application and cannot capture Zoom remote audio or transcribe speech yet.
+**Status: experimental, permission tests pending on actual Mac.** The Swift package now has an in-memory, consent-driven microphone path and a Core Audio tap for an *explicitly selected app*'s output. No streaming transcription, Zoom integration, speaker identification, interview UI, or true end-to-end latency measurements exist yet. Neither a successful build nor a started system tap proves capture authorization.
 
 ## Why this design?
 Relay's permitted live sessions need reliable local mic vs remote streams, low memory overhead on a 16 GB M2 Pro, and no default audio recording. The open-source [SystemAudioKit](https://github.com/pieralukasz/SystemAudioKit) has good capture/permission/device patterns, but its public recorder writes aligned WAV files rather than publishing owned live PCM chunks.
@@ -53,3 +53,36 @@ This PR adds isolated queue and oversized-callback tests, a non-interactive bund
 Expected local test results to report (sanitized): macOS/Swift version, `swift test` outcome, whether explicit mic permission succeeded, 5-second packet count, any observed drops, and peak RSS/CPU if measured. No raw audio, transcripts, account credentials or callback URLs.
 
 Next narrow slice of [Issue #22](https://github.com/KanujVerma/relay/issues/22): selected-app Core Audio process tap producing **its own** bounded ring, then optional FluidAudio Parakeet EOU on a worker with measured timing. Review [the audio research](../../docs/research/MAC_AUDIO_STACK.md) before changing that boundary. Stay separate from Issues #21 and #23.
+
+## Selected-app output smoke test, 03A-1B (Mac only)
+
+Build a local app bundle with **both** `NSMicrophoneUsageDescription` and `NSAudioCaptureUsageDescription`, no permission request during the build. **Only run the bundled executable** for system-audio consent:
+
+```bash
+cd spikes/macos-audio
+swift test
+bash scripts/build-mic-app.sh
+BIN_DIR="$(swift build -c debug --show-bin-path)"
+APP="$BIN_DIR/RelayAudioSpike.app/Contents/MacOS/relay-audio-spike"
+
+# No recording, permission prompt, or inference:
+"$APP"
+"$APP" --list-audio-apps
+
+# Start an app that is actually playing synthetic/consented audio.
+# Pick its exact bundle ID from --list-audio-apps, then explicitly request
+# ONLY that selected app for up to 5 seconds:
+"$APP" --system-app us.zoom.xos --seconds 5 --expect-audible
+```
+
+The `us.zoom.xos` value is an **example**, not a promise that it matches every Zoom build. You must choose from available audio bundle IDs. A browser ID (e.g. `com.google.Chrome`) can capture audio from **all that browser's tabs**, not just a Google Meet call. This is a user-selected *application output channel*, not voice diarization.
+
+**macOS permission and error behavior:** Apple's public Core Audio process tap can prompt for "System Audio Recording Only" when the aggregate device starts. The program never calls private TCC APIs and never falls back silently to all-system capture or broader Screen Recording. Taps denied permission may still start and deliver exactly zeroed buffers. `signal=unverified_or_silent` is **not** proof that the app is quiet or permission was granted. Try `--expect-audible` with a deliberately audible source, inspect System Settings → Privacy & Security → Screen & System Audio Recording, and record that result locally. `signal=nonzero_samples_observed` only reports real PCM amplitude, not permission metadata or interviewer identity.
+
+**Lifecycle:** Core Audio process IDs for the selected app and its helper processes are resolved from the public process object list. On default output device changes or process-list changes, the tap is torn down and recreated **only for the same selected app**; if no matching process remains, capture reports unavailable. Actual Bluetooth switching, helper respawns, app quitting, denied consent, macOS TCC prompts, and concurrency need Mac smoke tests before this can be called reliable.
+
+The process tap uses the **same pinned TPCircularBuffer** as the microphone. It accepts Float32 interleaved or planar mono/stereo, copies source bytes to owned packets inside the audio callback, and splits oversized buffers. It does not write WAV files or call transcription/ChatGPT models. Only the worker drains packets for aggregate amplitude and observed packet gaps; no raw audio reaches GitHub or app logs.
+
+**Local validation gate:** Test `--system-app` with a known audible, consented source, denial/revocation, muted/quiet source, selected-app quit/relaunch, output switching including Bluetooth headphones, and simultaneous microphone if desired in a later slice. Report only the chosen bundle name, macOS/Swift version, capture status, counts, signal amplitude/nonzero status, drop indicators, and whether the separate test was consented. Do not share actual meeting content or transcripts.
+
+**Next:** Local FluidAudio EOU transcription in a separate 03A-1C slice, after confirming that selected-app PCM capture works on the 16 GB M2 Pro. This is not a stealth recording tool; only use it where capture and AI assistance are permitted.

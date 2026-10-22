@@ -287,6 +287,20 @@ class TurnSafety(unittest.TestCase):
         self.assertEqual(revised.reason, "superseded_segment_revision")
         self.assertEqual(self.machine.current().token, latest.token)
 
+    def test_overlapping_remote_final_questions_do_not_assume_same_speaker(self):
+        first = self.machine.ingest(remote(
+            "interviewer-a", "Explain a hash join.",
+            start_ms=0, end_ms=600,
+        ))
+        overlap = self.machine.ingest(remote(
+            "interviewer-unknown", "Explain merge joins instead.",
+            intent="question", start_ms=500, end_ms=880,
+        ))
+        self.assertEqual(overlap.state, "needs_review")
+        self.assertEqual(overlap.reason, "overlapping_remote_utterances")
+        self.assertFalse(self.machine.turns.is_current(first.token))
+        self.assertIsNone(self.machine.current())
+
     def test_unclassified_remote_final_cancels_previous_answer(self):
         initial = self.machine.ingest(remote(
             "q", "Explain database indexes.", end_ms=350,

@@ -309,6 +309,42 @@ class TurnSafety(unittest.TestCase):
         self.assertEqual(revised.reason, "final_transcript_revised")
         self.assertIsNone(self.machine.current())
 
+    def test_stale_retraction_preserves_reopened_segment_quarantine(self):
+        self.machine.ingest(remote(
+            "old", "Explain a hash table.",
+            start_ms=0, end_ms=200,
+        ))
+        reopen_target = remote(
+            "reopened", "Explain a B-tree.",
+            start_ms=300, end_ms=500,
+        )
+        current = self.machine.ingest(reopen_target)
+        self.assertEqual(current.state, "ready")
+        reopened = self.machine.ingest(replace(
+            reopen_target, revision=2, status="partial",
+            text="Explain a B",
+        ))
+        self.assertEqual(reopened.reason, "final_reopened_as_partial")
+        self.assertFalse(self.machine.turns.is_current(current.token))
+        self.assertIn("reopened", self.machine._reopened)
+        stale = self.machine.ingest(remote(
+            "old", "", revision=2, status="retracted",
+            intent="unknown", start_ms=0, end_ms=700,
+        ))
+        self.assertEqual(stale.reason, "superseded_segment_retraction")
+        self.assertIn("reopened", self.machine._reopened)
+        newest = self.machine.ingest(remote(
+            "newest", "Explain a B+ tree.",
+            intent="question", start_ms=750, end_ms=1000,
+        ))
+        self.assertEqual(newest.state, "ready")
+        delayed_final = self.machine.ingest(replace(
+            reopen_target, revision=3,
+            text="Explain a binary search tree.", end_ms=1250,
+        ))
+        self.assertEqual(delayed_final.reason, "superseded_segment_revision")
+        self.assertEqual(self.machine.current().token, newest.token)
+
     def test_retraction_of_evicted_old_segment_cannot_cancel_current(self):
         old = self.machine.ingest(remote(
             "first", "Explain a hash table.",
@@ -407,6 +443,35 @@ class TurnSafety(unittest.TestCase):
         self.assertEqual(unclear.state, "needs_review")
         self.assertEqual(unclear.reason, "overlapping_pending_utterances")
         self.assertIsNone(self.machine.current())
+
+    def test_abandoned_correction_final_cannot_override_newer_complete_question(self):
+        self.machine.ingest(remote(
+            "root", "List five customers by revenue.",
+            start_ms=0, end_ms=100,
+        ))
+        self.assertEqual(self.machine.ingest(remote(
+            "abandoned-correction", "No, list five by",
+            intent="correction", status="partial",
+            start_ms=150, end_ms=200,
+        )).state, "pending")
+        latest = self.machine.ingest(remote(
+            "new-question", "Explain database indexing.",
+            intent="question", status="final",
+            start_ms=230, end_ms=420,
+        ))
+        self.assertEqual(latest.state, "ready")
+        # The old correction extends beyond the new complete question.
+        # End-time-only ordering would accidentally route it as version 2.
+        delayed = self.machine.ingest(remote(
+            "abandoned-correction", "No, list five by distinct orders.",
+            intent="correction", status="final",
+            start_ms=150, end_ms=650,
+        ))
+        self.assertEqual(delayed.state, "ignored")
+        self.assertEqual(delayed.reason, "superseded_source_start")
+        self.assertEqual(self.machine.current().token, latest.token)
+        self.assertEqual(latest.token.version, 1)
+        self.assertNotIn("distinct orders", self.machine.current().prompt)
 
     def test_newer_partial_correction_retains_context_after_prior_partial(self):
         original = self.machine.ingest(remote(

@@ -14,11 +14,13 @@ Model transport passed; no actual talking point was published.
 ## Chosen narrow trust boundary
 
 - Reuse the existing synthetic D02 SQL and E09 coding fixture topics.
-- Accept small variations of model phrasing only when a CLOSED technical
-  vocabulary and reviewed proposition rules pass. For D02 the candidate needs
-  WHERE+row filtering and HAVING+group filtering in noncontradictory order. For
-  E09 it needs sorted input, halving, logarithmic time and constant auxiliary
-  space for an *iterative* algorithm.
+- Accept limited phrasing variations only through **full-span reviewed
+  grammatical templates**, composed from pre-reviewed D02 WHERE/row and
+  HAVING/group explanations or E09 sorted/halving and iterative time/space
+  explanations. The entire candidate must match an approved grammar, not just
+  contain the expected technical keywords somewhere. A closed technical
+  vocabulary is an additional safety check, never sufficient to permit
+  publication.
 - Reject EVERY unknown token or unsupported punctuation, including named,
   third-person or implied work history, fabricated achievements, Unicode
   confusables, instructions, incorrect and incomplete answers.
@@ -30,18 +32,20 @@ Model transport passed; no actual talking point was published.
   experience, or a future response is accurate. Keyword/proposition matching
   can miss semantic negation, and the closed vocabulary sacrifices coverage.
 
-The rules also reject extra SQL sentences not scoped to WHERE/HAVING, and
-unreviewed asymptotic expressions even if expected complexity facts are also
-present. A complete pass requires every reviewed positive fixture to pass;
-accepting most positives is not enough. This is a finite adversarial suite,
-not a general logical entailment engine.
+The complete-message templates reject added SQL back-references,
+semantic negations, extra group filtering claims, swapped or qualified time
+bounds and every unreviewed complexity expression. The test suite also checks
+new combinations of approved subphrases that are NOT whole-string copies of
+fixture answers. A complete pass requires every reviewed positive fixture and
+zero reviewed negative fixtures to pass. This is a finite synthetic grammar,
+not a general natural-language entailment engine.
 
 The original B2 whole-answer exact match path remains untouched. No
 authentication, model usage, stream, UI, audio or personal memory calls occur.
 
 ## Fixed evidence gate
 
-Hand-authored file: EVALS/technical-answer-gate.jsonl (18 approved, 38 withheld cases). Includes varied positive
+Hand-authored file: EVALS/technical-answer-gate.jsonl (18 approved, 40 withheld cases). Includes varied positive
 paraphrases and adversarial negatives, including unsupported career claims,
 wrong clause ordering/complexities, prompt injection and Unicode confusables.
 

@@ -224,21 +224,51 @@ class BrainStoreTests(unittest.TestCase):
         with self.assertRaises(InvalidState):
             self.brain.grant_consent(sid, confirmation=self.approval())
 
-    def test_revoking_experience_source_invalidates_cross_source_claim(self):
+    def test_revoking_experience_source_redacts_all_cross_source_dependencies(self):
         primary = self.consented_source(ref="synthetic/context")
         secondary = self.consented_source(ref="synthetic/other")
         exp = self.brain.add_experience(source_id=primary, label="Project scope")
-        claim = self.candidate(
-            secondary, "cross.source", "My synthetic project contribution.",
+        superseded = self.candidate(
+            secondary, "cross.source", "Initial private project claim.",
             experience=exp
         )
-        self.brain.confirm_fact(claim, confirmation=self.approval())
+        active = self.candidate(
+            secondary, "cross.source", "Updated private project claim.",
+            experience=exp
+        )
+        pending = self.candidate(
+            secondary, "cross.pending", "Pending private draft.",
+            experience=exp
+        )
+        self.brain.confirm_fact(superseded, confirmation=self.approval())
+        self.brain.confirm_fact(active, confirmation=self.approval(),
+                                replaces_fact_id=superseded)
         self.assertEqual(len(self.brain.verified_claims()), 1)
         self.brain.revoke_source(primary, confirmation=self.approval())
         self.assertEqual(self.brain.verified_claims(), ())
-        self.assertEqual(self.brain.db.execute(
-            "SELECT state FROM candidate_fact WHERE id=?", (claim,)
-        ).fetchone()["state"], "revoked")
+        for fact in (superseded, active, pending):
+            row = self.brain.db.execute(
+                "SELECT state,claim_text,claim_key FROM candidate_fact WHERE id=?",
+                (fact,),
+            ).fetchone()
+            self.assertEqual(row["state"], "revoked")
+            self.assertIsNone(row["claim_text"])
+            self.assertIsNone(row["claim_key"])
+        historical = self.brain.db.execute(
+            "SELECT claim_key FROM verified_fact WHERE fact_id IN (?,?)",
+            (superseded, active),
+        ).fetchall()
+        self.assertEqual(len(historical), 2)
+        self.assertTrue(all(row["claim_key"] is None for row in historical))
+        # The secondary source remains valid for unrelated new experiences.
+        self.assertEqual(
+            self.brain.db.execute(
+                "SELECT consent_scope FROM source WHERE id=?", (secondary,)
+            ).fetchone()["consent_scope"], "personal_brain"
+        )
+        self.assertGreaterEqual(
+            [e.action for e in self.brain.history()].count("source_invalidated"), 3
+        )
 
     def test_source_revocation_scrubs_superseded_historical_keys(self):
         sid = self.consented_source()

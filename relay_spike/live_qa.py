@@ -28,6 +28,16 @@ TECHNICAL_CATEGORIES = frozenset({
 FIRST_PERSON_TERMS = re.compile(
     r"\b(?:i|me|my|mine|myself|we|us|our|ours|ourselves)\b", re.IGNORECASE
 )
+# Implicit-subject résumé claims need a conservative veto even without
+# a literal "I" or "we". False negatives are possible: NOT a trust classifier
+# suitable for real interview or Personal Brain text.
+WORK_HISTORY_TERMS = re.compile(
+    r"\b(?:built|developed|designed|created|led|owned|managed|shipped|"
+    r"delivered|interned|internship|graduated|employer|employed|worked|"
+    r"responsible|contributed|coworker|teammate|cofounder|co-founder|"
+    r"portfolio|resume|résumé|career|previous|professional|experience)\b",
+    re.IGNORECASE,
+)
 
 
 def synthetic_nonpersonal_classification(answer: str, category: str) -> str:
@@ -38,7 +48,8 @@ def synthetic_nonpersonal_classification(answer: str, category: str) -> str:
     output uncertain. This does NOT validate technical answer correctness.
     """
     if (category not in TECHNICAL_CATEGORIES or not isinstance(answer, str)
-            or not answer.strip() or FIRST_PERSON_TERMS.search(answer)):
+            or not answer.strip() or FIRST_PERSON_TERMS.search(answer)
+            or WORK_HISTORY_TERMS.search(answer)):
         return "uncertain"
     return "absent"
 

@@ -22,6 +22,7 @@ public enum SelectedAppTapState: String, Sendable {
 public final class SelectedAppProcessTap: @unchecked Sendable {
     private let audioQueue: OwnedPCMQueue
     private let control = DispatchQueue(label: "Relay.SelectedAppTap.control")
+    private let controlKey = DispatchSpecificKey<UInt8>()
     private let callbacks = DispatchQueue(
         label: "Relay.SelectedAppTap.callbacks", qos: .userInitiated
     )
@@ -42,10 +43,20 @@ public final class SelectedAppProcessTap: @unchecked Sendable {
 
     public init(queue: OwnedPCMQueue) {
         audioQueue = queue
+        control.setSpecific(key: controlKey, value: 1)
+    }
+
+    private func onControl<T>(_ action: () throws -> T) rethrows -> T {
+        // A listener callback may hold the final strong reference on the
+        // control queue. Avoid sync-to-self deadlock during deinit/stop.
+        if DispatchQueue.getSpecific(key: controlKey) != nil {
+            return try action()
+        }
+        return try control.sync(execute: action)
     }
 
     public var status: SelectedAppTapState {
-        control.sync { currentState }
+        onControl { currentState }
     }
 
     /// The caller must have explicitly requested a specific app and consented
@@ -55,7 +66,7 @@ public final class SelectedAppProcessTap: @unchecked Sendable {
     /// receiving zeroed buffers is NOT proof of authorization.
     @discardableResult
     public func start(bundleID: String) throws -> UInt64 {
-        try control.sync {
+        try onControl {
             guard desiredBundle == nil else {
                 throw ProcessTapError.alreadyCapturing
             }
@@ -89,7 +100,7 @@ public final class SelectedAppProcessTap: @unchecked Sendable {
     }
 
     public func stop() {
-        control.sync {
+        onControl {
             desiredBundle = nil
             removeListeners()
             teardown()

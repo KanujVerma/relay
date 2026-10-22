@@ -35,7 +35,7 @@ authentication, model usage, stream, UI, audio or personal memory calls occur.
 
 ## Fixed evidence gate
 
-Hand-authored file: EVALS/technical-answer-gate.jsonl. Includes varied positive
+Hand-authored file: EVALS/technical-answer-gate.jsonl (18 approved, 26 withheld cases). Includes varied positive
 paraphrases and adversarial negatives, including unsupported career claims,
 wrong clause ordering/complexities, prompt injection and Unicode confusables.
 

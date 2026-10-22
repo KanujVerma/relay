@@ -119,6 +119,7 @@ public actor PCMTranscriptWorker {
             transition = event(.discontinuity, generation: frame.streamGeneration)
         }
 
+        let operationEpoch = invalidationEpoch
         do {
             let samples = try converter.mono(frame)
             if generation == nil { generation = frame.streamGeneration }
@@ -136,7 +137,7 @@ public actor PCMTranscriptWorker {
             }
             pendingMono.append(contentsOf: samples)
             let window = max(1, Int(frame.sampleRate * windowSeconds))
-            let ticket = invalidationEpoch
+            let ticket = operationEpoch
             var finals: [FinalTranscriptEvent] = transition.map { [$0] } ?? []
             while pendingMono.count >= window {
                 let piece = Array(pendingMono.prefix(window))
@@ -158,6 +159,11 @@ public actor PCMTranscriptWorker {
             }
             return finals
         } catch {
+            // An older backend request may fail only AFTER cancellation or
+            // a newer generation has activated. Never erase that newer state.
+            guard !cancelled, operationEpoch == invalidationEpoch,
+                  generation == nil || generation == frame.streamGeneration
+            else { return [] }
             let marker = event(.unavailable, generation: frame.streamGeneration)
             await reset()
             return [marker]
@@ -173,8 +179,8 @@ public actor PCMTranscriptWorker {
             await reset()
             return nil
         }
+        let ticket = invalidationEpoch
         do {
-            let ticket = invalidationEpoch
             guard utteranceFrames > 0 else {
                 await reset()
                 return nil
@@ -196,6 +202,8 @@ public actor PCMTranscriptWorker {
             }
             return await finalize(generation: generation, ticket: ticket)
         } catch {
+            guard !cancelled, ticket == invalidationEpoch,
+                  self.generation == generation else { return nil }
             let marker = event(.unavailable, generation: generation)
             await reset()
             return marker
@@ -229,6 +237,8 @@ public actor PCMTranscriptWorker {
             endHostTime = nil
             return final
         } catch {
+            guard !cancelled, ticket == invalidationEpoch,
+                  self.generation == generation else { return nil }
             let marker = event(.unavailable, generation: generation)
             await reset()
             return marker

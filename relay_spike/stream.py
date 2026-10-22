@@ -117,7 +117,8 @@ def sse_events(byte_lines):
 
 
 def consume_stream(byte_lines, *, started: float, clock=time.monotonic,
-                   on_delta=None, should_continue=None) -> dict:
+                   on_delta=None, should_continue=None,
+                   strict_replay: bool = False) -> dict:
     first_output = None
     completed = False
     count = 0
@@ -132,6 +133,11 @@ def consume_stream(byte_lines, *, started: float, clock=time.monotonic,
         if should_continue is not None and not should_continue():
             raise StreamError("Stream was superseded.")
         sequence = event.get("sequence_number")
+        # This is opt-in for the canonical-card path only. Numberless
+        # response frames cannot be ordered or replay-checked reliably,
+        # so they must fail closed rather than silently bypass strict mode.
+        if strict_replay and sequence is None:
+            raise StreamError("Missing SSE sequence number in strict mode.")
         if sequence is not None:
             if type(sequence) is not int or sequence < 0:
                 raise StreamError("Invalid SSE sequence number.")
@@ -144,7 +150,9 @@ def consume_stream(byte_lines, *, started: float, clock=time.monotonic,
             if sequence == last_sequence:
                 if digest != last_digest:
                     raise StreamError("Conflicting duplicate SSE event.")
-                continue  # Exact adjacent replay, not another text fragment.
+                if strict_replay:
+                    raise StreamError("Adjacent SSE replay rejected in strict mode.")
+                continue  # Legacy infer/benchmark tolerate an exact adjacent replay.
             last_sequence, last_digest = sequence, digest
         typ = event.get("type") or event_type
         if typ == "response.output_text.delta":

@@ -6,9 +6,10 @@ import json
 import sys
 
 from .auth import AuthError, active_access_token, disconnect, request_json, sign_in
-from .benchmark import (BenchmarkError, DEFAULT_CASES, DEFAULT_MODELS, evaluate_plan,
+from .benchmark import (BenchmarkError, DEFAULT_CASES, DEFAULT_EFFORTS, DEFAULT_MODELS, evaluate_plan,
                         instructions_for, make_plan, summary)
-from .stream import MODELS, StreamError, stream_answer, visible_models
+from .stream import (MODELS, StreamError, stream_answer, visible_models,
+                     validated_reasoning_effort)
 
 
 def main(argv=None) -> int:
@@ -20,6 +21,10 @@ def main(argv=None) -> int:
     commands.add_parser("models", help="List currently displayed models for this OAuth account.")
     infer = commands.add_parser("infer", help="Stream exactly one synthetic question.")
     infer.add_argument("--model", help="Model slug from models command; default first visible.")
+    infer.add_argument(
+        "--effort", choices=["default", "none", "low", "medium", "high", "xhigh", "max"],
+        default="default", help="Optional reasoning effort, default means model setting."
+    )
     infer.add_argument(
         "--role", choices=["general", "analytics", "epic"], default="general",
         help="Verified context role: general by default, or choose analytics/epic."
@@ -42,6 +47,10 @@ def main(argv=None) -> int:
     )
     benchmark.add_argument("--repeats", type=int, default=1)
     benchmark.add_argument(
+        "--efforts", default=",".join(DEFAULT_EFFORTS),
+        help="Comma-separated effort levels: default,none,low,medium,high,xhigh,max."
+    )
+    benchmark.add_argument(
         "--execute", action="store_true", help="Explicitly authorize LIVE plan inference."
     )
     benchmark.add_argument(
@@ -60,11 +69,13 @@ def main(argv=None) -> int:
         if args.command == "benchmark":
             models = tuple(x.strip() for x in args.models.split(","))
             case_ids = tuple(x.strip() for x in args.cases.split(","))
-            plan = make_plan(models, case_ids, args.repeats)
+            effort_levels = tuple(x.strip() for x in args.efforts.split(","))
+            plan = make_plan(models, case_ids, args.repeats, effort_levels)
             if not args.execute:
                 print(json.dumps({
                     "dry_run": True, "requests_if_executed": len(plan),
                     "model_slugs": list(models), "synthetic_case_ids": list(case_ids),
+                    "requested_efforts": list(effort_levels),
                     "note": "No authentication or inference was invoked.",
                 }, sort_keys=True))
                 return 0
@@ -76,17 +87,18 @@ def main(argv=None) -> int:
                                      ", ".join(unknown))
             shown_answers = []
 
-            def run_one(model, case):
+            def run_one(model, case, effort):
                 fragments = []
                 result = stream_answer(
                     token, model, case["question"],
                     instructions=instructions_for(case["role"]),
-                    on_delta=fragments.append,
+                    effort=effort, on_delta=fragments.append,
                 )
                 answer = "".join(fragments)
                 if args.show_answers:
                     shown_answers.append({
-                        "model": model, "case_id": case["id"], "answer": answer
+                        "model": model, "case_id": case["id"],
+                        "requested_reasoning_effort": effort or "default", "answer": answer
                     })
                 return result, answer
 
@@ -98,6 +110,9 @@ def main(argv=None) -> int:
                 print("SYNTHETIC ANSWERS FOR MANUAL QUALITY REVIEW")
                 print(json.dumps(shown_answers, indent=2))
             return 0
+        # Reject unsupported explicit combinations before requesting model inference.
+        if args.command == "infer" and args.model:
+            validated_reasoning_effort(args.model, args.effort)
         token = active_access_token()
         listed = visible_models(request_json(MODELS, token=token))
         if args.command == "models":
@@ -109,17 +124,20 @@ def main(argv=None) -> int:
         model = args.model or (listed[0]["slug"] if listed else None)
         if model is None or model not in {x["slug"] for x in listed}:
             raise StreamError("Model not in current account catalog. Run models command.")
+        effort = validated_reasoning_effort(model, args.effort)
         if len(args.question) > 1000:
             raise StreamError("This feasibility test limits questions to 1000 characters.")
-        print(f"Model: {model}")
+        print(f"Model: {model} (requested reasoning effort: {args.effort})")
         print("Streaming answer: ", end="", flush=True)
         # Direct 'infer' uses general concise instructions unless role is explicit.
         result = stream_answer(token, model, args.question,
                                instructions=instructions_for(args.role),
+                               effort=effort,
                                on_delta=lambda s: print(s, end="", flush=True))
         print()
         print("Verified stream completed (timings measured locally).")
-        print(json.dumps(result, sort_keys=True))
+        print(json.dumps({**result, "requested_reasoning_effort": args.effort},
+                         sort_keys=True))
         return 0
     except (AuthError, StreamError, BenchmarkError) as exc:
         print("Relay spike failed: " + str(exc), file=sys.stderr)

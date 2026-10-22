@@ -71,6 +71,10 @@ public actor PCMTranscriptWorker {
     // must create a NEW worker, so queued old frames can never restart ASR.
     private var cancelled = false
     private var resetInProgress = false
+    // Swift actors can accept new calls while CoreML finish()/reset() awaits.
+    // Those later packets must never be appended to the ending utterance.
+    private var finalizationInProgress = false
+    private var finalizationInterrupted = false
 
     /// 'authorizedCapture' must come from a real host consent event in the
     /// shipping app. This prototype accepts an explicit caller assertion only.
@@ -85,6 +89,24 @@ public actor PCMTranscriptWorker {
 
     public func ingest(_ frame: PCMFrame) async -> [FinalTranscriptEvent] {
         guard !cancelled, !resetInProgress else { return [] }
+        if finalizationInProgress {
+            // Never append a new utterance to an in-flight finish() result.
+            // Explicitly invalidate that final if a concurrent caller drops
+            // samples here. The worker remains bounded and discards no content
+            // while pretending it completed a question.
+            let firstInterruption = !finalizationInterrupted
+            finalizationInterrupted = true
+            if !firstInterruption { return [] }
+            return [FinalTranscriptEvent(
+                status: .discontinuity,
+                source: source,
+                streamGeneration: frame.streamGeneration,
+                segmentID: segmentID,
+                startHostTime: nil,
+                endHostTime: nil,
+                finalizedUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds
+            )]
+        }
         guard authorized else {
             return [event(.unavailable, generation: frame.streamGeneration)]
         }
@@ -218,26 +240,42 @@ public actor PCMTranscriptWorker {
     }
 
     private func finalize(generation: UInt64, ticket: UInt64) async -> FinalTranscriptEvent? {
+        guard !finalizationInProgress, !cancelled else { return nil }
+        finalizationInProgress = true
+        finalizationInterrupted = false
+        defer {
+            finalizationInProgress = false
+            finalizationInterrupted = false
+        }
         do {
             let result = try await backend.finish()
-            guard ticket == invalidationEpoch,
+            guard !cancelled, ticket == invalidationEpoch,
                   self.generation == generation else { return nil }
+            if finalizationInterrupted {
+                await reset()
+                return nil
+            }
             let text = result.trimmingCharacters(in: .whitespacesAndNewlines)
+            // This resets decoder context, not loaded model weights.
+            await backend.reset()
+            guard !cancelled, ticket == invalidationEpoch,
+                  self.generation == generation else { return nil }
+            if finalizationInterrupted {
+                await reset()
+                return nil
+            }
             segmentID &+= 1
             let final = text.isEmpty ? nil : event(
                 .final, generation: generation, text: text
             )
-            // This reset clears decoder context, not the model weights.
-            await backend.reset()
-            guard ticket == invalidationEpoch,
-                  self.generation == generation else { return nil }
             pendingMono.removeAll(keepingCapacity: true)
             utteranceFrames = 0
             startHostTime = nil
             endHostTime = nil
             return final
         } catch {
-            guard !cancelled, ticket == invalidationEpoch,
+            guard !cancelled, !finalizationInterrupted,
+                  ticket == invalidationEpoch,
                   self.generation == generation else { return nil }
             let marker = event(.unavailable, generation: generation)
             await reset()

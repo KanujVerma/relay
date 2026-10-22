@@ -257,7 +257,8 @@ class QuestionTurnMachine:
             # cannot be promoted by a later final of that pending segment.
             if self._invalidated_pending_id == event.segment_id:
                 if event.status == "final":
-                    self._invalidated_pending_id = None
+                    # Retain the disqualified segment ID so replaying this
+                    # same final cannot resurrect its revoked context.
                     self._last_final_end = max(self._last_final_end, event.end_ms)
                     return TurnDecision("needs_review", "pending_context_retracted")
                 if event.status in ("partial", "retracted"):

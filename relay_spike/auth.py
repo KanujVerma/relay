@@ -306,7 +306,10 @@ def request_json(url: str, *, form: dict | None = None,
     req = Request(url, data=data, headers=headers)
     try:
         with urlopen(req, timeout=timeout) as response:
-            parsed = json.load(response)
+            try:
+                parsed = json.load(response)
+            except (ValueError, UnicodeError):
+                raise AuthError("Unexpected JSON response from identity/API service.") from None
     except HTTPError as exc:
         # Only the refresh endpoint needs machine-readable terminal errors.
         # Never echo raw response bodies or arbitrary server-supplied strings.
@@ -321,14 +324,14 @@ def request_json(url: str, *, form: dict | None = None,
                     )
             except (ValueError, TypeError, OSError):
                 pass
-            if code in INVALID_REFRESH_CODES:
+            if isinstance(code, str) and code in INVALID_REFRESH_CODES:
                 raise UnusableRefreshToken("Refresh token is unusable.") from None
             if code == "invalid_client":
                 raise AuthError(
                     "OAuth refresh client was rejected. Check client configuration."
                 ) from None
         raise AuthError(f"OAuth/API request rejected (HTTP {exc.code}).") from None
-    except (URLError, TimeoutError) as exc:
+    except (URLError, TimeoutError, OSError):
         raise AuthError("Network or timeout failure during authorization.") from None
     if not isinstance(parsed, dict):
         raise AuthError("Unexpected JSON object from identity/API service.")

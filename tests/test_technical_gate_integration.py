@@ -220,6 +220,59 @@ class TechnicalCardRuntimeTests(unittest.TestCase):
         self.assertTrue(all(item.text is None for item in shown))
         self.assertEqual(len(requests), 1)
 
+    def test_strict_mode_rejects_unnumbered_or_replayed_sse_frames(self):
+        # Even identical unnumbered whitespace frames can alter raw SSE while
+        # still normalizing to a syntactically approved technical answer.
+        # Requiring explicit sequence numbers prevents that invisible replay.
+        candidate = fixture("D02-P01")
+        first = event_lines("response.output_text.delta", {
+            "type": "response.output_text.delta",
+            "sequence_number": 1,
+            "delta": "WHERE filters individual rows before grouping.",
+        })
+        space = event_lines("response.output_text.delta", {
+            "type": "response.output_text.delta",
+            "delta": " ",
+        })
+        remaining = event_lines("response.output_text.delta", {
+            "type": "response.output_text.delta",
+            "sequence_number": 2,
+            "delta": "HAVING filters aggregated groups after grouping.",
+        })
+        complete = event_lines("response.completed", {
+            "type": "response.completed",
+            "sequence_number": 3,
+            "response": {"status": "completed"},
+        })
+        unsequenced_delta = event_lines("response.output_text.delta", {
+            "type": "response.output_text.delta",
+            "delta": candidate,
+        })
+        no_number_completion = event_lines("response.completed", {
+            "type": "response.completed",
+            "response": {"status": "completed"},
+        })
+        for frames in (
+            first + space + space + remaining + complete,
+            unsequenced_delta + complete,
+            events(candidate, complete=False) + no_number_completion,
+        ):
+            with self.subTest(frames=len(frames)):
+                clock, requests, shown = Clock(), [], []
+                out = run_live_synthetic_case(
+                    "mock-token", case_id="D02", model="gpt-6-luna",
+                    technical_card=True, clock=clock, on_present=shown.append,
+                    response_stream=fake_source(clock, frames, requests),
+                )
+                self.assertFalse(out.assessment.completed)
+                self.assertEqual(out.presentation.state, "unavailable")
+                self.assertEqual(out.technical_gate_reason, "incomplete_or_failed_stream")
+                self.assertIsNone(out.assessment.answer)
+                self.assertIsNone(out.presentation.text)
+                self.assertEqual(len(requests), 1)
+                self.assertTrue(all(view.text is None for view in shown))
+                self.assertNotIn(candidate, repr(out))
+
     def test_interrupted_turn_still_cannot_display_stale_canonical_card(self):
         clock, requests, shown = Clock(), [], []
         turns = ActiveTurns()

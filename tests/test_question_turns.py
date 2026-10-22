@@ -249,6 +249,57 @@ class TurnSafety(unittest.TestCase):
         ))
         self.assertEqual(old_time.reason, "late_final_after_newer_utterance")
 
+    def test_old_partial_final_cannot_reactivate_after_newer_question(self):
+        first = self.machine.ingest(remote(
+            "initial", "Explain indexing.", end_ms=300,
+        ))
+        self.assertEqual(first.state, "ready")
+        self.assertEqual(self.machine.ingest(remote(
+            "late-segment", "Explain a",
+            status="partial", start_ms=200, end_ms=280,
+        )).state, "pending")
+        newer = self.machine.ingest(remote(
+            "newer", "Explain query optimization.",
+            start_ms=400, end_ms=800,
+        ))
+        self.assertEqual(newer.state, "ready")
+        late = self.machine.ingest(remote(
+            "late-segment", "Explain a SQL index.",
+            intent="question", status="final",
+            start_ms=200, end_ms=350,
+        ))
+        self.assertEqual(late.reason, "late_final_after_newer_utterance")
+        self.assertEqual(self.machine.current().token, newer.token)
+
+    def test_revision_of_superseded_question_does_not_preempt_current(self):
+        old = self.machine.ingest(remote(
+            "old", "Explain database transactions.", end_ms=300,
+        ))
+        latest = self.machine.ingest(remote(
+            "latest", "Explain isolation levels.",
+            start_ms=400, end_ms=600,
+        ))
+        self.assertFalse(self.machine.turns.is_current(old.token))
+        revised = self.machine.ingest(remote(
+            "old", "Explain transaction isolation with new constraints.",
+            revision=2, start_ms=0, end_ms=700,
+        ))
+        self.assertEqual(revised.reason, "superseded_segment_revision")
+        self.assertEqual(self.machine.current().token, latest.token)
+
+    def test_unclassified_remote_final_cancels_previous_answer(self):
+        initial = self.machine.ingest(remote(
+            "q", "Explain database indexes.", end_ms=350,
+        ))
+        unclassified = self.machine.ingest(remote(
+            "speech", "Actually there may be another requirement.",
+            intent="unknown", start_ms=400, end_ms=650,
+        ))
+        self.assertEqual(unclassified.state, "needs_review")
+        self.assertEqual(unclassified.reason, "unclassified_remote_utterance")
+        self.assertFalse(self.machine.turns.is_current(initial.token))
+        self.assertIsNone(self.machine.current())
+
     def test_discontinuity_cancels_and_blocks_old_generation(self):
         initial = self.machine.ingest(remote(
             "question", "Explain a query plan.", end_ms=300

@@ -15,6 +15,7 @@
 - [docs/WORKFLOWS.md](docs/WORKFLOWS.md): onboarding, permitted live session, quality gate, interruptions and feedback
 - [docs/MEMORY_AND_EVALUATION.md](docs/MEMORY_AND_EVALUATION.md): Personal Brain, Learning Memory, schema sketches and eval rules
 - [docs/PERSONAL_BRAIN_STORAGE.md](docs/PERSONAL_BRAIN_STORAGE.md): local confirmed-fact provenance ledger, open-source comparisons and privacy limits\n- [docs/QUESTION_TURNS.md](docs/QUESTION_TURNS.md): transcript-driven question/correction lifecycle and safe handoff to answer QA
+- [docs/PERSONAL_BRAIN_STORAGE.md](docs/PERSONAL_BRAIN_STORAGE.md): local confirmed-fact provenance ledger, open-source comparisons and privacy limits
 - [docs/RESUME_CANDIDATES.md](docs/RESUME_CANDIDATES.md): synthetic résumé candidates, exact source span, review boundary and reusable converter comparisons
 - [docs/DOCUMENT_CONVERTERS.md](docs/DOCUMENT_CONVERTERS.md): issue #29's pinned synthetic PDF/DOCX conversion paths, source limits, provenance results and measured Mac run
 - [docs/INFERENCE_AUTH.md](docs/INFERENCE_AUTH.md): official subscription OAuth/streaming and actual proof status

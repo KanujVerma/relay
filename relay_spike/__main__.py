@@ -44,6 +44,8 @@ def main(argv=None) -> int:
                       choices=["default", "low", "medium"])
     live.add_argument("--execute", action="store_true",
                       help="Explicitly authorize ONE real ChatGPT-plan inference.")
+    live.add_argument("--technical-card", action="store_true",
+                      help="Opt in to reviewed canonical D02/E09 technical-card QA after completion.")
     commands.add_parser("disconnect", help="Delete local OAuth credential record.")
     benchmark = commands.add_parser(
         "benchmark", help="Compare synthetic prompts; DRY-RUN unless --execute."
@@ -84,6 +86,7 @@ def main(argv=None) -> int:
                     "dry_run": True, "requests_if_executed": 1,
                     "case_id": case["id"], "model": args.model,
                     "requested_reasoning_effort": args.effort,
+                    "technical_card": args.technical_card,
                     "note": "No authentication, network or model inference was invoked.",
                 }, sort_keys=True))
                 return 0
@@ -94,12 +97,15 @@ def main(argv=None) -> int:
             outcome = run_live_synthetic_case(
                 access_token, case_id=case["id"], model=args.model,
                 effort=args.effort, on_present=lambda _event: None,
+                technical_card=args.technical_card,
             )
             assessed, presented = outcome.assessment, outcome.presentation
             print(json.dumps({
                 "dry_run": False, "requests_executed": 1,
                 "case_id": case["id"], "model": args.model,
                 "requested_reasoning_effort": args.effort,
+                "technical_card": args.technical_card,
+                "technical_gate_reason": outcome.technical_gate_reason,
                 "state": presented.state,
                 "qa_status": assessed.qa.status if assessed.qa else None,
                 "qa_reasons": list(assessed.qa.reasons) if assessed.qa else [],

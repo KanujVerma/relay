@@ -97,6 +97,20 @@ class ResumeContractTests(unittest.TestCase):
             "SELECT COUNT(*) FROM candidate_evidence"
         ).fetchone()[0], 5)
 
+    def test_explicit_team_or_teammate_text_cannot_be_relabelled_as_self(self):
+        _, cards = self.select_and_stage()
+        team = next(c for c in cards if c.actor_hint == "team")
+        teammate = next(c for c in cards if c.actor_hint == "teammate")
+        own = next(c for c in cards if c.actor_hint == "self")
+        for card, wrong in [(team, "self"), (teammate, "self"),
+                            (own, "teammate")]:
+            with self.subTest(text=card.snippet), self.assertRaises(MissingEvidence):
+                self.gateway.decide(card, decision="approve",
+                    capability=self.host_key, approved_actor=wrong,
+                    claim_key="project.wrong_ownership")
+            self.assertEqual(self.gateway.preview(card.fact_id), card)
+        self.assertEqual(self.brain.verified_claims(), ())
+
     def test_unknown_tool_skill_is_never_automatically_claimed(self):
         source, cards = self.select_and_stage()
         power_bi = next(c for c in cards if "Power BI" in c.snippet)

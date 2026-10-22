@@ -56,6 +56,7 @@ public final class MicrophoneCapture {
         generation &+= 1
         let currentGeneration = generation
         let queue = self.queue
+        let sampleRate = format.sampleRate
 
         // Callback is on Core Audio's capture path: copy first, return fast.
         // Do not allocate audio arrays, write files, resample, lock or run ASR.
@@ -69,7 +70,7 @@ public final class MicrophoneCapture {
                 first: UnsafePointer(channels[0]),
                 second: right,
                 frames: Int(buffer.frameLength),
-                sampleRate: format.sampleRate,
+                sampleRate: sampleRate,
                 hostTime: time.isHostTimeValid ? time.hostTime : 0,
                 streamGeneration: currentGeneration
             )

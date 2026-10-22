@@ -564,7 +564,9 @@ class QuestionTurnMachine:
             dependencies = (
                 tuple(dict.fromkeys((*previous.dependency_segment_ids,
                                      event.segment_id)))
-                if previous is not None else (event.segment_id,)
+                if (previous is not None and
+                    event.intent in ("correction", "follow_up"))
+                else (event.segment_id,)
             )
             if len(dependencies) > MAX_DEPENDENT_SEGMENTS:
                 self.turns.cancel()

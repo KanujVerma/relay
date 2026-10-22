@@ -98,23 +98,15 @@ public actor PCMTranscriptWorker {
             // Old callback after device restart. No state mutation.
             return []
         }
-        if let generation, frame.streamGeneration != generation {
+        var transition: FinalTranscriptEvent?
+        if (generation != nil && generation != frame.streamGeneration)
+            || (previousSequence != nil
+                && frame.sequence != previousSequence! &+ 1)
+            || (sampleRate != nil && sampleRate != frame.sampleRate) {
+            // Invalidate incomplete prior audio, but reuse this valid first
+            // packet of the new segment instead of discarding it as well.
+            transition = event(.discontinuity, generation: frame.streamGeneration)
             await reset()
-            self.generation = frame.streamGeneration
-            previousSequence = frame.sequence
-            return [event(.discontinuity, generation: frame.streamGeneration)]
-        }
-        if let previousSequence, frame.sequence != previousSequence &+ 1 {
-            await reset()
-            generation = frame.streamGeneration
-            self.previousSequence = frame.sequence
-            return [event(.discontinuity, generation: frame.streamGeneration)]
-        }
-        if let sampleRate, sampleRate != frame.sampleRate {
-            await reset()
-            generation = frame.streamGeneration
-            self.previousSequence = frame.sequence
-            return [event(.discontinuity, generation: frame.streamGeneration)]
         }
 
         do {
@@ -135,7 +127,7 @@ public actor PCMTranscriptWorker {
             pendingMono.append(contentsOf: samples)
             let window = max(1, Int(frame.sampleRate * windowSeconds))
             let ticket = invalidationEpoch
-            var finals: [FinalTranscriptEvent] = []
+            var finals: [FinalTranscriptEvent] = transition.map { [$0] } ?? []
             while pendingMono.count >= window {
                 let piece = Array(pendingMono.prefix(window))
                 pendingMono.removeFirst(window)
@@ -172,12 +164,24 @@ public actor PCMTranscriptWorker {
         }
         do {
             let ticket = invalidationEpoch
+            guard utteranceFrames > 0 else {
+                await reset()
+                return nil
+            }
+            var reachedEou = false
             if !pendingMono.isEmpty {
                 let audio = try converter.normalizeWindow(pendingMono, from: sampleRate)
-                _ = try await backend.accept(audio)
+                reachedEou = try await backend.accept(audio)
                 guard ticket == invalidationEpoch,
                       self.generation == generation else { return nil }
                 pendingMono.removeAll(keepingCapacity: true)
+            }
+            guard reachedEou else {
+                // Time-limit stop may interrupt a live sentence. Do NOT
+                // present an arbitrary decoder hypothesis as a final question.
+                let marker = event(.unavailable, generation: generation)
+                await reset()
+                return marker
             }
             return await finalize(generation: generation, ticket: ticket)
         } catch {

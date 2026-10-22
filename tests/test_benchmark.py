@@ -70,10 +70,11 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(rows[0]["first_text_ms"], 123)
         self.assertEqual(rows[0]["output_chars"],
                          len("WHERE filters rows. HAVING filters groups."))
-        self.assertTrue(rows[0]["within_length_target"])
+        self.assertTrue(rows[0]["under_word_ceiling"])
         result = benchmark.summary(rows)
         self.assertEqual(result["gpt-6-luna"]["median_total_ms"], 700)
         self.assertTrue(result["gpt-6-luna"]["p95_not_reported"])
+        self.assertIsNone(result["gpt-6-luna"]["p95_total_ms"])
 
     def test_failed_stream_does_not_get_quality_score(self):
         with self.assertRaises(benchmark.BenchmarkError):
@@ -86,10 +87,55 @@ class PlanTests(unittest.TestCase):
         m = benchmark.format_metrics("| A | B |\n|---|---|\n", "sql")
         self.assertTrue(m["contains_markdown_table"])
         m2 = benchmark.format_metrics("word " * 112, "sql")
-        self.assertFalse(m2["within_length_target"])
+        self.assertFalse(m2["under_word_ceiling"])
 
 
 class CliTests(unittest.TestCase):
+    def test_p95_is_present_when_ten_or_more_runs_exist(self):
+        self.assertIsNone(benchmark.percentile95([1, 2, 3]))
+        rows = [
+            {"model": "gpt-6-luna", "first_text_ms": i * 10,
+             "total_ms": 100 + i * 10, "under_word_ceiling": True,
+             "contains_markdown_table": False}
+            for i in range(12)
+        ]
+        report = benchmark.summary(rows)["gpt-6-luna"]
+        self.assertFalse(report["p95_not_reported"])
+        self.assertEqual(report["p95_total_ms"], 204)
+        self.assertEqual(report["compact_no_table"], 12)
+
+    def test_short_response_is_not_claimed_correct(self):
+        one_word = benchmark.format_metrics("Okay", "sql")
+        self.assertEqual(one_word["words"], 1)
+        self.assertTrue(one_word["under_word_ceiling"])
+        self.assertNotIn("correctness", one_word)
+        self.assertIn("Never invent", benchmark.instructions_for("general"))
+
+    def test_infer_role_is_explicit_or_general(self):
+        fake_catalog = {"models": [{
+            "slug": "gpt-6.1-sol", "display_name": "Sol", "visibility": "list"
+        }]}
+        fake_response = {"completed": True, "first_text_ms": 10,
+                         "total_ms": 20, "output_chars": 4}
+        for argv, expected in [
+            (["infer", "--role", "epic"], "complexity"),
+            (["infer", "--role", "analytics"], "denominators"),
+            (["infer"], "Never invent"),
+        ]:
+            with self.subTest(argv=argv), \\
+                 patch("relay_spike.__main__.active_access_token",
+                       return_value="synthetic-oauth"), \\
+                 patch("relay_spike.__main__.request_json",
+                       return_value=fake_catalog), \\
+                 patch("relay_spike.__main__.stream_answer",
+                       return_value=fake_response) as stream_call, \\
+                 redirect_stdout(StringIO()):
+                self.assertEqual(main(argv), 0)
+                self.assertIn(expected, stream_call.call_args.kwargs["instructions"])
+                if argv == ["infer"]:
+                    self.assertNotIn("denominators",
+                                     stream_call.call_args.kwargs["instructions"])
+
     def test_dry_run_does_not_read_auth_or_call_network(self):
         output = StringIO()
         with patch("relay_spike.__main__.active_access_token",

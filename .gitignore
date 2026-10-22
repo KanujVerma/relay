@@ -1,0 +1,22 @@
+# Sensitive local data and credentials must never be committed
+.env
+.env.*
+!.env.example
+data/
+private/
+secrets/
+recordings/
+transcripts/
+resumes/
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.db
+*.db-*
+*.wav
+*.m4a
+*.mp3
+*.mp4
+*.pem
+*.key
+.DS_Store

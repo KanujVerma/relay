@@ -1,0 +1,27 @@
+name: macOS audio spike compile and ring tests
+
+on:
+  pull_request:
+    paths:
+      - 'spikes/macos-audio/**'
+      - '.github/workflows/audio-spike.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Hosted macOS runners are expensive once Relay becomes private.
+# This check is intentionally enabled only while the repository is public.
+jobs:
+  swift-audio-tests:
+    if: ${{ !github.event.repository.private }}
+    runs-on: macos-15
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show Swift toolchain
+        run: swift --version
+      - name: Compile microphone-only spike and run ring tests
+        run: swift test --package-path spikes/macos-audio
+      - name: Verify zero-permission default invocation
+        run: swift run --package-path spikes/macos-audio relay-audio-spike

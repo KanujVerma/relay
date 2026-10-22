@@ -23,15 +23,23 @@ class UnsupportedDoclingDocx(ValueError):
 
 
 def pdf_page_count(data: bytes) -> int:
-    """Count pages from bytes with PDFium before a converter sees the input."""
+    """Count pages and reject every PDF security handler before conversion."""
     try:
         import pypdfium2
+        from pypdfium2 import raw
     except ImportError:
         raise
     document = None
     try:
         document = pypdfium2.PdfDocument(data)
+        # PDFium opens an empty-user-password encrypted document without a
+        # prompt, so successful opening alone does not prove it is unencrypted.
+        # -1 means no security handler; every other value fails closed.
+        if raw.FPDF_GetSecurityHandlerRevision(document.raw) != -1:
+            raise UnsupportedPdf("pdf_encrypted")
         return len(document)
+    except (InvalidPdf, UnsupportedPdf):
+        raise
     except Exception:
         raise InvalidPdf("pdf_invalid_or_encrypted") from None
     finally:

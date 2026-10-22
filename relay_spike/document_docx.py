@@ -13,6 +13,16 @@ MAX_DOCX_ENTRIES = 256
 MAX_DOCX_UNCOMPRESSED_BYTES = 8 * 1024 * 1024
 WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+MAIN_DOCUMENT_RELATIONSHIP = OFFICE_REL_NS + "/officeDocument"
+_PROPERTY_CONTENT_TAGS = frozenset({
+    f"{{{WORD_NS}}}p",
+    f"{{{WORD_NS}}}r",
+    f"{{{WORD_NS}}}hyperlink",
+    f"{{{WORD_NS}}}t",
+    f"{{{WORD_NS}}}delText",
+    f"{{{WORD_NS}}}instrText",
+})
 _UNSUPPORTED_WORD_TAGS = frozenset({
     "tbl", "drawing", "pict", "object", "altChunk", "hyperlink",
     "footnoteReference", "endnoteReference", "commentRangeStart",
@@ -35,6 +45,134 @@ class UnsupportedDocx(ValueError):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
+
+
+def _text_free_properties(node) -> None:
+    """Reject content hidden in property containers python-docx skips."""
+    for item in node.iter():
+        if item is not node and item.tag in _PROPERTY_CONTENT_TAGS:
+            raise UnsupportedDocx("docx_unsupported_property_content")
+        if (item.text or "").strip() or (item.tail or "").strip():
+            raise UnsupportedDocx("docx_text_outside_supported_run")
+
+
+def _run_text(run) -> str:
+    parts: list[str] = []
+    seen_content = False
+    seen_properties = False
+    for child in run:
+        if child.tag == f"{{{WORD_NS}}}rPr":
+            if seen_properties or seen_content:
+                raise UnsupportedDocx("docx_run_structure_unsupported")
+            seen_properties = True
+            _text_free_properties(child)
+        elif child.tag == f"{{{WORD_NS}}}t":
+            seen_content = True
+            parts.append(child.text or "")
+        elif child.tag == f"{{{WORD_NS}}}tab":
+            seen_content = True
+            parts.append("\t")
+        elif child.tag == f"{{{WORD_NS}}}br":
+            seen_content = True
+            break_type = child.attrib.get(f"{{{WORD_NS}}}type", "textWrapping")
+            if break_type not in {"textWrapping", "page", "column"}:
+                raise UnsupportedDocx("docx_break_type_unsupported")
+            parts.append("\n" if break_type == "textWrapping" else "")
+        elif child.tag == f"{{{WORD_NS}}}cr":
+            seen_content = True
+            parts.append("\n")
+        elif child.tag == f"{{{WORD_NS}}}noBreakHyphen":
+            seen_content = True
+            parts.append("-")
+        elif child.tag == f"{{{WORD_NS}}}ptab":
+            seen_content = True
+            parts.append("\t")
+        else:
+            # Structural wrappers, drawings, fields, revision marks, and future
+            # text-bearing nodes are not part of python-docx's Run.text result.
+            raise UnsupportedDocx("docx_unsupported_inline_content")
+        if (child.tail or "").strip():
+            raise UnsupportedDocx("docx_text_outside_supported_run")
+    return "".join(parts)
+
+
+def _source_paragraph_texts(document_xml: bytes) -> list[str]:
+    """Validate the complete body shape and project supported source text."""
+    try:
+        root = SafeET.fromstring(document_xml)
+    except Exception:
+        raise InvalidDocx("docx_document_xml_invalid") from None
+    if root.tag != f"{{{WORD_NS}}}document" or len(root) != 1:
+        raise UnsupportedDocx("docx_document_structure_unsupported")
+    body = root[0]
+    if body.tag != f"{{{WORD_NS}}}body":
+        raise UnsupportedDocx("docx_document_structure_unsupported")
+    if (root.text or "").strip() or (root.tail or "").strip():
+        raise UnsupportedDocx("docx_text_outside_supported_body")
+
+    paragraphs: list[str] = []
+    for child in body:
+        if child.tag == f"{{{WORD_NS}}}p":
+            paragraph_text: list[str] = []
+            seen_properties = False
+            seen_run = False
+            for item in child:
+                if item.tag == f"{{{WORD_NS}}}pPr":
+                    if seen_properties or seen_run:
+                        raise UnsupportedDocx("docx_paragraph_structure_unsupported")
+                    seen_properties = True
+                    _text_free_properties(item)
+                elif item.tag == f"{{{WORD_NS}}}r":
+                    seen_run = True
+                    paragraph_text.append(_run_text(item))
+                else:
+                    raise UnsupportedDocx("docx_unsupported_inline_content")
+                if (item.tail or "").strip():
+                    raise UnsupportedDocx("docx_text_outside_supported_paragraph")
+            paragraphs.append("".join(paragraph_text))
+        elif child.tag == f"{{{WORD_NS}}}sectPr":
+            _text_free_properties(child)
+        else:
+            # Body wrappers such as w:sdt, w:customXml, mc:AlternateContent,
+            # tables, and text boxes can contain paragraphs omitted by
+            # python-docx's Document.paragraphs collection.
+            raise UnsupportedDocx("docx_unsupported_body_content")
+        if (child.tail or "").strip():
+            raise UnsupportedDocx("docx_text_outside_supported_body")
+    return paragraphs
+
+
+def _root_relationships(archive: ZipFile, names: set[str]):
+    """Require one canonical main-part target matching python-docx behavior."""
+    if "_rels/.rels" not in names:
+        raise InvalidDocx("docx_package_relationships_missing")
+    try:
+        relationships = SafeET.fromstring(archive.read("_rels/.rels"))
+    except Exception:
+        raise InvalidDocx("docx_relationships_invalid") from None
+    if relationships.tag != f"{{{REL_NS}}}Relationships":
+        raise InvalidDocx("docx_relationships_invalid")
+
+    ids: set[str] = set()
+    main_relations = []
+    for relation in relationships.findall(f"{{{REL_NS}}}Relationship"):
+        rel_id = relation.attrib.get("Id", "")
+        if not rel_id or rel_id in ids:
+            raise UnsupportedDocx("docx_package_relationship_ambiguous")
+        ids.add(rel_id)
+        if relation.attrib.get("Type") == MAIN_DOCUMENT_RELATIONSHIP:
+            main_relations.append(relation)
+    if len(main_relations) != 1:
+        raise UnsupportedDocx("docx_main_document_relationship_ambiguous")
+
+    relation = main_relations[0]
+    target_mode = relation.attrib.get("TargetMode", "").strip().casefold()
+    target = relation.attrib.get("Target", "")
+    parsed_target = urlsplit(target)
+    if (target_mode not in {"", "internal"} or target != "word/document.xml" or
+            parsed_target.scheme or parsed_target.netloc or target not in names):
+        raise UnsupportedDocx("docx_main_document_target_unsupported")
+    return relationships
 
 
 def inspect_docx(data: bytes):
@@ -75,13 +213,17 @@ def inspect_docx(data: bytes):
             if "word/document.xml" not in names:
                 raise InvalidDocx("docx_document_missing")
 
+            root_relationships = _root_relationships(archive, names)
             for name in names:
                 if not name.endswith(".rels"):
                     continue
-                try:
-                    relationships = SafeET.fromstring(archive.read(name))
-                except Exception:
-                    raise InvalidDocx("docx_relationships_invalid") from None
+                if name == "_rels/.rels":
+                    relationships = root_relationships
+                else:
+                    try:
+                        relationships = SafeET.fromstring(archive.read(name))
+                    except Exception:
+                        raise InvalidDocx("docx_relationships_invalid") from None
                 for relationship in relationships.iter(f"{{{REL_NS}}}Relationship"):
                     target_mode = relationship.attrib.get("TargetMode", "").strip().casefold()
                     parsed_target = urlsplit(relationship.attrib.get("Target", ""))
@@ -90,16 +232,10 @@ def inspect_docx(data: bytes):
                         raise UnsupportedDocx("docx_external_relationship")
 
             try:
-                body = SafeET.fromstring(archive.read("word/document.xml"))
+                document_xml = archive.read("word/document.xml")
             except Exception:
                 raise InvalidDocx("docx_document_xml_invalid") from None
-
-            for node in body.iter():
-                if not isinstance(node.tag, str) or not node.tag.startswith("{"):
-                    continue
-                namespace, local_name = node.tag[1:].split("}", 1)
-                if namespace == WORD_NS and local_name in _UNSUPPORTED_WORD_TAGS:
-                    raise UnsupportedDocx("docx_unsupported_body_content")
+            source_texts = _source_paragraph_texts(document_xml)
 
             # The plain-paragraph path does not read these content layers.
             for name in names:
@@ -127,7 +263,12 @@ def inspect_docx(data: bytes):
 
         from docx import Document
 
-        return Document(BytesIO(data)).paragraphs
+        paragraphs = Document(BytesIO(data)).paragraphs
+        if len(paragraphs) != len(source_texts):
+            raise UnsupportedDocx("docx_paragraph_coverage_mismatch")
+        if any(source != paragraph.text for source, paragraph in zip(source_texts, paragraphs)):
+            raise UnsupportedDocx("docx_text_coverage_mismatch")
+        return paragraphs
     except (InvalidDocx, UnsupportedDocx):
         raise
     except ImportError:

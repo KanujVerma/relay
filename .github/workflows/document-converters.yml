@@ -9,6 +9,7 @@ on:
       - 'requirements-documents.txt'
       - 'tests/test_document_*.py'
       - 'tests/fixtures/documents/**'
+      - 'tests/fixtures/document-worker/**'
       - 'EVALS/benchmark_documents.py'
       - 'docs/DOCUMENT_CONVERTERS.md'
       - '.github/workflows/document-converters.yml'
@@ -43,6 +44,10 @@ jobs:
         run: python EVALS/verify_docs.py
       - name: Run existing tests
         run: python -m unittest discover -s tests -v
+      - name: Run worker-owned document integration tests with zero skips
+        env:
+          RELAY_DOCUMENT_INTEGRATION: '1'
+        run: python -m unittest discover -s tests -p 'test_document_conversion*.py' -v
       - name: Run mandatory real-library acceptance with zero skips
         env:
           RELAY_DOCUMENT_INTEGRATION: '1'

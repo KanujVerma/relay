@@ -425,26 +425,22 @@ class BrainStore:
                 if active is not None:
                     self.db.execute(
                         "UPDATE verified_fact SET invalidated_at=?,"
-                        " invalidation_reason='source_revoked',claim_key=NULL"
-                        " WHERE fact_id=?",
+                        " invalidation_reason='source_revoked' WHERE fact_id=?",
                         (_now(), fact_id),
                     )
-                    self._event("source_invalidated", fact_id=fact_id)
+                # Redact every dependency, not just direct-source candidates:
+                # the experience source might be revoked while the claim
+                # came from a different, still-consented source.
                 self.db.execute(
-                    "UPDATE candidate_fact SET state='revoked' WHERE id=?",
+                    "UPDATE verified_fact SET claim_key=NULL WHERE fact_id=?",
                     (fact_id,),
                 )
-            # Clear keys from *historical* confirmations too, including
-            # already-superseded facts, not just currently active rows.
-            self.db.execute(
-                "UPDATE verified_fact SET claim_key=NULL WHERE fact_id IN"
-                " (SELECT id FROM candidate_fact WHERE source_id=?)",
-                (source_id,),
-            )
-            self.db.execute(
-                "UPDATE candidate_fact SET claim_text=NULL,claim_key=NULL"
-                " WHERE source_id=?", (source_id,),
-            )
+                self.db.execute(
+                    "UPDATE candidate_fact SET state='revoked',"
+                    "claim_text=NULL,claim_key=NULL WHERE id=?",
+                    (fact_id,),
+                )
+                self._event("source_invalidated", fact_id=fact_id)
             self.db.execute(
                 "UPDATE experience SET label=NULL,revoked_at=? WHERE source_id=?",
                 (_now(), source_id),

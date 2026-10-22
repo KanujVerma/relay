@@ -6,8 +6,9 @@ Each slice gets a narrow issue, branch, small PR, reproducible tests, updated ar
 |---|---|---|
 | 00 | Product contract, initial roles, synthetic evaluation cases | PR #1 merged, fixture validation CI passed |
 | 00B | Durable agent handoff, ADRs, flows, personal memory design, inference contract | PR merged, links and status consistent |
-| 01A | ChatGPT subscription-backed inference authorization proof | Real OAuth consent+scope+model response completed on user account OR precise blocker documented |
-| 01B | Text-only response formatting, grounding, quick validation/review | Quality benchmark with negative cases and measured latency |
+| 01A | ChatGPT subscription-backed inference authorization proof | Met in user-reported local OAuth and gpt-6.1-sol response.completed on 2026-10-22; offline tests in PRs #4 and #5 |
+| 01B-A | Concise answer formatting and fast-vs-complex model comparison | Compare Luna and Sol on identical synthetic interview prompts, local only; collect correctness and latency |
+| 01B-B | Grounded text answer pipeline and fast quality review | Human-reviewed negative/edge cases, no invented personal claims, measured p50/p95 latency |
 | 02A | Resume ingestion, verified facts, conversational probing | No invented personal facts, attribution and deletion tests |
 | 02B | Selected Drive/GitHub imports, incremental sync | Independent OAuth, least privilege, revoke/delete tests |
 | 03A | Authorized macOS audio capture and local ASR | Real mic/remote channel and memory benchmark on Mac |
@@ -18,8 +19,8 @@ Each slice gets a narrow issue, branch, small PR, reproducible tests, updated ar
 | 06 | Security, accessibility, latency, reliability hardening | End-to-end verification on target hardware |
 | 07 | Optional adaptive mock interviewer | Realistic challenge cases improve assistant responses, not mandatory education |
 
-## First technical dependency gate
-If official subscription-backed inference is unavailable for the user's ChatGPT plan/workspace, document the exact outcome. Do not silently use API credits, scraping, a web session cookie, or paid inference. A test using synthetic mock responses is not live-model proof.
+## Authentication feasibility gate
+User-reported local OAuth and completed synthetic gpt-6.1-sol response confirms this gate for the currently tested account. Retest when authorization, account or model changes; never silently introduce API credits, scraping, or paid inference.
 
 ## Context-rot prevention
 - HANDOFF.md: actual state and precise next action.

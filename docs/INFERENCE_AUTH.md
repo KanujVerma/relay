@@ -1,6 +1,6 @@
 # ChatGPT subscription-backed inference protocol and feasibility gate
 
-Official documentation reviewed 2026-10-22. **This documents a supported platform path, not successful access for the user's account.** No Relay OAuth authorization or actual AI inference has been observed.
+Official documentation reviewed 2026-10-22. **A successful local user-reported ChatGPT-plan OAuth authorization and synthetic streamed inference was observed in terminal output on 2026-10-22.** It establishes feasibility for the tested account/sample, not unlimited usage or production robustness.
 
 ## Official sources
 - Overview: https://developers.openai.com/siwc/token-sharing-open-source
@@ -30,18 +30,22 @@ Official documentation reviewed 2026-10-22. **This documents a supported platfor
 - Codex app-server is a supported alternative transport but adds local process/RPC complexity; keep it a potential fallback.
 
 ## Slice 01A implementation and remaining live proof
-Python CLI code is now available in relay_spike/ with offline tests in tests/test_spike.py and steps in docs/RUN_LOCAL_SPIKE.md. **Only protocol code is implemented**; user account entitlement and end-to-end auth have not been verified.
+Python CLI code is now available in relay_spike/ with offline tests in tests/test_spike.py and steps in docs/RUN_LOCAL_SPIKE.md. **Protocol code was implemented and the user supplied a successful local OAuth and gpt-6.1-sol stream.** This remains a user-reported single-run test, not an independent repeated or security-audited deployment.
 
 The goal is a small text-only local OAuth/streaming proof with synthetic questions. No GUI, live audio, user files, API key fallback or external billable integration. Measure monotonic first-output-token and completed-response latency. Test offline errors with mocks and report truthfully that offline simulation is not a live account authorization.
 
 ## Error/limit handling
 Consent denied or missing scope: no inference. Invalid_grant: discard code, reauthorize. Expired tokens: refresh per documented protocol or require explicit login. Usage-limit events (including subscription_sharing_usage_limit_exceeded and subscription_sharing_usage_unavailable): stop and explain account limit. Model unavailable: select from actual available list. Stream error/incomplete: never call partial output a validated answer. Network errors: no uncontrolled retries that duplicate inference.
 
-## Must still validate on user's Mac
-- Real browser consent and issued client registration.
-- Cryptographically verified ID token and chatgpt.tokens.use.direct grant.
-- Actual account model list and one successful response.completed.
-- First useful and total response times; exact model and limits.
+## Successful local user-reported gate (2026-10-22)
+- Browser sign-in and plan scope verified, eight model slugs listed (including gpt-6-luna, gpt-6.1-sol and gpt-6-astra).
+- Synthetic SQL WHERE/HAVING question completed via gpt-6.1-sol, first text **2640 ms**, total **8306 ms**, **906** output characters, completed=true.
+- No ordinary API key supported in the experimental CLI. Usage still counts against plan entitlement; do not assert unlimited access.
+
+## Still worth testing for production
+- Repeatability across restarts, expired sessions, token rotation and revocation.
+- Account-specific quotas/rate limits and model changes.
+- Comparative latency/correctness on concise prompts for Luna versus Sol.
 - Account suitability for recurring personal use, changes to preview terms.
 
 ## Security

@@ -1,44 +1,36 @@
 # Relay handoff: exact project state
 
-Updated: 2026-10-22. Read [AGENTS.md](AGENTS.md) for new-agent protocol.
+Updated: 2026-10-22. [AGENTS.md](AGENTS.md) defines how each new coding agent starts; check live GitHub issues, PRs and CI before trusting this snapshot.
 
-## Verified completed
-- Slice 00 merged via PR #1: initial product contract, two role packs, 26 synthetic question cases, Python fixture validator and successful low-cost Linux CI.
-- Slice 00B source-of-truth documentation merged in PR #3, with CI passing: AGENTS.md, vision, ADRs, flows, memory/evals, inference reference and roadmap.
-- Slice 01A code merged in PR #4 (2026-10-22): local Python OAuth/PKCE/OIDC, model listing, Responses SSE and synthetic question CLI; offline CI succeeded (run 39731823184). **No live ChatGPT authorization or inference was performed.**
+## Verified completed repository work
+- Slice 00: product contract, Epic developer and junior analytics Role Packs, 26 synthetic evaluation cases, offline validator, PR #1 merged and CI green.
+- Slice 00B: durable AGENTS.md, architecture ADRs, project workflows and complete documentation baseline, PR #3 merged.
+- Slice 01A: supported OAuth/PKCE/OIDC CLI, plan permission validation, model catalog and fail-closed streamed Responses, PR #4 merged; OAuth callback and token hardening, PR #5 merged. Offline CI passed.
+- Slice 01A real-user feasibility: **the user provided successful Mac terminal output** on 2026-10-22. Browser authentication and ChatGPT plan inference permission succeeded, eight models listed and `gpt-6.1-sol` returned `response.completed` for a synthetic SQL WHERE/HAVING question. First text: **2640 ms**, total stream: **8306 ms**, output: **906 characters**. This is one user-reported run, not an independently repeated benchmark or evidence of unlimited usage.
 
-## Immediate next task
-Issue [#2, Slice 01A: prove official ChatGPT subscription-backed text inference](https://github.com/KanujVerma/relay/issues/2). The Slice 01A experimental CLI is now on main. **Outstanding blocker:** the user must run interactive authorization and one synthetic streamed inference locally on their Mac. Instructions: docs/RUN_LOCAL_SPIKE.md. Only after response.completed should we consider account entitlement verified and proceed to Slice 01B. Keep it separate from live audio/UI/memory ingestion and from any charged API fallback.
+## Current change
+PR #6 records the live proof, model selection strategy and Codex code-review rules. Codex review was requested and the bot completed an initial review identifying documentation inconsistencies; see PR comments. Check precise PR head, CI status and thread resolution before merging.
 
-## Locked goals
-Name Relay. Real authorized interview performance, not tutoring. Epic Software Developer and junior AI/BI/data analytics focus. Local-first native macOS targeting 16 GB M2 Pro. Personal Brain and Learning Memory foundational. Fast concise grounded answer and selective QA. Role/follow-up awareness. Minimal scoped PRs with verified tests and GitHub documentation.
+## Exact next implementation slice
+**Issue [#7: Slice 01B-A](https://github.com/KanujVerma/relay/issues/7)**. After PR #6 merges, implement short-answer prompts and a locally invoked, offline-tested benchmark comparing `gpt-6-luna` and `gpt-6.1-sol` on identical synthetic role-specific questions. No billable API fallback, no model calls from CI, no recording/Personal Brain implementation in this slice. Update HANDOFF.md with actual results.
 
-## Truth about implementation
-- No authenticated inference through a ChatGPT-plan token has been observed for this account. CLI OAuth, catalog and streaming logic plus offline tests have passed in Linux CI, but **not run with a user's credentials**.
-- No live macOS app, Zoom audio capture, diarization, Personal Brain store, Drive/GitHub import, or adaptive learning engine exists yet.
-- Official Sign in with ChatGPT docs describe optional plan inference scopes; account entitlement needs an interactive local authorization and completed response. Sources: docs/INFERENCE_AUTH.md.
-- Repository remains PUBLIC intentionally; owner will make private before sensitive work. NEVER commit actual user private artifacts or secrets, regardless of visibility.
+## Provisional model routing
+- Luna: preferred fast/simple-question candidate, must pass factual and coverage checks.
+- GPT-6.1 Sol: preferred more complex coding/debugging/follow-up candidate.
+- Astra: optional deeper offline analysis, not a default live model.
+- Official model descriptions support this division, but **Luna versus Sol latency and accuracy have not yet been compared on Relay tasks**. See [docs/MODEL_STRATEGY.md](docs/MODEL_STRATEGY.md).
 
-## Known risks
-Plan eligibility, available models, usage caps, full auth safety, streaming latency, audio routing, local ASR performance under 16 GB RAM, connector permissions, prompt injection and deletion semantics.
+## Foundation and non-goals
+Relay is a local-first native macOS interview copilot for **authorized assistance**, not a tutoring app. Primary target roles are Epic Software Developer and junior AI/BI/analytics. It should relay concise technical and verified personalized talking points, review response quality, recognize corrections/follow-ups and improve over time.
+- **Personal Brain** stores verified first-person history and source provenance; never invent skills or contributions.
+- **Learning Memory** tracks observed question patterns and explicit assistant corrections; it never promotes unverified speech/model text into personal facts.
+- ChatGPT OAuth authentication is independent from any Drive/GitHub app connectors or ChatGPT Memory.
 
-## Slice 01A callback hardening
-**PR #5 merged (2026-10-22)**: the local CLI now ignores wrong-state/wrong-Host callback requests and rejects missing or malformed token records. Offline regression tests, fixture checks and documentation validation passed on the exact PR head. **No real account authorization or streamed inference has occurred.**
+## Still unimplemented
+No native SwiftUI app, authorized Zoom audio capture, diarization, live question detection, Personal Brain database, Drive/GitHub import, production QA pipeline or continuous learning runtime. Model latency/usage reliability, token rotation and Mac ASR resource needs require later tests.
 
-## New code in Slice 01A
-- relay_spike/auth.py: interactive browser PKCE registration, OAuth code exchange, JWKS-based ID-token verification, protected local token file and plan scope checks.
-- relay_spike/stream.py: model-catalog parsing, preview-safe response payload, strict terminal SSE validation and monotonic response timings.
-- relay_spike/__main__.py: auth, models, infer and disconnect commands.
-- tests/test_spike.py: offline no-network OAuth/stream tests.
-- docs/RUN_LOCAL_SPIKE.md: local Mac validation without pasting tokens into GitHub.
-- requirements-spike.txt: PyJWT cryptographic ID-token validation dependency (local only).
-- CI validates offline behavior, not user account entitlement.
+## Privacy and CI
+Repository is PUBLIC until the owner chooses otherwise. Never commit credentials, OAuth callbacks, recordings, résumés or private interview source content even after going private. Linux CI performs offline fixture/doc/tests only. GitHub Codex PR reviews are tracked usage and should be explicitly verified, not assumed free or finished just because a comment was submitted.
 
-## Exact next action
-User-run, local only: follow docs/RUN_LOCAL_SPIKE.md. Share just sanitized success/failure, model slug and timing numbers; **never** paste callback URLs, tokens or credentials. If permission is unavailable, record the failure and evaluate a supported alternative rather than automatically spending money.
-
-## Exit gate for next issue
-Either: actual OAuth identity and scope validation, real model-list and response.completed with observed timings on user account; OR: precise, reproducible entitlement/blocker report. Offline unit tests alone do not establish live access.
-
-## New agent handoff
-Check live GitHub issue/PR state before work, read AGENTS.md and scope documentation, then implement only Slice 01A. Finish with exact checks, status updates, risks, and next action in this file.
+## New-agent action
+Read [AGENTS.md](AGENTS.md), [PRODUCT.md](PRODUCT.md), [ARCHITECTURE.md](ARCHITECTURE.md), [docs/DECISIONS.md](docs/DECISIONS.md), and [docs/SLICES.md](docs/SLICES.md). Inspect the latest PR and then implement **only Slice 01B-A (issue #7)**. One small PR, actual tests, reviewed findings, updated handoff and exact next step.

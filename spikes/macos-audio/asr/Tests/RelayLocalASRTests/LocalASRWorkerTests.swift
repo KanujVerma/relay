@@ -280,6 +280,50 @@ final class LocalASRWorkerTests: XCTestCase {
         XCTAssertNil(stop)
     }
 
+    func testConcurrentFrameDuringSuspendedAcceptInvalidatesOldEOU() async throws {
+        let backend = SuspendedEou()
+        let ring = try OwnedPCMQueue(source: .remoteAudio)
+        let worker = PCMTranscriptWorker(
+            source: .remoteAudio, authorizedCapture: true, backend: backend
+        )
+        _ = await worker.ingest(try packet(ring))
+        _ = await worker.ingest(try packet(ring))
+        let third = try packet(ring)
+        let inFlight = Task { await worker.ingest(third) }
+
+        var entered = false
+        for _ in 0..<2000 {
+            if await backend.entered() {
+                entered = true
+                break
+            }
+            await Task.yield()
+        }
+        if !entered {
+            await backend.release()
+            inFlight.cancel()
+            XCTFail("Fake EOU accept did not suspend")
+            return
+        }
+
+        // This is NOT a cancellation: two ingest calls overlap while CoreML
+        // is still processing the previous window. The later samples must
+        // neither change the first utterance's timestamp nor be silently
+        // discarded as if both packets were successfully processed.
+        let overlapping = await worker.ingest(try packet(ring))
+        XCTAssertEqual(overlapping.map(\.status), [.discontinuity])
+        XCTAssertNil(overlapping.first?.text)
+        XCTAssertNil(overlapping.first?.endHostTime)
+
+        await backend.release()
+        let stale = await inFlight.value
+        XCTAssertTrue(stale.isEmpty)
+        let finished = await backend.finishCount
+        XCTAssertEqual(finished, 0)
+        let stopped = await worker.finishAtStop()
+        XCTAssertNil(stopped)
+    }
+
     func testCancellationWhileBackendAwaitingNeverPublishesStaleText() async throws {
         let backend = SuspendedEou()
         let ring = try OwnedPCMQueue(source: .remoteAudio)

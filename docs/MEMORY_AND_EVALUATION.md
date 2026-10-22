@@ -1,6 +1,6 @@
 # Personal Brain, learning memory, and evaluation design
 
-Status: the **Personal Brain Slice 02A-A local SQLite prototype** is implemented on a feature branch in [PR #18](https://github.com/KanujVerma/relay/pull/18), with synthetic-only consent/approval, candidate/verified claims, source revocation and audit events. This is **not** user data ingestion or a production encrypted Mac database. Learning Memory and other entities below remain proposals. Reviewed 2026-10-22.
+Status: the **Personal Brain Slice 02A-A local SQLite prototype** landed in merged [PR #18](https://github.com/KanujVerma/relay/pull/18), with synthetic-only consent/approval, candidate/verified claims, comprehensive source-dependency redaction and append-only audit events. This is **not** user data ingestion or a production encrypted Mac database. Learning Memory and other entities below remain proposals. Next validation [issue #21](https://github.com/KanujVerma/relay/issues/21). Reviewed 2026-10-22.
 
 ## Personal knowledge layers
 - Confirmed structured facts: education, actual roles, technologies used, individual contributions and project outcomes. Source, timestamp, verification and uncertainty are mandatory.

@@ -14,9 +14,9 @@ from relay_spike.technical_gate import (
 class TechnicalGateTests(unittest.TestCase):
     def test_hand_reviewed_fixture_labels(self):
         report = evaluate_fixture_rows(load_fixture_rows())
-        self.assertEqual(report["total"], 44)
+        self.assertEqual(report["total"], 50)
         self.assertEqual(report["expected_publish"], 18)
-        self.assertEqual(report["expected_withhold"], 26)
+        self.assertEqual(report["expected_withhold"], 32)
         self.assertEqual(report["published_of_expected"], 18)
         self.assertEqual(report["unsafe_published"], 0)
         self.assertTrue(report["all_guards_met"])
@@ -103,6 +103,29 @@ class TechnicalGateTests(unittest.TestCase):
         for data in invalid:
             with self.subTest(kind=str(data)[:55]), self.assertRaises(ValueError):
                 evaluate_fixture_rows(data)
+
+    def test_test_gate_cannot_pass_with_known_positive_regression(self):
+        cases = load_fixture_rows()
+        approved = [row for row in cases if row["expected"] == "publish"][:12]
+        disallowed = next(row for row in cases if row["expected"] == "withhold")
+        new_case = {
+            "id": "synthetic-regressed",
+            "case_id": "D02", "candidate": "x", "expected": "publish"
+        }
+        report = evaluate_fixture_rows([*approved, new_case, disallowed])
+        self.assertEqual(report["expected_publish"], 13)
+        self.assertEqual(report["published_of_expected"], 12)
+        self.assertEqual(report["unsafe_published"], 0)
+        self.assertFalse(report["all_guards_met"])
+
+    def test_review_regressions_for_extra_sql_and_coding_contradictions(self):
+        for row_id in ("D02-N15", "D02-N16", "D02-N17",
+                       "E09-N15", "E09-N16", "E09-N17"):
+            row = next(r for r in load_fixture_rows() if r["id"] == row_id)
+            with self.subTest(case=row_id):
+                verdict = review_technical_candidate(row["case_id"], row["candidate"])
+                self.assertFalse(verdict.publishable)
+                self.assertIsNone(verdict.rendered_text)
 
     def test_evaluator_reports_only_aggregate_metadata(self):
         report = evaluate_fixture_rows(load_fixture_rows())

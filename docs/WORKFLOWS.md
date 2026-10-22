@@ -67,3 +67,10 @@ Implemented in [streaming_qa.py](../relay_spike/streaming_qa.py), with offline-o
 
 ## Compact interface
 A small visible panel with current question, direct answer, one or two bullet-equivalent talking points, optional technical example and explicit uncertain/unavailable status. No cluttered readiness score. No guarantee a window can be concealed from an entire-display screen share.
+
+## OAuth-backed synthetic QA bridge, Slice 01B-B2 (in review)
+- The `live-qa` CLI is **dry-run by default**. `--execute` requests exactly one account-catalog-checked Luna or Sol 6.1 inference on an explicitly selected synthetic **technical** EVALS question using an existing validated ChatGPT-plan OAuth token. Personal, behavioral and interruption fixtures are rejected before inference. No automatic Sol retry or additional billable key path.
+- The shared Responses SSE transport supplies raw byte lines to the B1 adapter. A final output is shown **only** after `response.completed`, completion of the deterministic B0 QA gate, and active-turn publication recheck. The state `final_unverified` explicitly does **not** certify technical correctness, user facts, or practical interview usefulness.
+- An independent deterministic synthetic-only negative screen marks no-first-person technical answers as absent for this narrow test. First-person, unclear, or unverifiable work assertions remain uncertain and cannot be published. This lexical test **must not** be promoted to production biography verification or a general-purpose trusted classifier.
+- The clock starts before HTTPS setup. Separate metrics track first text, a purely heuristic scannable lead, response completion, QA and presentation. `first_useful_verified_ms` stays null; no native UI/audio latency measurements exist.
+- Runbook [RUN_LOCAL_LIVE_QA.md](RUN_LOCAL_LIVE_QA.md). Offline CI uses mocked HTTP and no live account, model or source documents. Owner-run validation on the target Mac remains an independent gate.

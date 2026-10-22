@@ -54,7 +54,7 @@ class BrainStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "only-synthetic-brain.db"
             with BrainStore(path) as first:
-                sid = first.register_source(kind="resume", observed_at=WHEN)
+                sid = first.register_source(kind="user_statement", observed_at=WHEN)
                 first.grant_consent(sid, confirmation=UserConfirmation("disk-consent"))
                 fact = first.add_candidate(
                     source_id=sid, claim_key="role.owner",

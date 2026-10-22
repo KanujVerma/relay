@@ -107,11 +107,11 @@ def _review_d02(text: str, words: tuple[str, ...]) -> bool:
     # never claim to filter the grouped entities themselves.
     pre_position = next((i for i, word in enumerate(where) if word in _BEFORE), None)
     for index, word in enumerate(where):
-        if word in _GROUPS and (pre_position is None or index < pre_position):
-            return False
-    if re.search(r"\b(?:and|or)\s+(?:group|groups|aggregated|aggregate)\b",
-                 " ".join(where)):
-        return False
+        if word in _GROUPS:
+            # WHERE may say "before aggregation", but must not claim to
+            # filter groups or aggregates, regardless of their position.
+            if word != "aggregation" or pre_position is None or index <= pre_position:
+                return False
     if h & _ROWS:
         return False
     return True

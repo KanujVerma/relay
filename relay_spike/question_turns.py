@@ -165,7 +165,7 @@ class QuestionTurnMachine:
         self._last_final_end = -1
         self._seen: OrderedDict[str, _Segment] = OrderedDict()
         self._reopened: set[str] = set()
-        self._leading_partial: tuple[str, int] | None = None
+        self._leading_partial: tuple[str, int, int] | None = None
         self._active: QuestionSnapshot | None = None
         self._interrupted: tuple[str, QuestionSnapshot] | None = None
 
@@ -254,7 +254,21 @@ class QuestionTurnMachine:
             if (self._leading_partial is not None
                     and event.segment_id != self._leading_partial[0]
                     and event.status in ("final", "retracted")):
-                return TurnDecision("ignored", "superseded_by_newer_partial")
+                leader = self._leading_partial
+                if event.status == "final" and event.start_ms >= leader[2]:
+                    # A complete, independently newer utterance can replace
+                    # an unfinished tentative one without waiting forever.
+                    self._leading_partial = None
+                    self._interrupted = None
+                elif event.status == "final" and event.start_ms > leader[1]:
+                    # Distinct voices/segments may overlap in one remote
+                    # channel; require confirmation instead of guessing.
+                    self.turns.cancel()
+                    self._active = None
+                    self._interrupted = None
+                    return TurnDecision("needs_review", "overlapping_pending_utterances")
+                else:
+                    return TurnDecision("ignored", "superseded_by_newer_partial")
             digest = _fingerprint(event)
             prior = self._seen.get(event.segment_id)
             if prior is not None:
@@ -314,7 +328,8 @@ class QuestionTurnMachine:
                             and self._interrupted is not None
                             and event.intent in ("correction", "follow_up")):
                         self._interrupted = (event.segment_id, self._interrupted[1])
-                    self._leading_partial = (event.segment_id, event.start_ms)
+                    self._leading_partial = (event.segment_id, event.start_ms,
+                                             event.end_ms)
                     if event.intent == "question":
                         self._interrupted = None
                     if self._active is not None:

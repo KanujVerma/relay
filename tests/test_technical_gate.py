@@ -14,9 +14,9 @@ from relay_spike.technical_gate import (
 class TechnicalGateTests(unittest.TestCase):
     def test_hand_reviewed_fixture_labels(self):
         report = evaluate_fixture_rows(load_fixture_rows())
-        self.assertEqual(report["total"], 42)
+        self.assertEqual(report["total"], 44)
         self.assertEqual(report["expected_publish"], 18)
-        self.assertEqual(report["expected_withhold"], 24)
+        self.assertEqual(report["expected_withhold"], 26)
         self.assertEqual(report["published_of_expected"], 18)
         self.assertEqual(report["unsafe_published"], 0)
         self.assertTrue(report["all_guards_met"])

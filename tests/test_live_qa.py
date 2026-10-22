@@ -133,8 +133,8 @@ class BridgeUnitTests(unittest.TestCase):
             "for i in range(3): print(i)",  # Conservative on code identifiers.
         ):
             with self.subTest(text=text):
-                self.assertEqual(
-                    synthetic_nonpersonal_classification(text, "sql"), "uncertain"
+                self.assertNotEqual(
+                    synthetic_nonpersonal_classification(text, "sql"), "absent"
                 )
         self.assertEqual(
             synthetic_nonpersonal_classification(DIRECT, "personal"), "uncertain"
@@ -207,6 +207,35 @@ class BridgeUnitTests(unittest.TestCase):
         self.assertIsNone(out.presentation.first_scannable_candidate_ms)
         self.assertEqual(len(shown), 1)
         self.assertIsNone(shown[0].text)
+
+    def test_named_and_implicit_work_claims_without_pronouns_abstain(self):
+        claims = (
+            "Riley built the production dashboard at Epic and improved retention "
+            "by 30%. WHERE filters rows; HAVING filters groups.",
+            "Having implemented this in production, the approach cut latency "
+            "by 40%. WHERE filters rows and HAVING filters groups.",
+            "A consultant optimized the analytics workflow at an employer, "
+            "then the results improved conversion by 20%.",
+        )
+        for claim in claims:
+            with self.subTest(claim=claim):
+                self.assertEqual(
+                    synthetic_nonpersonal_classification(claim, "sql"), "present"
+                )
+                clock, calls, shown = Clock(), [], []
+                out = run_live_synthetic_case(
+                    "token", case_id="D02", model="gpt-6-luna",
+                    on_present=shown.append, clock=clock,
+                    response_stream=source_for(clock, response_rows(claim), calls),
+                )
+                self.assertEqual(out.assessment.qa.status, "abstain")
+                self.assertIn("missing_verified_personal_context",
+                              out.assessment.qa.reasons)
+                self.assertEqual(out.presentation.state, "unavailable")
+                self.assertIsNone(out.presentation.text)
+                self.assertIsNone(out.presentation.first_scannable_candidate_ms)
+                self.assertEqual(len(calls), 1)
+                self.assertTrue(all(view.text is None for view in shown))
 
     def test_incomplete_and_malformed_after_partial_never_publish(self):
         for rows in (

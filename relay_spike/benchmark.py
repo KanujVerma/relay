@@ -35,6 +35,8 @@ class BenchmarkError(ValueError):
 
 
 def instructions_for(role: str) -> str:
+    if role == "general":
+        return INSTRUCTIONS
     if role == "analytics":
         return INSTRUCTIONS + ("Role context: junior analytics/BI. Be careful "
                                "about SQL joins, row grain, NULLs, time filters "
@@ -88,7 +90,8 @@ def format_metrics(answer: str, category: str) -> dict:
     return {
         "words": len(words),
         "contains_markdown_table": has_table,
-        "within_length_target": len(words) <= word_limit,
+        # This only measures verbosity, not whether a very short answer is complete.
+        "under_word_ceiling": len(words) <= word_limit,
     }
 
 
@@ -115,6 +118,17 @@ def evaluate_plan(plan: list[dict], run_one) -> list[dict]:
     return results
 
 
+def percentile95(values: list[int]) -> int | None:
+    """Bounded-sample linear-interpolated p95, withheld for fewer than ten runs."""
+    if len(values) < 10:
+        return None
+    ordered = sorted(values)
+    pos = 0.95 * (len(ordered) - 1)
+    low = int(pos)
+    high = min(low + 1, len(ordered) - 1)
+    return round(ordered[low] + (ordered[high] - ordered[low]) * (pos - low))
+
+
 def summary(rows: list[dict]) -> dict:
     models = sorted({r["model"] for r in rows})
     data = {}
@@ -126,9 +140,11 @@ def summary(rows: list[dict]) -> dict:
             "n": len(samples),
             "median_first_text_ms": round(statistics.median(first)) if first else None,
             "median_total_ms": round(statistics.median(total)) if total else None,
-            "p95_not_reported": len(samples) < 10,
-            "format_target_passed": sum(
-                r["within_length_target"] and not r["contains_markdown_table"]
+            "p95_first_text_ms": percentile95(first),
+            "p95_total_ms": percentile95(total),
+            "p95_not_reported": len(first) < 10 or len(total) < 10,
+            "compact_no_table": sum(
+                r["under_word_ceiling"] and not r["contains_markdown_table"]
                 for r in samples
             ),
         }

@@ -121,6 +121,45 @@ class RefreshTests(LocalAuthCase):
         self.assertGreaterEqual(sync.call_count, 2)
         self.assertEqual(self.saved()["refresh_token"], "test-refresh-replacement")
 
+    def test_macos_uses_fullfsync_for_file_and_directory(self):
+        self.save()
+        with patch.object(auth.sys, "platform", "darwin"), \
+             patch.object(auth.fcntl, "F_FULLFSYNC", 51, create=True), \
+             patch.object(auth.fcntl, "fcntl", return_value=0) as sync, \
+             patch.object(auth.os, "fsync",
+                          side_effect=AssertionError("macOS must not downgrade to fsync")), \
+             patch.object(auth, "request_json", return_value=replacement()):
+            token = auth.active_access_token()
+        self.assertEqual(token, "test-access-replacement")
+        self.assertGreaterEqual(sync.call_count, 2)
+        self.assertTrue(all(call.args[1] == 51 for call in sync.call_args_list))
+        self.assertEqual(self.saved()["refresh_token"], "test-refresh-replacement")
+
+    def test_macos_no_fullfsync_does_not_silently_downgrade(self):
+        self.save(expired=False)
+        with patch.object(auth.sys, "platform", "darwin"), \
+             patch.object(auth.fcntl, "F_FULLFSYNC", None, create=True):
+            fd = os.open(self.path, os.O_RDONLY)
+            try:
+                with self.assertRaisesRegex(auth.AuthError, "Strong macOS credential sync"):
+                    auth._durable_sync(fd)
+            finally:
+                os.close(fd)
+
+    def test_macos_fullfsync_failure_has_sanitized_error(self):
+        self.save(expired=False)
+        with patch.object(auth.sys, "platform", "darwin"), \
+             patch.object(auth.fcntl, "F_FULLFSYNC", 51, create=True), \
+             patch.object(auth.fcntl, "fcntl",
+                          side_effect=OSError("sensitive volume label")):
+            fd = os.open(self.path, os.O_RDONLY)
+            try:
+                with self.assertRaises(auth.AuthError) as caught:
+                    auth._durable_sync(fd)
+                self.assertNotIn("sensitive", str(caught.exception))
+            finally:
+                os.close(fd)
+
     def test_directory_fsync_failure_is_reported_not_silently_accepted(self):
         self.save()
         original_fsync = os.fsync
@@ -187,7 +226,7 @@ class RefreshTests(LocalAuthCase):
             with self.assertRaisesRegex(auth.AuthError, "permission"):
                 auth.active_access_token()
 
-    def test_reject_bad_rotations_and_preserve_old_record(self):
+    def test_bad_http_200_rotations_quarantine_spent_refresh_token(self):
         invalid = (
             {"refresh_token": "test-refresh-original"},
             {"refresh_token": ""},
@@ -204,12 +243,19 @@ class RefreshTests(LocalAuthCase):
         for override in invalid:
             with self.subTest(override=override):
                 self.save()
-                original = self.saved()
                 with patch.object(auth, "request_json",
                                   return_value=replacement(**override)):
+                    with self.assertRaisesRegex(auth.AuthError, "Sign in again|Run:"):
+                        auth.active_access_token()
+                self.assertEqual(self.saved(), {
+                    "client_id": "oaiapp_test-issued-client",
+                    "ext_agent_host_id": "urn:uuid:synthetic-host",
+                    "subject": "synthetic-subject",
+                })
+                with patch.object(auth, "request_json",
+                                  side_effect=AssertionError("old grant reused")):
                     with self.assertRaises(auth.AuthError):
                         auth.active_access_token()
-                self.assertEqual(self.saved(), original)
 
     def test_terminal_invalid_grant_clears_secrets_but_preserves_registration(self):
         self.save()
@@ -226,6 +272,27 @@ class RefreshTests(LocalAuthCase):
         self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
         with self.assertRaisesRegex(auth.AuthError, "permission"):
             auth.active_access_token()
+
+    def test_successful_but_malformed_token_body_quarantines_old_grant(self):
+        for value in (
+            "invalid JSON with a sensitive credential",
+            json.dumps(["access_token", "a-list-is-not-a-token-object"]),
+        ):
+            with self.subTest(value=value[:12]):
+                self.save()
+                with patch.object(
+                    auth, "urlopen",
+                    return_value=io.BytesIO(value.encode("utf-8")),
+                ) as network:
+                    with self.assertRaisesRegex(auth.AuthError, "Run: python3 -m relay_spike auth") as caught:
+                        auth.active_access_token()
+                self.assertEqual(network.call_count, 1)
+                self.assertNotIn("sensitive", str(caught.exception))
+                self.assertEqual(self.saved(), {
+                    "client_id": "oaiapp_test-issued-client",
+                    "ext_agent_host_id": "urn:uuid:synthetic-host",
+                    "subject": "synthetic-subject",
+                })
 
     def test_transient_error_preserves_rotating_credentials(self):
         for failure in (

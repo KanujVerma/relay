@@ -133,6 +133,11 @@ def consume_stream(byte_lines, *, started: float, clock=time.monotonic,
         if should_continue is not None and not should_continue():
             raise StreamError("Stream was superseded.")
         sequence = event.get("sequence_number")
+        # This is opt-in for the canonical-card path only. Numberless
+        # response frames cannot be ordered or replay-checked reliably,
+        # so they must fail closed rather than silently bypass strict mode.
+        if strict_replay and sequence is None:
+            raise StreamError("Missing SSE sequence number in strict mode.")
         if sequence is not None:
             if type(sequence) is not int or sequence < 0:
                 raise StreamError("Invalid SSE sequence number.")

@@ -132,7 +132,9 @@ unverified candidate isolation, conflicting facts and atomic correction,
 approval-reference reuse, cross-source experience invalidation, no content
 in the immutable event log, and revocation/redaction.
 
-Next after merging 02A-A: a separately scoped source-ingestion and
-confirmation workflow, with real user approval and local data protection.
+Next after merged [PR #18](https://github.com/KanujVerma/relay/pull/18):
+[issue #21](https://github.com/KanujVerma/relay/issues/21), a separately
+scoped synthetic résumé candidate/approval-boundary step. Real user source
+imports, trusted approval UI and local data encryption remain future work.
 Do not bundle it with app audio, an interview overlay, API calls or
 continuous-learning personalization.

@@ -150,7 +150,7 @@ def review_technical_candidate(case_id: str, candidate: str) -> TechnicalVerdict
     def withhold(reason: str) -> TechnicalVerdict:
         return TechnicalVerdict(str(case_id), False, None, reason)
 
-    if case_id not in _SAFE_RENDER:
+    if not isinstance(case_id, str) or case_id not in _SAFE_RENDER:
         return withhold("unsupported_technical_case")
     if not isinstance(candidate, str):
         return withhold("invalid_candidate_type")

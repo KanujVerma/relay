@@ -32,6 +32,16 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+## Selected-app Core Audio process tap adaptation
+
+Relay's `SelectedAppProcesses.swift`, `CoreAudioHelpers.swift`, and `SelectedAppProcessTap.swift` adapt narrow public Core Audio process enumeration, property helpers and tap/aggregate lifecycle designs from these same **MIT-licensed SystemAudioKit files**, pinned to the **same revision** above:
+
+- https://github.com/pieralukasz/SystemAudioKit/blob/ccc6ab1e53b27e16b2eb4c01890560568a73d38c/Sources/SystemAudioKit/AudioProcesses.swift
+- https://github.com/pieralukasz/SystemAudioKit/blob/ccc6ab1e53b27e16b2eb4c01890560568a73d38c/Sources/SystemAudioKit/CoreAudioProperty.swift
+- https://github.com/pieralukasz/SystemAudioKit/blob/ccc6ab1e53b27e16b2eb4c01890560568a73d38c/Sources/SystemAudioKit/ProcessTapCapture.swift
+
+Changes for Relay: **explicit one-app-only selection**, no global capture path, callbacks transfer only bounded owned PCM into TPCircularBuffer, no recording files, no private TCC API, and listener/IOProc lifecycle serialization. The upstream MIT notice above applies.
+
 ## TPCircularBuffer (SwiftPM dependency)
 
 Upstream: https://github.com/michaeltyson/TPCircularBuffer

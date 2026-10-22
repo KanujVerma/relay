@@ -1,6 +1,6 @@
 # Personal Brain, learning memory, and evaluation design
 
-Status: design sketch, no database deployed. Reviewed 2026-10-22.
+Status: the **Personal Brain Slice 02A-A local SQLite prototype** is implemented on a feature branch in [PR #18](https://github.com/KanujVerma/relay/pull/18), with synthetic-only consent/approval, candidate/verified claims, source revocation and audit events. This is **not** user data ingestion or a production encrypted Mac database. Learning Memory and other entities below remain proposals. Reviewed 2026-10-22.
 
 ## Personal knowledge layers
 - Confirmed structured facts: education, actual roles, technologies used, individual contributions and project outcomes. Source, timestamp, verification and uncertainty are mandatory.
@@ -12,7 +12,9 @@ Status: design sketch, no database deployed. Reviewed 2026-10-22.
 ## Learning Memory is separate
 Question themes, clarifications, user-corrected assistant errors, answer verbosity preferences, style preferences, success/failure of model responses, and observed topic frequency. These do not automatically change personal biography, nor prove proficiency from generated answers.
 
-## Draft entities (to be refined through migrations)
+## Implemented subset and future draft entities
+
+For the actual SQLite v1 subset and trust boundary, use [PERSONAL_BRAIN_STORAGE.md](PERSONAL_BRAIN_STORAGE.md). The current implemented tables are source, experience (source-linked grouping only), candidate_fact, verified_fact and append-only history_event. A claim does not become verified without a separate explicit user confirmation reference from a future trusted UI. Teammate/team facts cannot be represented as the user's personal implementation. A source revocation invalidates dependent verified records and redacts **all** dependent candidate text/keys, including cross-source facts linked through its experience grouping. The complete story schema below is still a design sketch.
 - source: id, provider, external ID, selected scope, checksum, observed time, consent, revoked time, sensitivity.
 - fact: id, claim, actor/owner of work, source ID, observed time, confidence, confirmed/rejected/superseded, revision.
 - experience: id, project, role, situation, personal action, choices, outcome, user verification time.
@@ -28,7 +30,7 @@ Question themes, clarifications, user-corrected assistant errors, answer verbosi
 These are NOT committed production schemas or promises of persistent transcript retention.
 
 ## Local retrieval
-Start with SQLite and FTS5 to retrieve exact names, projects, SQL jargon, factual snippets and Role Packs. Include bounded recent conversation turns. Preserve provenance and redact unneeded details before inference. Evaluate semantic embedding retrieval on held-out cases before adding extra models/dependencies. Untrusted file content never becomes a tool instruction.
+Start with SQLite indexed exact-ID/key retrieval for source-verified facts (implemented in 02A-A). Add FTS5 later only after enforcing retention and deletion semantics, because SQLite's secure_delete alone does not guarantee erasure of future FTS shadow tables. FTS and vector search are **not** implemented yet. For later search, index exact names, projects, SQL jargon and Role Packs. Include bounded recent conversation turns. Preserve provenance and redact unneeded details before inference. Evaluate semantic embedding retrieval on held-out cases before adding extra models/dependencies. Untrusted file content never becomes a tool instruction.
 
 ## Learning promotion
 1. Append original event with source and type: observation, model output, explicit user correction, tentative inference.

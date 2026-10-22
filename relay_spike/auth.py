@@ -55,6 +55,29 @@ class UnusableRefreshToken(AuthError):
     """Only a confirmed terminal OAuth refresh error warrants token clearing."""
 
 
+def _sync_parent_directory(path: Path) -> None:
+    """Sync the post-rename directory entry for crash-sensitive token rotation.
+
+    The OS/filesystem must support syncing directory descriptors; if not,
+    refuse to claim a durable rotation and explain the local limitation.
+    """
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise AuthError("Secure credential-directory sync needs POSIX no-follow.")
+    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_DIRECTORY", 0)
+    try:
+        fd = os.open(path.parent, flags)
+        try:
+            if not stat.S_ISDIR(os.fstat(fd).st_mode):
+                raise AuthError("Credential parent is not a directory.")
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except OSError:
+        raise AuthError(
+            "Could not durably sync credential rotation on this filesystem."
+        ) from None
+
+
 def _write_protected(path: Path, value: dict) -> None:
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     if path.parent.is_symlink() or path.is_symlink():
@@ -68,6 +91,7 @@ def _write_protected(path: Path, value: dict) -> None:
             out.flush()
             os.fsync(out.fileno())  # Critical for crash-sensitive token rotation.
         os.replace(temp_path, path)
+        _sync_parent_directory(path)
     finally:
         if os.path.exists(temp_path):
             os.unlink(temp_path)
@@ -315,7 +339,7 @@ def request_json(url: str, *, form: dict | None = None,
     except HTTPError as exc:
         # Only the refresh endpoint needs machine-readable terminal errors.
         # Never echo raw response bodies or arbitrary server-supplied strings.
-        if refresh_errors and url == TOKEN_URL:
+        if refresh_errors and url == TOKEN_URL and 400 <= exc.code < 500:
             code = None
             try:
                 failure = json.loads(exc.read(4096))
@@ -345,6 +369,9 @@ def require_verification_dependencies():
     try:
         import jwt
         from jwt import PyJWKClient
+        # Base PyJWT can be installed without RS256 verification support.
+        # Ensure the cryptographic backend is truly available pre-browser.
+        from cryptography.hazmat.primitives.asymmetric import rsa
     except ImportError:
         raise AuthError(
             "OIDC verification dependency missing. Run: "
@@ -386,7 +413,7 @@ def verify_id_token(id_token: str, client_id: str, expected_nonce: str) -> dict:
 def validate_token_fields(tokens: dict) -> tuple[str, list[str], int]:
     """Fail closed on unusable or malformed OAuth token responses."""
     access_token = tokens.get("access_token")
-    if not isinstance(access_token, str) or not access_token:
+    if not isinstance(access_token, str) or not access_token.strip():
         raise AuthError("Authorization returned no usable access token.")
     if tokens.get("token_type") != "Bearer":
         raise AuthError("Authorization returned an unexpected token type.")

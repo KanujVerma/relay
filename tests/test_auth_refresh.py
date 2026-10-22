@@ -112,6 +112,37 @@ class RefreshTests(LocalAuthCase):
         self.assertTrue(lock.is_file())
         self.assertEqual(lock.stat().st_mode & 0o777, 0o600)
 
+    def test_atomic_rotation_syncs_both_file_and_parent_directory(self):
+        self.save()
+        real_fsync = os.fsync
+        with patch.object(auth.os, "fsync", wraps=real_fsync) as sync, \
+             patch.object(auth, "request_json", return_value=replacement()):
+            self.assertEqual(auth.active_access_token(), "test-access-replacement")
+        self.assertGreaterEqual(sync.call_count, 2)
+        self.assertEqual(self.saved()["refresh_token"], "test-refresh-replacement")
+
+    def test_directory_fsync_failure_is_reported_not_silently_accepted(self):
+        self.save()
+        original_fsync = os.fsync
+        operations = []
+
+        def fail_directory_sync(fd):
+            operations.append(os.fstat(fd).st_mode)
+            if len(operations) == 2:
+                raise OSError("filesystem cannot sync directories")
+            return original_fsync(fd)
+
+        with patch.object(auth, "request_json", return_value=replacement()), \
+             patch.object(auth.os, "fsync", side_effect=fail_directory_sync):
+            with self.assertRaisesRegex(auth.AuthError, "durably sync"):
+                auth.active_access_token()
+        # Atomic rename happened before the durability diagnostic.
+        # A subsequent invocation can safely reuse the new credential.
+        self.assertEqual(self.saved()["access_token"], "test-access-replacement")
+        with patch.object(auth, "request_json",
+                          side_effect=AssertionError("must not refresh twice")):
+            self.assertEqual(auth.active_access_token(), "test-access-replacement")
+
     def test_preemptive_refresh_at_boundary(self):
         self.save(saved_at=NOW - 3540, expires_in=3600)
         with patch.object(auth, "request_json", return_value=replacement()) as request:
@@ -163,6 +194,7 @@ class RefreshTests(LocalAuthCase):
             {"refresh_token": None},
             {"access_token": "test-access-original"},
             {"access_token": None},
+            {"access_token": "   \t "},
             {"token_type": "Basic"},
             {"expires_in": 0},
             {"scope": "openid offline_access"},
@@ -333,6 +365,7 @@ class WireTests(unittest.TestCase):
 
     def test_503_and_malformed_body_are_not_terminal_and_do_not_echo_body(self):
         for status, body in ((503, b'{"error":"oops","secret":"token"}'),
+                             (503, b'{"error":"invalid_grant"}'),
                              (400, b'non-JSON private stuff')):
             with self.subTest(status=status):
                 err = HTTPError(auth.TOKEN_URL, status, "", {}, io.BytesIO(body))
@@ -380,6 +413,28 @@ class DependencyPreflightTests(unittest.TestCase):
                           side_effect=AssertionError("opened filesystem before preflight")), \
              patch.object(auth.webbrowser, "open",
                           side_effect=AssertionError("opened browser before preflight")):
+            with self.assertRaisesRegex(auth.AuthError, "pip install -r requirements-spike.txt"):
+                auth.sign_in()
+
+    def test_base_pyjwt_without_cryptography_stops_before_browser(self):
+        from types import ModuleType
+        import sys
+
+        fake_jwt = ModuleType("jwt")
+        fake_jwt.PyJWKClient = object
+        original_import = __import__
+
+        def no_crypto(name, *args, **kwargs):
+            if name.startswith("cryptography"):
+                raise ImportError("simulated missing cryptography extra")
+            return original_import(name, *args, **kwargs)
+
+        with patch.dict(sys.modules, {"jwt": fake_jwt}), \
+             patch("builtins.__import__", side_effect=no_crypto), \
+             patch.object(auth, "load_or_create_host",
+                          side_effect=AssertionError("browser state created")), \
+             patch.object(auth.webbrowser, "open",
+                          side_effect=AssertionError("browser opened")):
             with self.assertRaisesRegex(auth.AuthError, "pip install -r requirements-spike.txt"):
                 auth.sign_in()
 

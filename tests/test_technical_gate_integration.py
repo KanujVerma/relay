@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager, redirect_stdout
 from io import StringIO
+from types import SimpleNamespace
 import json
 import unittest
 from unittest.mock import patch
@@ -254,6 +255,84 @@ class TechnicalCardRuntimeTests(unittest.TestCase):
         self.assertIsNone(out.assessment.answer)
         self.assertIsNone(out.presentation.text)
         self.assertEqual(len(requests), 1)
+
+    def test_untrusted_verdict_fields_never_publish_or_escape(self):
+        candidate = fixture("D02-P02")
+        examples = (
+            SimpleNamespace(
+                case_id="D02", publishable=True, rendered_text=candidate,
+                reason="reviewed_synthetic_card",
+            ),
+            SimpleNamespace(
+                case_id="E09", publishable=True, rendered_text=_SAFE_RENDER["D02"],
+                reason="reviewed_synthetic_card",
+            ),
+            SimpleNamespace(
+                case_id="D02", publishable=True, rendered_text=_SAFE_RENDER["D02"],
+                reason="I built a private dashboard",
+            ),
+            SimpleNamespace(
+                case_id="D02", publishable=False, rendered_text=None,
+                reason="SENSITIVE_PRIVATE_VERDICT_REASON",
+            ),
+            SimpleNamespace(
+                case_id="D02", publishable=True,
+                rendered_text="SENSITIVE_PRIVATE_CANDIDATE",
+                reason="SENSITIVE_PRIVATE_VERDICT_REASON",
+            ),
+            SimpleNamespace(
+                case_id="D02", publishable=True, rendered_text=_SAFE_RENDER["D02"],
+                reason="reviewed_synthetic_card",
+            ),  # Not an actual validated TechnicalVerdict.
+        )
+        for forged in examples:
+            with self.subTest(reason=str(forged.reason)[:30]):
+                clock, calls, shown = Clock(), [], []
+                with patch("relay_spike.live_qa.review_technical_candidate",
+                           return_value=forged):
+                    out = run_live_synthetic_case(
+                        "mock-token", case_id="D02", model="gpt-6-luna",
+                        technical_card=True, clock=clock,
+                        on_present=shown.append,
+                        response_stream=fake_source(clock, events(candidate), calls),
+                    )
+                self.assertEqual(out.technical_gate_reason, "candidate_not_approved")
+                self.assertIsNone(out.assessment.answer)
+                self.assertIsNone(out.presentation.text)
+                self.assertNotEqual(out.assessment.qa.status, "pass")
+                self.assertEqual(out.presentation.state, "needs_revision")
+                self.assertEqual(len(calls), 1)
+                self.assertTrue(all(item.text is None for item in shown))
+                for forbidden in (
+                    "SENSITIVE_PRIVATE_VERDICT_REASON",
+                    "SENSITIVE_PRIVATE_CANDIDATE",
+                    "I built a private dashboard",
+                ):
+                    self.assertNotIn(forbidden, repr(out))
+
+    def test_forged_same_type_verdict_cannot_bypass_post_init_validation(self):
+        from relay_spike.technical_gate import TechnicalVerdict
+        # Corrupt the frozen dataclass without running its guard, simulating
+        # a compromised classifier/renderer integration boundary.
+        forged = object.__new__(TechnicalVerdict)
+        object.__setattr__(forged, "case_id", "D02")
+        object.__setattr__(forged, "publishable", True)
+        object.__setattr__(forged, "rendered_text", "UNTRUSTED_WORK_EXPERIENCE")
+        object.__setattr__(forged, "reason", "reviewed_synthetic_card")
+        clock, calls, shown = Clock(), [], []
+        with patch("relay_spike.live_qa.review_technical_candidate",
+                   return_value=forged):
+            out = run_live_synthetic_case(
+                "mock-token", case_id="D02", model="gpt-6-luna",
+                technical_card=True, clock=clock, on_present=shown.append,
+                response_stream=fake_source(clock, events(fixture("D02-P02")), calls),
+            )
+        self.assertEqual(out.technical_gate_reason, "candidate_not_approved")
+        self.assertNotIn("UNTRUSTED_WORK_EXPERIENCE", repr(out))
+        self.assertIsNone(out.assessment.answer)
+        self.assertIsNone(out.presentation.text)
+        self.assertTrue(all(view.text is None for view in shown))
+        self.assertEqual(len(calls), 1)
 
     def test_default_old_b2_smoke_mode_remains_unchanged(self):
         clock, requests, shown = Clock(), [], []

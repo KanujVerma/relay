@@ -27,7 +27,11 @@ raw candidate against the reviewed B3A-0 technical propositions. If accepted,
 it returns a **local fixed technical card** instead of generated model prose,
 and then reuses deterministic QA and atomic active-turn publication.
 An unsupported or unsafe candidate is reduced to **no answer text**,
-with a status and sanitized reasons. The returned assessment never contains
+with a status and sanitized reasons. Even a malformed or substituted internal
+`TechnicalVerdict` is rechecked at runtime for exact dataclass type, case ID,
+true publishable flag, reviewed success reason and equality to the independent
+fixed canonical card. Candidate-provided reason strings are never forwarded:
+only local fixed status codes may enter the CLI report. The returned assessment never contains
 the raw candidate. An E09 suggestion for a deeper review is advisory and
 never triggers another plan request.
 

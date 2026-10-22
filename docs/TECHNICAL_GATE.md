@@ -30,12 +30,18 @@ Model transport passed; no actual talking point was published.
   experience, or a future response is accurate. Keyword/proposition matching
   can miss semantic negation, and the closed vocabulary sacrifices coverage.
 
+The rules also reject extra SQL sentences not scoped to WHERE/HAVING, and
+unreviewed asymptotic expressions even if expected complexity facts are also
+present. A complete pass requires every reviewed positive fixture to pass;
+accepting most positives is not enough. This is a finite adversarial suite,
+not a general logical entailment engine.
+
 The original B2 whole-answer exact match path remains untouched. No
 authentication, model usage, stream, UI, audio or personal memory calls occur.
 
 ## Fixed evidence gate
 
-Hand-authored file: EVALS/technical-answer-gate.jsonl (18 approved, 26 withheld cases). Includes varied positive
+Hand-authored file: EVALS/technical-answer-gate.jsonl (18 approved, 32 withheld cases). Includes varied positive
 paraphrases and adversarial negatives, including unsupported career claims,
 wrong clause ordering/complexities, prompt injection and Unicode confusables.
 

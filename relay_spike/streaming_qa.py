@@ -39,6 +39,7 @@ _CASE_COVERAGE: dict[str, tuple[CoverageIndicator, ...]] = {
     ),
 }
 ALLOWED_MODELS = ("gpt-6-luna", "gpt-6.1-sol")
+MAX_SYNTHETIC_ANSWER_CHARS = 16_384
 
 
 @dataclass(frozen=True)
@@ -70,6 +71,12 @@ class ActiveTurns:
             self._generation += 1
             self._current = TurnToken(turn_id, version, self._generation)
             return self._current
+
+    def cancel(self) -> None:
+        """Invalidate an unfinished question without requiring a replacement."""
+        with self._lock:
+            self._generation += 1
+            self._current = None
 
     def current(self) -> TurnToken | None:
         with self._lock:
@@ -223,13 +230,17 @@ def assess_synthetic_stream(
     fragments: list[str] = []
     first_text_ms = None
     first_candidate_ms = None
+    fragment_size = 0
     stream_metrics = None
     error: Literal["stream_error", "superseded_turn"] | None = None
 
     def on_delta(delta: str) -> None:
-        nonlocal first_text_ms, first_candidate_ms
+        nonlocal first_text_ms, first_candidate_ms, fragment_size
         if not turns.is_current(token):
             raise StreamError("Stream was superseded.")
+        if fragment_size + len(delta) > MAX_SYNTHETIC_ANSWER_CHARS:
+            raise StreamError("Synthetic answer exceeded the bounded size.")
+        fragment_size += len(delta)
         if first_text_ms is None:
             first_text_ms = _ms(clock(), started)
         fragments.append(delta)
@@ -255,12 +266,17 @@ def assess_synthetic_stream(
 
     completed = stream_metrics is not None and bool(stream_metrics.get("completed"))
     answer = "".join(fragments) if completed else ""
+    current = turns.current()
+    if current != token:
+        return StreamAssessment(token, context.case_id, None, False, None,
+                                first_text_ms, first_candidate_ms, None, None,
+                                started, "superseded_turn")
     # An incomplete stream must never be scored/published as a successful answer.
     qa = assess(QAInput(
         case_id=context.case_id, role=spec["role"], category=spec["category"],
         answer=answer, completed=completed,
-        turn_id=token.turn_id, active_turn_id=turns.current().turn_id,
-        turn_version=token.version, active_turn_version=turns.current().version,
+        turn_id=token.turn_id, active_turn_id=current.turn_id,
+        turn_version=token.version, active_turn_version=current.version,
         personal_claim_classification=context.attribution,
         verified_source_ids=context.verified_source_ids,
         coverage_indicators=_CASE_COVERAGE.get(context.case_id, ()),

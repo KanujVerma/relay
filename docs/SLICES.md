@@ -10,7 +10,7 @@ Each slice gets a narrow issue, branch, small PR, reproducible tests, updated ar
 | 01B-A | Concise formatting and synthetic Luna/Sol comparison | PR #8 merged; 22 owner-reported requests completed in two rounds (18 default and 4 explicit Low/Medium); #9 gate completed, rigorous accuracy and first-useful-text evaluation remain future work |
 | 01B-A1 | Optional model-specific reasoning effort CLI | PR #11 merged and reviewed; 4 owner-reported Low/Medium requests succeeded with matching server-reported effort on the tested OAuth account |
 | 01B-B0 | Offline grounded answer QA contract | [PR #14](https://github.com/KanujVerma/relay/pull/14) for [issue #12](https://github.com/KanujVerma/relay/issues/12): conservative pass/revise/abstain, provenance pointers, stale-turn safeguards and selective-review recommendation; offline tests/CI/review required |
-| 01B-B1 | Integrate the fast QA gate with streaming | Human-reviewed technical/personal negative cases, bounded selective second-pass evaluation, measured effect on latency and correctness |
+| 01B-B1 | Integrate the fast QA gate with streaming | [Issue #15](https://github.com/KanujVerma/relay/issues/15): synthetic streaming assembly, active turn ID+version check at publish, first useful timing, honest partial status; no automatic second-model calls |
 | 02A | Resume ingestion, verified facts, conversational probing | No invented personal facts, attribution and deletion tests |
 | 02B | Selected Drive/GitHub imports, incremental sync | Independent OAuth, least privilege, revoke/delete tests |
 | 03A | Authorized macOS audio capture and local ASR | Real mic/remote channel and memory benchmark on Mac |

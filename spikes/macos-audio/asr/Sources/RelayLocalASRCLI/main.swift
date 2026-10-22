@@ -50,7 +50,7 @@ struct RelayLocalASRCLI {
                 opt.modelRoot = args[i]
             case "--seconds":
                 guard i + 1 < args.count, let n = Int(args[i + 1]),
-                      (3...30).contains(n) else { return nil }
+                      (3...20).contains(n) else { return nil }
                 opt.seconds = n
                 i += 1
             case "--prepare-model":

@@ -24,11 +24,11 @@ a about additional after also an and another are as at be because before
 between both by can clause clauses compares comparison compared condition
 conditions constant contains data difference different during each element else
 every first for from group grouped grouping groups if in individual input is it
-its later less limited limits more must not of on once only or over per
+its later less limited limits more must of on once only or over per
 pre prior process processing records requires restrict restricts restricting
-result results row rows same second selects selection so space stage step
+result results row rows second selects selection so space stage step
 than that the their then there these this time to use used uses using
-versus vs when whereas which while with within without works
+versus vs when whereas which while with within works
 """.split())
 _D02_WORDS = frozenset("""
 aggregate aggregated aggregates aggregating aggregation apply applies applied
@@ -75,8 +75,20 @@ class TechnicalVerdict:
             raise ValueError("Withheld candidates cannot carry visible output.")
 
 
-def _review_d02(words: tuple[str, ...]) -> bool:
-    """Accept WHERE/row and HAVING/group propositions in either order."""
+def _review_d02(text: str, words: tuple[str, ...]) -> bool:
+    """Accept fully scoped WHERE/row and HAVING/group propositions only."""
+    clauses = [segment.strip() for segment in re.split(r"[.;!?]+", text) if segment.strip()]
+    if not 1 <= len(clauses) <= 2:
+        return False
+    if len(clauses) == 2:
+        # Two statements must each concern exactly one required SQL clause.
+        # A free-floating conclusion can contradict the recognized answer.
+        mentioned = [
+            set(re.findall(r"\b(?:where|having)\b", segment))
+            for segment in clauses
+        ]
+        if mentioned != [{"where"}, {"having"}] and mentioned != [{"having"}, {"where"}]:
+            return False
     if words.count("where") != 1 or words.count("having") != 1:
         return False
     wpos, hpos = words.index("where"), words.index("having")
@@ -101,6 +113,15 @@ def _review_d02(words: tuple[str, ...]) -> bool:
 def _review_e09(text: str, words: tuple[str, ...]) -> bool:
     """Require sorted precondition, halving, log time and iterative constant space."""
     vocabulary = set(words)
+    # Reject every unreviewed asymptotic expression, even when the answer
+    # ALSO includes the expected O(log n) and O(1) somewhere else.
+    formulas = re.findall(r"\bo\s*\([^)]*\)", text)
+    if any(not re.fullmatch(r"o\s*\(\s*(?:log\s*n|1)\s*\)", x)
+           for x in formulas):
+        return False
+    without_formulas = re.sub(r"\bo\s*\(\s*(?:log\s*n|1)\s*\)", " ", text)
+    if re.search(r"\b(?:n|1)\b", without_formulas):
+        return False
     if "binary" not in vocabulary or "search" not in vocabulary:
         return False
     if not re.search(
@@ -170,7 +191,7 @@ def review_technical_candidate(case_id: str, candidate: str) -> TechnicalVerdict
     allowed = _COMMON | (_D02_WORDS if case_id == "D02" else _E09_WORDS)
     if any(word not in allowed for word in words):
         return withhold("outside_reviewed_vocabulary")
-    valid = _review_d02(words) if case_id == "D02" else _review_e09(text, words)
+    valid = _review_d02(text, words) if case_id == "D02" else _review_e09(text, words)
     if not valid:
         return withhold("technical_propositions_not_verified")
     return TechnicalVerdict(case_id, True, _SAFE_RENDER[case_id], "reviewed_synthetic_card")
@@ -210,7 +231,7 @@ def evaluate_fixture_rows(rows: list[dict]) -> dict:
         "published_of_expected": published, "expected_withhold": negative,
         "unsafe_published": unsafe_published,
         "withheld_of_expected": negative - unsafe_published,
-        "all_guards_met": unsafe_published == 0 and published >= 12,
+        "all_guards_met": unsafe_published == 0 and published == positive,
         "note": "Hand-reviewed fixed synthetic fixtures only, no generic correctness proof.",
     }
 

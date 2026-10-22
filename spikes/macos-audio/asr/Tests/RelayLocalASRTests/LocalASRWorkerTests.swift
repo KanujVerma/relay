@@ -85,12 +85,15 @@ final class LocalASRWorkerTests: XCTestCase {
         let worker = PCMTranscriptWorker(
             source: .microphone, authorizedCapture: true, backend: fake
         )
-        XCTAssertTrue(await worker.ingest(try packet(ring)).isEmpty)
-        let final = try XCTUnwrap(await worker.finishAtStop())
+        let isEmptyResult1 = await worker.ingest(try packet(ring))
+        XCTAssertTrue(isEmptyResult1.isEmpty)
+        let stopped = await worker.finishAtStop()
+        let final = try XCTUnwrap(stopped)
         XCTAssertEqual(final.status, .final)
         XCTAssertEqual(final.source, .microphone)
         XCTAssertEqual(final.text, "what is the difference between where and having")
-        XCTAssertNil(await worker.finishAtStop())
+        let nilResult6 = await worker.finishAtStop(
+        XCTAssertNil(nilResult6))
     }
 
     func testMissingPacketCancelsAndNeverReassemblesOldUtterance() async throws {
@@ -99,12 +102,14 @@ final class LocalASRWorkerTests: XCTestCase {
         let worker = PCMTranscriptWorker(
             source: .remoteAudio, authorizedCapture: true, backend: fake
         )
-        XCTAssertTrue(await worker.ingest(try packet(ring)).isEmpty)
+        let isEmptyResult2 = await worker.ingest(try packet(ring))
+        XCTAssertTrue(isEmptyResult2.isEmpty)
         _ = try packet(ring) // Lost packet with seq #2.
         let lost = await worker.ingest(try packet(ring)) // seq #3.
         XCTAssertEqual(lost.map(\.status), [.discontinuity])
         XCTAssertEqual(lost.first?.text, nil)
-        XCTAssertTrue(await worker.ingest(try packet(ring)).isEmpty)
+        let isEmptyResult3 = await worker.ingest(try packet(ring))
+        XCTAssertTrue(isEmptyResult3.isEmpty)
         let resets = await fake.resets
         XCTAssertGreaterThan(resets, 0)
     }
@@ -116,12 +121,14 @@ final class LocalASRWorkerTests: XCTestCase {
             source: .remoteAudio, authorizedCapture: true, backend: fake
         )
         let old = try packet(ring, generation: 1)
-        XCTAssertTrue(await worker.ingest(old).isEmpty)
+        let isEmptyResult4 = await worker.ingest(old)
+        XCTAssertTrue(isEmptyResult4.isEmpty)
         let jump = await worker.ingest(try packet(ring, generation: 2))
         XCTAssertEqual(jump.map(\.status), [.discontinuity])
         let stale = await worker.ingest(old)
         XCTAssertTrue(stale.isEmpty)
-        XCTAssertTrue(await worker.ingest(try packet(ring, generation: 2)).isEmpty)
+        let isEmptyResult5 = await worker.ingest(try packet(ring, generation: 2))
+        XCTAssertTrue(isEmptyResult5.isEmpty)
     }
 
     func testUnauthorizedAndWrongSourceNeverCallASR() async throws {

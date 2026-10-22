@@ -13,6 +13,7 @@ import hashlib
 import hmac
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import math
 import os
 from pathlib import Path
 import secrets
@@ -116,9 +117,10 @@ def _nearing_expiry(record: dict) -> bool:
     try:
         saved_at = float(record["saved_at"])
         expires_in = float(record["expires_in"])
-    except (TypeError, ValueError, KeyError):
+    except (TypeError, ValueError, OverflowError, KeyError):
         raise AuthError("Invalid saved OAuth expiry. Sign in again.") from None
-    if saved_at <= 0 or expires_in <= 0:
+    if (not math.isfinite(saved_at) or not math.isfinite(expires_in)
+            or saved_at <= 0 or expires_in <= 0):
         raise AuthError("Invalid saved OAuth expiry. Sign in again.")
     return time.time() >= saved_at + expires_in - REFRESH_SKEW_SECONDS
 
@@ -393,7 +395,7 @@ def validate_token_fields(tokens: dict) -> tuple[str, list[str], int]:
         raise AuthError("Authorization returned invalid permission scopes.")
     try:
         lifetime = int(tokens.get("expires_in", 0))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise AuthError("Authorization returned invalid access token expiry.") from None
     if lifetime <= 0:
         raise AuthError("Authorization returned expired access token credentials.")

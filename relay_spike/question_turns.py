@@ -163,6 +163,10 @@ class QuestionTurnMachine:
         self._blocked_generation: int | None = None
         self._stopped = False
         self._last_final_end = -1
+        # Monotonic source-time watermark for tentative/final question
+        # starts. A late final cannot restore an older abandoned partial
+        # just by extending its end beyond a newer question's end.
+        self._latest_question_start_ms = -1
         self._seen: OrderedDict[str, _Segment] = OrderedDict()
         self._reopened: set[str] = set()
         self._leading_partial: tuple[str, int, int] | None = None
@@ -204,6 +208,7 @@ class QuestionTurnMachine:
             self._remote_generation = None
             self._blocked_generation = None
             self._last_final_end = -1
+            self._latest_question_start_ms = -1
             self._seen.clear()
 
     def _remember(self, e: TranscriptEvent, digest: bytes) -> None:
@@ -238,6 +243,7 @@ class QuestionTurnMachine:
                 self._leading_partial = None
                 self._invalidated_pending_id = None
                 self._last_final_end = -1
+                self._latest_question_start_ms = -1
                 self._remote_generation = event.stream_generation
                 self._blocked_generation = None
             if self._blocked_generation == event.stream_generation:
@@ -292,6 +298,19 @@ class QuestionTurnMachine:
                     return TurnDecision("needs_review", "overlapping_pending_utterances")
                 else:
                     return TurnDecision("ignored", "superseded_by_newer_partial")
+            # Transcript finals can arrive out of order. Even if an
+            # abandoned partial A's eventual final extends beyond the end
+            # time of the newer accepted B, A's *start* still predates B.
+            # Exempt the currently active, leading or reopened segment
+            # because its ASR may revise its original timestamps.
+            if (event.status == "final"
+                    and event.start_ms < self._latest_question_start_ms
+                    and event.segment_id not in self._reopened
+                    and (self._leading_partial is None
+                         or self._leading_partial[0] != event.segment_id)
+                    and (self._active is None
+                         or self._active.current_segment_id != event.segment_id)):
+                return TurnDecision("ignored", "superseded_source_start")
             digest = _fingerprint(event)
             prior = self._seen.get(event.segment_id)
             if prior is not None:
@@ -321,11 +340,22 @@ class QuestionTurnMachine:
                     self._reopened.add(event.segment_id)
                     return TurnDecision("pending", "final_reopened_as_partial")
             if event.status == "retracted":
-                if (self._active is not None and
-                        self._active.current_segment_id != event.segment_id and
-                        self._active.root_segment_id != event.segment_id):
-                    # A delayed retraction of a superseded segment must not
-                    # erase a newer finalized question's active answer.
+                # An unrelated old segment must never erase a current
+                # revision's quarantine, including when _active is None
+                # while a finalized segment is being reopened.
+                current_dependency = (
+                    self._active is not None and event.segment_id in (
+                        self._active.current_segment_id,
+                        self._active.root_segment_id,
+                    )
+                )
+                leading_dependency = (
+                    self._leading_partial is not None and
+                    event.segment_id == self._leading_partial[0]
+                )
+                if not (current_dependency or interrupted_dep
+                        or leading_dependency or
+                        event.segment_id in self._reopened):
                     return TurnDecision("ignored", "superseded_segment_retraction")
                 if interrupted_dep and self._leading_partial is not None:
                     self._invalidated_pending_id = self._leading_partial[0]
@@ -356,6 +386,9 @@ class QuestionTurnMachine:
                         self._interrupted = (event.segment_id, self._interrupted[1])
                     self._leading_partial = (event.segment_id, event.start_ms,
                                              event.end_ms)
+                    self._latest_question_start_ms = max(
+                        self._latest_question_start_ms, event.start_ms
+                    )
                     if event.intent == "question":
                         self._interrupted = None
                     if self._active is not None:
@@ -473,4 +506,7 @@ class QuestionTurnMachine:
                 parts_are_heuristic=True,
             )
             self._active = snapshot
+            self._latest_question_start_ms = max(
+                self._latest_question_start_ms, event.start_ms
+            )
             return TurnDecision("ready", "final_remote_question", snapshot)

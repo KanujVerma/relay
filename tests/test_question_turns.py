@@ -293,6 +293,38 @@ class TurnSafety(unittest.TestCase):
         self.assertEqual(stale_partial.reason, "superseded_segment_revision")
         self.assertEqual(self.machine.current().token, recent.token)
 
+    def test_reopened_final_at_same_timestamp_still_requires_review(self):
+        original = remote("same-time", "Explain a hash table.", end_ms=300)
+        initial = self.machine.ingest(original)
+        self.assertEqual(initial.state, "ready")
+        partial = self.machine.ingest(replace(
+            original, revision=2, status="partial", text="Explain hash",
+        ))
+        self.assertEqual(partial.state, "pending")
+        self.assertFalse(self.machine.turns.is_current(initial.token))
+        revised = self.machine.ingest(replace(
+            original, revision=3, text="Explain a hash map.",
+        ))
+        self.assertEqual(revised.state, "needs_review")
+        self.assertEqual(revised.reason, "final_transcript_revised")
+        self.assertIsNone(self.machine.current())
+
+    def test_retraction_of_superseded_final_never_cancels_latest_question(self):
+        old = self.machine.ingest(remote(
+            "old", "Explain recursion.", end_ms=250,
+        ))
+        latest = self.machine.ingest(remote(
+            "new", "Explain binary search.", start_ms=300, end_ms=600,
+        ))
+        self.assertFalse(self.machine.turns.is_current(old.token))
+        late_retract = self.machine.ingest(remote(
+            "old", "", revision=2, status="retracted", intent="unknown",
+            start_ms=0, end_ms=650,
+        ))
+        self.assertEqual(late_retract.state, "ignored")
+        self.assertEqual(late_retract.reason, "superseded_segment_retraction")
+        self.assertEqual(self.machine.current().token, latest.token)
+
     def test_revision_after_final_requires_review_not_silent_replacement(self):
         q = remote("seg", "Explain a B-tree.", end_ms=300)
         first = self.machine.ingest(q)

@@ -276,6 +276,20 @@ class QuestionTurnMachine:
             if (event.end_ms <= self._last_final_end
                     and (prior is None or prior.status != "final")):
                 return TurnDecision("ignored", "late_final_after_newer_utterance")
+            # Two different remote speakers can overlap in the same output
+            # channel. A new question/follow-up whose source time overlaps
+            # the prior finalized utterance is not safely ordered. Corrections
+            # are allowed to interrupt explicitly, but unqualified questions
+            # require review rather than silently changing the active turn.
+            if (event.start_ms < self._last_final_end
+                    and event.intent in ("question", "follow_up")
+                    and (prior is None or prior.status != "final")):
+                self.turns.cancel()
+                self._active = None
+                self._interrupted = None
+                self._remember(event, digest)
+                self._last_final_end = max(self._last_final_end, event.end_ms)
+                return TurnDecision("needs_review", "overlapping_remote_utterances")
             if prior is not None and prior.status == "final":
                 if (self._active is None or
                         self._active.current_segment_id != event.segment_id):

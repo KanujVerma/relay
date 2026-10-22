@@ -6,7 +6,7 @@ This repository is the durable source of truth. A new agent must be able to take
 1. HANDOFF.md: actually completed work, active issue, blockers, next action.
 2. PRODUCT.md and docs/PRODUCT_VISION.md: what Relay is, whom it serves, and what it must not become.
 3. ARCHITECTURE.md, docs/DECISIONS.md and docs/WORKFLOWS.md: design choices and data flow.
-4. docs/INFERENCE_AUTH.md and docs/MEMORY_AND_EVALUATION.md when relevant.
+4. docs/INFERENCE_AUTH.md and docs/MEMORY_AND_EVALUATION.md when relevant. For Personal Brain persistence, also read docs/PERSONAL_BRAIN_STORAGE.md and check actual source-revocation/confirmation implementation before claiming facts are verified.
 5. ROLE_PACKS and EVALS for the exact active slice. See docs/SLICES.md for roadmap and docs/REFERENCES.md for research sources.
 
 ## Relay in 90 seconds

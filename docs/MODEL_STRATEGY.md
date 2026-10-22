@@ -102,6 +102,14 @@ Across **nine matched question/repetition pairs per model** (D02, D01, E01 once,
 
 These nine samples per model remain below the current **10-per-model-and-effort p95 reporting threshold**. Do not claim p95 or guaranteed sub-4-second usefulness; first nonempty text does not measure the time to a readable answer. The stream timing does not include permitted audio capture, local ASR, retrieval, verification, or rendering latency. The four explicit Low/Medium results above remain separate and do not demonstrate a reasoning-effort winner.
 
+## Slice 01B-B1 provisional model policy and latency measurement contract
+
+The current [PR #16](https://github.com/KanujVerma/relay/pull/16) adds `ModelPolicy` to the **offline-only** synthetic SSE/QA adapter. The default remains **Luna** using the CLI's normal omitted effort field (observed Medium for the tested account). Explicit Sol selection is possible; a QA `second_review_recommended` flag may suggest Sol but **cannot invoke it**. No evidence supports automatic escalation on every coding prompt.
+
+Timing names must be precise: `first_text_ms` is first nonempty generated delta; `first_scannable_candidate_ms` is a heuristic completed leading sentence, timed and withheld from presentation until the stream is complete; `completed_ms` is terminal `response.completed`; `qa_decided_ms` and `presented_ms` record deterministic QA and synchronous publication. `first_useful_verified_ms` deliberately stays null: a natural-sounding sentence is **not** proof of factual utility. This mock stream adapter produces **no new user-account latency observations** and is not yet called from the real OAuth CLI or native user interface.
+
+Further model comparisons, human usefulness measurements, usage reliability, actual private-source grounding and selective second-model value remain separate validations. These are not blockers for the offline QA/streaming contract itself.
+
 ## Decision and next slice
 
 The synthetic comparison gate in [issue #9](https://github.com/KanujVerma/relay/issues/9) is complete with the above limitations. Stop spending plan requests on trivial re-benchmarks for now. [Issue #12](https://github.com/KanujVerma/relay/issues/12) is now completed in merged [PR #14](https://github.com/KanujVerma/relay/pull/14): an offline, deterministic QA contract rejects incomplete/stale turns and unverified personal claims, flags possible multipart omissions, and emits a **nonbinding** selective-review recommendation without making another model call. Next [issue #15](https://github.com/KanujVerma/relay/issues/15) integrates it into synthetic streaming. Future tests must assess *first useful text*, actual correctness on held-out harder cases, personal provenance, and whether selective Sol/second-pass review gives measurable improvement. Never treat a deterministic `pass` or a model critique as independent ground truth.

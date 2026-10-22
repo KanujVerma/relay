@@ -1,9 +1,9 @@
 # Relay handoff
 
 Updated: 2026-10-22
-Current slice: **00, product contract + Role Packs**
-Work branch: `slice-00-product-contract`
-Status: draft PR pending review/merge; nothing implemented in the application yet.
+Completed slice: **00, product contract + Role Packs** (PR #1 merged, fixture CI passed)
+Next active slice: **01A, subscription-backed inference authorization spike** (issue #2)
+Status: contract and 26 synthetic fixtures are merged; no interview application or authenticated inference has been implemented.
 
 ## Locked decisions
 - Name: Relay.
@@ -27,8 +27,11 @@ Status: draft PR pending review/merge; nothing implemented in the application ye
 - Fixture validator passes in CI.
 - Remaining feasibility questions are explicitly documented.
 
-## Next action after merging
-Open **Slice 01A: inference authorization spike**. Implement the smallest supported sign-in/authentication test and a single streamed text response, without UI, Zoom, recording or personal data. Measure first-token latency and account access. No external API charges without explicit approval.
+## Next action
+Work from [issue #2](https://github.com/KanujVerma/relay/issues/2): implement the smallest officially supported sign-in/authentication test and a single streamed text response, without UI, Zoom, recording or personal data. Measure first-token latency and account access. Do not initiate externally billed API requests without explicit approval.
+
+## External admin step
+Repository is currently public. Its owner can change visibility to **private** in Settings > General > Danger Zone. This setting cannot be changed by the currently connected GitHub tool.
 
 ## Agent handoff protocol
 Before work: read PRODUCT.md, ARCHITECTURE.md, this file and only role/eval files relevant to the task. Make one narrowly scoped PR. After work: report changes, exact tests run, observed results, unresolved issues, updated handoff, and next slice. Do not treat planned architecture as functioning software.

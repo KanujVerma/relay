@@ -155,7 +155,8 @@ class ReviewGateway:
             raise MissingEvidence("Explicit host review action required.")
 
     def select_source(self, synthetic_text: str, *, observed_at: str,
-                      capability: object) -> str:
+                      capability: object,
+                      raw_document_sha256: str | None = None) -> str:
         """Trusted-host simulation of selecting a single résumé text source.
 
         This deliberately takes a string, not a filename/URL: no real import
@@ -163,9 +164,16 @@ class ReviewGateway:
         """
         self._require_host(capability)
         extract_synthetic_candidates(synthetic_text)  # Validate size early.
+        external_ref = None
+        if raw_document_sha256 is not None:
+            if (not isinstance(raw_document_sha256, str) or
+                    re.fullmatch(r"[0-9a-f]{64}", raw_document_sha256) is None):
+                raise BrainError("Invalid original document digest.")
+            external_ref = "document-sha256:" + raw_document_sha256
         timestamp = _observed(observed_at)
         source_id = self._store.register_source(
-            kind="resume", observed_at=timestamp, checksum=_digest(synthetic_text)
+            kind="resume", observed_at=timestamp, external_ref=external_ref,
+            checksum=_digest(synthetic_text)
         )
         self._store.grant_consent(source_id, confirmation=UserConfirmation(
             "review-source:" + secrets.token_urlsafe(24)

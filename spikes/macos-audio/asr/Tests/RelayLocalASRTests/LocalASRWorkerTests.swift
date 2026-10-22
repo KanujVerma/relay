@@ -36,11 +36,11 @@ actor FakeEou: LocalEouRecognizer {
 
 /// Deterministic await barrier for the reentrant actor cancellation test.
 actor SuspendedEou: LocalEouRecognizer {
-    private var pending: CheckedContinuation<Bool, Never>?
+    private var pending: CheckedContinuation<Bool, Error>?
     private(set) var finishCount = 0
 
     func accept(_ mono16kSamples: [Float]) async throws -> Bool {
-        await withCheckedContinuation { continuation in
+        try await withCheckedThrowingContinuation { continuation in
             pending = continuation
         }
     }
@@ -49,6 +49,11 @@ actor SuspendedEou: LocalEouRecognizer {
 
     func release() {
         pending?.resume(returning: true)
+        pending = nil
+    }
+
+    func reject() {
+        pending?.resume(throwing: NSError(domain: "fake-remote-asr", code: 1))
         pending = nil
     }
 
@@ -241,6 +246,43 @@ final class LocalASRWorkerTests: XCTestCase {
         await backend.release()
         let stale = await inFlight.value
         XCTAssertTrue(stale.isEmpty)
+        let count = await backend.finishCount
+        XCTAssertEqual(count, 0)
+    }
+
+    func testCancelledASRErrorCannotPublishOrClearNewSession() async throws {
+        let backend = SuspendedEou()
+        let ring = try OwnedPCMQueue(source: .remoteAudio)
+        let worker = PCMTranscriptWorker(
+            source: .remoteAudio, authorizedCapture: true, backend: backend
+        )
+        _ = await worker.ingest(try packet(ring))
+        _ = await worker.ingest(try packet(ring))
+        let third = try packet(ring)
+        let inFlight = Task { await worker.ingest(third) }
+
+        var started = false
+        for _ in 0..<2000 {
+            if await backend.entered() {
+                started = true
+                break
+            }
+            await Task.yield()
+        }
+        if !started {
+            await backend.reject()
+            inFlight.cancel()
+            XCTFail("Fake EOU accept did not suspend")
+            return
+        }
+        await worker.cancel()
+        await backend.reject()
+        let result = await inFlight.value
+        XCTAssertTrue(result.isEmpty)
+        // The cancellation must hold even if a newer callback generation
+        // arrives after an async failure from the old recognizer task.
+        let newer = await worker.ingest(try packet(ring, generation: 20))
+        XCTAssertTrue(newer.isEmpty)
         let count = await backend.finishCount
         XCTAssertEqual(count, 0)
     }

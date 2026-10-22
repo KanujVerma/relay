@@ -176,6 +176,10 @@ class BrainStore:
     """
 
     def __init__(self, path: str | Path = ":memory:") -> None:
+        # A future trusted host binds at most one in-process review gateway.
+        # This protects accidental direct v2 confirmation, not malicious
+        # Python with arbitrary access to this store or the OS user session.
+        self.__resume_review_gate: object | None = None
         self.db = sqlite3.connect(str(path), isolation_level=None)
         try:
             self.db.row_factory = sqlite3.Row
@@ -341,6 +345,12 @@ class BrainStore:
             )
         return fact_id
 
+    def _bind_resume_review_gate(self, gate: object) -> None:
+        """Register exactly one trusted-host adapter for this store lifetime."""
+        if gate is None or self.__resume_review_gate is not None:
+            raise InvalidState("Résumé review boundary is already bound or invalid.")
+        self.__resume_review_gate = gate
+
     def stage_resume_candidate(self, *, source_id: str, claim_key: str,
                                claim_text: str, actor: str, observed_at: str,
                                document_sha256: str, span_start: int,
@@ -392,7 +402,8 @@ class BrainStore:
                      replaces_fact_id: str | None = None,
                      reviewed_actor: str | None = None,
                      reviewed_claim_key: str | None = None,
-                     expected_snippet_sha256: str | None = None) -> None:
+                     expected_snippet_sha256: str | None = None,
+                     reviewer_token: object | None = None) -> None:
         """Confirm explicitly, optionally superseding exactly one trusted claim.
 
         Contradictory candidates for an existing key must use replaces_fact_id.
@@ -403,6 +414,15 @@ class BrainStore:
             candidate = self._get("candidate_fact", fact_id)
             if candidate["state"] != "candidate":
                 raise InvalidState("Only pending candidate facts can be confirmed.")
+            has_resume_evidence = self.db.execute(
+                "SELECT 1 FROM candidate_evidence WHERE fact_id=?", (fact_id,)
+            ).fetchone() is not None
+            if has_resume_evidence and (
+                    self.__resume_review_gate is None or
+                    reviewer_token is not self.__resume_review_gate):
+                raise MissingEvidence("Use the registered host review boundary.")
+            if not has_resume_evidence and reviewer_token is not None:
+                raise BrainError("Review authorization cannot apply to legacy facts.")
             if any(value is not None for value in
                    (reviewed_actor, reviewed_claim_key, expected_snippet_sha256)):
                 if not all(value is not None for value in

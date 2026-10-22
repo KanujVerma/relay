@@ -309,6 +309,34 @@ class TurnSafety(unittest.TestCase):
         self.assertEqual(revised.reason, "final_transcript_revised")
         self.assertIsNone(self.machine.current())
 
+    def test_retraction_of_evicted_old_segment_cannot_cancel_current(self):
+        old = self.machine.ingest(remote(
+            "first", "Explain a hash table.",
+            start_ms=0, end_ms=200,
+        ))
+        latest = self.machine.ingest(remote(
+            "latest", "Explain a B-tree.",
+            start_ms=300, end_ms=500,
+        ))
+        self.assertFalse(self.machine.turns.is_current(old.token))
+        # The replay ledger is intentionally bounded. Evict the old record
+        # while maintaining a newer active question.
+        for i in range(MAX_SEEN_SEGMENTS - 1):
+            result = self.machine.ingest(remote(
+                f"statement-{i}", f"Ordinary meeting statement {i}.",
+                intent="statement",
+                start_ms=600 + i * 10, end_ms=609 + i * 10,
+            ))
+            self.assertEqual(result.state, "ignored")
+        self.assertNotIn("first", self.machine._seen)
+        stale = self.machine.ingest(remote(
+            "first", "", revision=2, status="retracted",
+            intent="unknown", start_ms=0, end_ms=2500,
+        ))
+        self.assertEqual(stale.state, "ignored")
+        self.assertEqual(stale.reason, "superseded_segment_retraction")
+        self.assertEqual(self.machine.current().token, latest.token)
+
     def test_retraction_of_superseded_final_never_cancels_latest_question(self):
         old = self.machine.ingest(remote(
             "old", "Explain recursion.", end_ms=250,
@@ -334,6 +362,91 @@ class TurnSafety(unittest.TestCase):
         self.assertEqual(next_version.state, "needs_review")
         self.assertEqual(next_version.reason, "final_transcript_revised")
         self.assertFalse(self.machine.turns.is_current(first.token))
+
+    def test_newer_partial_suppresses_older_final_until_newer_final_arrives(self):
+        first = self.machine.ingest(remote(
+            "partial-A", "Explain hash",
+            status="partial", intent="question",
+            start_ms=0, end_ms=200,
+        ))
+        self.assertEqual(first.state, "pending")
+        newer = self.machine.ingest(remote(
+            "partial-B", "Explain merge",
+            status="partial", intent="question",
+            start_ms=250, end_ms=350,
+        ))
+        self.assertEqual(newer.state, "pending")
+        late_first = self.machine.ingest(remote(
+            "partial-A", "Explain hash joins.",
+            status="final", intent="question",
+            start_ms=0, end_ms=250,
+        ))
+        self.assertEqual(late_first.state, "ignored")
+        self.assertEqual(late_first.reason, "superseded_by_newer_partial")
+        self.assertIsNone(self.machine.current())
+        current = self.machine.ingest(remote(
+            "partial-B", "Explain merge joins.",
+            status="final", intent="question",
+            start_ms=250, end_ms=650,
+        ))
+        self.assertEqual(current.state, "ready")
+        self.assertIn("merge joins", current.snapshot.prompt)
+        self.assertNotIn("hash joins", current.snapshot.prompt)
+
+    def test_newer_partial_correction_retains_context_after_prior_partial(self):
+        original = self.machine.ingest(remote(
+            "original", "Explain top five customers by revenue.", end_ms=300,
+        ))
+        self.machine.ingest(remote(
+            "partial-A", "No, top five",
+            status="partial", intent="correction",
+            start_ms=350, end_ms=450,
+        ))
+        self.machine.ingest(remote(
+            "partial-B", "No, top five by distinct orders",
+            status="partial", intent="correction",
+            start_ms=500, end_ms=600,
+        ))
+        late = self.machine.ingest(remote(
+            "partial-A", "No, top five by orders.",
+            status="final", intent="correction",
+            start_ms=350, end_ms=650,
+        ))
+        self.assertEqual(late.reason, "superseded_by_newer_partial")
+        accepted = self.machine.ingest(remote(
+            "partial-B", "No, top five by distinct orders in 2025.",
+            status="final", intent="correction",
+            start_ms=500, end_ms=850,
+        ))
+        self.assertEqual(accepted.state, "ready")
+        self.assertEqual(accepted.token.turn_id, original.token.turn_id)
+        self.assertEqual(accepted.token.version, 2)
+        self.assertIn("Superseded question", accepted.snapshot.prompt)
+        self.assertIn("top five customers by revenue", accepted.snapshot.prompt)
+
+    def test_old_partial_revisions_cannot_retake_lead(self):
+        self.machine.ingest(remote(
+            "partial-A", "Write a",
+            status="partial", intent="question",
+            start_ms=0, end_ms=100,
+        ))
+        self.machine.ingest(remote(
+            "partial-B", "Explain a",
+            status="partial", intent="question",
+            start_ms=200, end_ms=300,
+        ))
+        stale = self.machine.ingest(remote(
+            "partial-A", "Write a query",
+            revision=2, status="partial", intent="question",
+            start_ms=0, end_ms=150,
+        ))
+        self.assertEqual(stale.reason, "superseded_partial_revision")
+        final = self.machine.ingest(remote(
+            "partial-B", "Explain an index.",
+            status="final", intent="question",
+            start_ms=200, end_ms=350,
+        ))
+        self.assertEqual(final.state, "ready")
 
     def test_stale_final_and_generation_reboot_do_not_restore_old_question(self):
         initial = self.machine.ingest(remote(

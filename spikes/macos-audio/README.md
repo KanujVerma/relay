@@ -20,15 +20,19 @@ swift run relay-audio-spike
 
 The last command is a **dry run**. It does not touch the microphone, open a network connection, or write audio.
 
-## Explicit microphone smoke test
+## Explicit microphone smoke test: bundle required
 
-When you can safely test with your own synthetic spoken phrases and have permission to record them:
+Do **not** invoke an unbundled `swift run relay-audio-spike --mic` to request fresh microphone permission. macOS requires `NSMicrophoneUsageDescription` in the app's Info.plist. This spike deliberately refuses to request access if the usage description is missing.
+
+Package the already-compiled CLI into a local, ad-hoc-signed `.app` containing the purpose string, then explicitly launch its executable:
 
 ```bash
-swift run relay-audio-spike --mic --seconds 5
+bash scripts/build-mic-app.sh
+BIN_DIR="$(swift build -c debug --show-bin-path)"
+"$BIN_DIR/RelayAudioSpike.app/Contents/MacOS/relay-audio-spike" --mic --seconds 5
 ```
 
-The CLI requests microphone permission through AVFoundation and captures for 1–20 seconds. On a Mac, Terminal or the host app may need microphone access in System Settings → Privacy & Security → Microphone. It prints only an aggregate packet count, sample frames, **observed** sequence gaps (not a total loss counter), and RMS amplitude. It does not print, store, transmit, or transcribe audio content.
+The CLI requests microphone permission through AVFoundation and captures for 1–20 seconds only with a valid app bundle. On a Mac, approve `RelayAudioSpike` in System Settings → Privacy & Security → Microphone if prompted. Rebuilding an ad-hoc-signed bundle can require regranting permission. If bundle identification fails, Relay prints a safe error without asking TCC for access. It prints only an aggregate packet count, sample frames, **observed** sequence gaps (not a total loss counter), and RMS amplitude. It does not print, store, transmit, or transcribe audio content.
 
 Use headphones and no personal meeting audio for this test. Stop/revoke microphone consent at any time. The CLI is deliberately not a background app; it only listens with explicit `--mic`, and does not attempt screen-share evasion.
 
@@ -44,7 +48,7 @@ Use headphones and no personal meeting audio for this test. Stop/revoke micropho
 
 ## Evidence, limitations, next work
 
-This PR adds isolated queue tests and a non-interactive build check on public macOS CI, but interactive microphone permission and actual device performance must be validated on the user's own Mac before declaring this functional for Relay. No private interviews or speech fixtures should ever go into the public repo or GitHub Actions.
+This PR adds isolated queue and oversized-callback tests, a non-interactive bundled-plist check on public macOS CI, but interactive microphone permission and actual device performance must be validated on the user's own Mac before declaring this functional for Relay. No private interviews or speech fixtures should ever go into the public repo or GitHub Actions.
 
 Expected local test results to report (sanitized): macOS/Swift version, `swift test` outcome, whether explicit mic permission succeeded, 5-second packet count, any observed drops, and peak RSS/CPU if measured. No raw audio, transcripts, account credentials or callback URLs.
 

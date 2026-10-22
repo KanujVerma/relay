@@ -434,6 +434,13 @@ class BrainStore:
                     "UPDATE candidate_fact SET state='revoked' WHERE id=?",
                     (fact_id,),
                 )
+            # Clear keys from *historical* confirmations too, including
+            # already-superseded facts, not just currently active rows.
+            self.db.execute(
+                "UPDATE verified_fact SET claim_key=NULL WHERE fact_id IN"
+                " (SELECT id FROM candidate_fact WHERE source_id=?)",
+                (source_id,),
+            )
             self.db.execute(
                 "UPDATE candidate_fact SET claim_text=NULL,claim_key=NULL"
                 " WHERE source_id=?", (source_id,),

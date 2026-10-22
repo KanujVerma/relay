@@ -23,6 +23,7 @@ Statuses: Accepted = established requirement; Provisional = preferred implementa
 | ADR-017 | Accepted | Cheap offline Linux CI by default | Protect account-shared private Actions minutes; local Mac testing first. |
 | ADR-018 | Deferred | Advanced dashboards, mandatory practice plans and spaced repetition | Optional mock interviewer can test assistant response quality later. |
 | ADR-019 | Blocked | Production model selection and latency budget | Need actual authorized account catalog and measured streamed inference. |
+| ADR-020 | Accepted | OAuth callback must verify bound loopback Host and state before consuming a browser redirect; persist only validated Bearer credentials | Limits unsolicited loopback callback DoS and malformed credential persistence. Negative tests in tests/test_spike.py; **not yet security-tested on user Mac**. |
 
 ## Adding an ADR
 Record context, options, chosen trade-off, security implications, validation/evidence, implementation location, status and date. If tests falsify a provisional decision, supersede it in a new entry and update dependent docs.

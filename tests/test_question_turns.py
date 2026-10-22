@@ -345,6 +345,38 @@ class TurnSafety(unittest.TestCase):
         self.assertEqual(delayed_final.reason, "superseded_segment_revision")
         self.assertEqual(self.machine.current().token, newest.token)
 
+    def test_active_final_remains_protected_when_replay_history_fills(self):
+        original = remote(
+            "active", "Explain a binary search tree.",
+            intent="question", start_ms=0, end_ms=300,
+        )
+        initial = self.machine.ingest(original)
+        self.assertEqual(initial.state, "ready")
+        for i in range(MAX_SEEN_SEGMENTS + 17):
+            statement = self.machine.ingest(remote(
+                f"statement-{i}", f"Synthetic statement number {i}.",
+                intent="statement", start_ms=400+i*10,
+                end_ms=405+i*10,
+            ))
+            self.assertEqual(statement.state, "ignored")
+        self.assertEqual(len(self.machine._seen), MAX_SEEN_SEGMENTS)
+        self.assertIn("active", self.machine._seen)
+        self.assertEqual(self.machine._seen["active"].status, "final")
+        partial = self.machine.ingest(replace(
+            original, revision=2, status="partial",
+            text="Explain a binary", end_ms=1300,
+        ))
+        self.assertEqual(partial.state, "pending")
+        self.assertEqual(partial.reason, "final_reopened_as_partial")
+        self.assertFalse(self.machine.turns.is_current(initial.token))
+        revised = self.machine.ingest(replace(
+            original, revision=3,
+            text="Explain a B+ tree instead.", end_ms=2500,
+        ))
+        self.assertEqual(revised.state, "needs_review")
+        self.assertEqual(revised.reason, "final_transcript_revised")
+        self.assertIsNone(self.machine.current())
+
     def test_retraction_of_evicted_old_segment_cannot_cancel_current(self):
         old = self.machine.ingest(remote(
             "first", "Explain a hash table.",
@@ -472,6 +504,35 @@ class TurnSafety(unittest.TestCase):
         self.assertEqual(self.machine.current().token, latest.token)
         self.assertEqual(latest.token.version, 1)
         self.assertNotIn("distinct orders", self.machine.current().prompt)
+
+    def test_abandoned_correction_cannot_revise_its_start_past_new_question(self):
+        root = self.machine.ingest(remote(
+            "root", "Top five customers by revenue.",
+            start_ms=0, end_ms=100,
+        ))
+        partial = self.machine.ingest(remote(
+            "abandoned", "No, top five by",
+            intent="correction", status="partial", revision=1,
+            start_ms=150, end_ms=200,
+        ))
+        self.assertEqual(partial.state, "pending")
+        latest = self.machine.ingest(remote(
+            "replacement", "Explain database indexing.",
+            intent="question", start_ms=230, end_ms=430,
+        ))
+        self.assertEqual(latest.state, "ready")
+        # The ASR revised both the start AND end of old correction A.
+        # The earliest observed start 150ms, not the revised 460ms,
+        # determines whether it can supersede B.
+        delayed = self.machine.ingest(remote(
+            "abandoned", "No, top five by distinct orders.",
+            intent="correction", status="final", revision=2,
+            start_ms=460, end_ms=760,
+        ))
+        self.assertEqual(delayed.state, "ignored")
+        self.assertEqual(delayed.reason, "superseded_source_start")
+        self.assertEqual(self.machine.current().token, latest.token)
+        self.assertFalse(self.machine.turns.is_current(root.token))
 
     def test_newer_partial_correction_retains_context_after_prior_partial(self):
         original = self.machine.ingest(remote(

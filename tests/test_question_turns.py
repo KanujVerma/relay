@@ -94,6 +94,46 @@ class TurnAcceptance(unittest.TestCase):
         self.assertIn("Superseded question", latest.snapshot.prompt)
         self.assertIn("distinct orders", latest.snapshot.prompt)
 
+    def test_chained_corrections_keep_latest_accepted_metric_and_original_separate(self):
+        first = self.machine.ingest(remote(
+            "root", "List the top five customers by revenue.",
+            end_ms=250,
+        ))
+        second = self.machine.ingest(remote(
+            "first-correction", "No, top five by distinct orders in 2025.",
+            intent="correction", start_ms=280, end_ms=500,
+        ))
+        third = self.machine.ingest(remote(
+            "second-correction", "Make that 2024.",
+            intent="correction", start_ms=600, end_ms=720,
+        ))
+        self.assertEqual(third.state, "ready")
+        self.assertEqual(third.token.version, 3)
+        self.assertEqual(third.token.turn_id, first.token.turn_id)
+        self.assertFalse(self.turns.is_current(second.token))
+        self.assertIn("Make that 2024.", third.snapshot.prompt)
+        self.assertIn("No, top five by distinct orders in 2025.", third.snapshot.prompt)
+        self.assertIn("List the top five customers by revenue.", third.snapshot.prompt)
+        self.assertIn("Original question (older, superseded", third.snapshot.prompt)
+        self.assertIn("Superseded question (immediately previous accepted wording",
+                      third.snapshot.prompt)
+        # No fabricated SQL reconstruction is performed by this slice.
+        self.assertNotIn("SELECT ", third.snapshot.prompt)
+
+    def test_follow_up_after_correction_keeps_both_reference_levels(self):
+        self.machine.ingest(remote("root", "Explain RANK.", end_ms=200))
+        self.machine.ingest(remote(
+            "correction", "Actually, compare RANK and ROW_NUMBER on ties.",
+            intent="correction", start_ms=250, end_ms=350,
+        ))
+        result = self.machine.ingest(remote(
+            "follow-up", "What if there are duplicates?",
+            intent="follow_up", start_ms=400, end_ms=600,
+        ))
+        self.assertEqual(result.state, "ready")
+        self.assertIn("compare RANK and ROW_NUMBER", result.snapshot.prompt)
+        self.assertIn("Original question (earlier context only)", result.snapshot.prompt)
+
     def test_follow_up_retains_earlier_question_as_context_only(self):
         initial = self.machine.ingest(remote(
             "q", "Explain SQL RANK and ROW_NUMBER on salary ties.",
@@ -216,6 +256,42 @@ class TurnSafety(unittest.TestCase):
             "late", "Explain recursion.", start_ms=400,
             end_ms=500,
         )).reason, "stream_generation_stopped")
+
+    def test_higher_revision_partial_reopens_final_and_cancels_immediately(self):
+        original = remote(
+            "seg", "Explain a binary tree.", end_ms=300,
+        )
+        first = self.machine.ingest(original)
+        self.assertEqual(first.state, "ready")
+        reopened = self.machine.ingest(replace(
+            original, revision=2, status="partial",
+            text="Explain a binary", end_ms=320,
+        ))
+        self.assertEqual(reopened.state, "pending")
+        self.assertEqual(reopened.reason, "final_reopened_as_partial")
+        self.assertFalse(self.machine.turns.is_current(first.token))
+        self.assertIsNone(self.machine.current())
+        revised = self.machine.ingest(replace(
+            original, revision=3, text="Explain a binary search tree.",
+            end_ms=470,
+        ))
+        self.assertEqual(revised.state, "needs_review")
+        self.assertEqual(revised.reason, "final_transcript_revised")
+        self.assertIsNone(self.machine.current())
+
+    def test_higher_revision_partial_of_superseded_final_is_ignored(self):
+        q1 = remote("old", "Explain hash joins.", end_ms=250)
+        self.machine.ingest(q1)
+        recent = self.machine.ingest(remote(
+            "latest", "Explain merge joins.", start_ms=300, end_ms=500,
+        ))
+        stale_partial = self.machine.ingest(replace(
+            q1, revision=2, status="partial",
+            text="Explain hash", end_ms=350,
+        ))
+        self.assertEqual(stale_partial.state, "ignored")
+        self.assertEqual(stale_partial.reason, "superseded_segment_revision")
+        self.assertEqual(self.machine.current().token, recent.token)
 
     def test_revision_after_final_requires_review_not_silent_replacement(self):
         q = remote("seg", "Explain a B-tree.", end_ms=300)

@@ -122,13 +122,13 @@ class CliTests(unittest.TestCase):
             (["infer", "--role", "analytics"], "denominators"),
             (["infer"], "Never invent"),
         ]:
-            with self.subTest(argv=argv), \\
+            with self.subTest(argv=argv), \
                  patch("relay_spike.__main__.active_access_token",
-                       return_value="synthetic-oauth"), \\
+                       return_value="synthetic-oauth"), \
                  patch("relay_spike.__main__.request_json",
-                       return_value=fake_catalog), \\
+                       return_value=fake_catalog), \
                  patch("relay_spike.__main__.stream_answer",
-                       return_value=fake_response) as stream_call, \\
+                       return_value=fake_response) as stream_call, \
                  redirect_stdout(StringIO()):
                 self.assertEqual(main(argv), 0)
                 self.assertIn(expected, stream_call.call_args.kwargs["instructions"])

@@ -166,6 +166,7 @@ class QuestionTurnMachine:
         self._seen: OrderedDict[str, _Segment] = OrderedDict()
         self._reopened: set[str] = set()
         self._leading_partial: tuple[str, int, int] | None = None
+        self._invalidated_pending_id: str | None = None
         self._active: QuestionSnapshot | None = None
         self._interrupted: tuple[str, QuestionSnapshot] | None = None
 
@@ -183,6 +184,7 @@ class QuestionTurnMachine:
             self._interrupted = None
             self._reopened.clear()
             self._leading_partial = None
+            self._invalidated_pending_id = None
             self._stopped = True
             self._blocked_generation = self._remote_generation
 
@@ -197,6 +199,7 @@ class QuestionTurnMachine:
             self._interrupted = None
             self._reopened.clear()
             self._leading_partial = None
+            self._invalidated_pending_id = None
             self._stopped = False
             self._remote_generation = None
             self._blocked_generation = None
@@ -233,6 +236,7 @@ class QuestionTurnMachine:
                 self._seen.clear()
                 self._reopened.clear()
                 self._leading_partial = None
+                self._invalidated_pending_id = None
                 self._last_final_end = -1
                 self._remote_generation = event.stream_generation
                 self._blocked_generation = None
@@ -245,15 +249,33 @@ class QuestionTurnMachine:
                 self._seen.clear()
                 self._reopened.clear()
                 self._leading_partial = None
+                self._invalidated_pending_id = None
                 self._blocked_generation = event.stream_generation
                 return TurnDecision("cancelled", "asr_discontinuity")
 
+            # An unfinished correction whose original support was retracted
+            # cannot be promoted by a later final of that pending segment.
+            if self._invalidated_pending_id == event.segment_id:
+                if event.status == "final":
+                    self._invalidated_pending_id = None
+                    self._last_final_end = max(self._last_final_end, event.end_ms)
+                    return TurnDecision("needs_review", "pending_context_retracted")
+                if event.status in ("partial", "retracted"):
+                    return TurnDecision("ignored", "pending_context_retracted")
+            interrupted_dep = (
+                self._interrupted is not None and event.status == "retracted"
+                and event.segment_id in (
+                    self._interrupted[1].current_segment_id,
+                    self._interrupted[1].root_segment_id,
+                )
+            )
             # Until the newest tentative question finishes, an older
             # finalized segment must not regain authority merely because no
             # other *final* advanced the timestamp watermark yet.
             if (self._leading_partial is not None
                     and event.segment_id != self._leading_partial[0]
-                    and event.status in ("final", "retracted")):
+                    and event.status in ("final", "retracted")
+                    and not interrupted_dep):
                 leader = self._leading_partial
                 if event.status == "final" and event.start_ms >= leader[2]:
                     # A complete, independently newer utterance can replace
@@ -304,13 +326,16 @@ class QuestionTurnMachine:
                     # A delayed retraction of a superseded segment must not
                     # erase a newer finalized question's active answer.
                     return TurnDecision("ignored", "superseded_segment_retraction")
+                if interrupted_dep and self._leading_partial is not None:
+                    self._invalidated_pending_id = self._leading_partial[0]
                 self._remember(event, digest)
                 self.turns.cancel()
                 self._active = None
                 self._interrupted = None
                 self._reopened.clear()
                 self._leading_partial = None
-                self._blocked_generation = event.stream_generation
+                # A segment retraction is NOT an ASR stream discontinuity:
+                # new unrelated questions in the same generation remain valid.
                 return TurnDecision("cancelled", "transcript_retracted")
             if event.status == "partial":
                 # Ignore a delayed update to an older partial after a newer

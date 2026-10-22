@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 import RelayAudioBuffer
 
@@ -40,10 +41,12 @@ struct RelayAudioSpikeCLI {
 
         do {
             let queue = try OwnedPCMQueue(source: .microphone)
-            let capture = await MicrophoneCapture(queue: queue)
+            let capture = MicrophoneCapture(queue: queue)
             print("Requesting a microphone-only capture for \(seconds) seconds.")
             print("No audio is recorded to disk, transcribed, or sent to a network.")
             try await capture.start()
+            // Also stops capture if Task.sleep is cancelled or other errors arise.
+            defer { capture.stop() }
 
             var packets = 0
             var capturedFrames = 0
@@ -52,35 +55,42 @@ struct RelayAudioSpikeCLI {
             var lastSequence: UInt64?
             var sumSquares = 0.0
 
-            for _ in 0..<(seconds * 20) {
-                try await Task.sleep(for: .milliseconds(50))
-                while let packet = queue.dequeue() {
-                    packets += 1
-                    capturedFrames += packet.frameCount
-                capturedSamples += packet.interleavedSamples.count
-                    if let lastSequence, packet.sequence > lastSequence {
-                        observedGaps += packet.sequence - lastSequence - 1
-                    }
-                    lastSequence = packet.sequence
-                    // Consumer-only level measurement. No raw audio output.
-                    for sample in packet.interleavedSamples {
-                        sumSquares += Double(sample * sample)
-                    }
-                }
-            }
-            await capture.stop()
-            while let packet = queue.dequeue() {
+            func consume(_ packet: PCMFrame) {
                 packets += 1
                 capturedFrames += packet.frameCount
                 capturedSamples += packet.interleavedSamples.count
-                if let lastSequence, packet.sequence > lastSequence {
-                    observedGaps += packet.sequence - lastSequence - 1
+                if let previous = lastSequence, packet.sequence > previous {
+                    observedGaps += packet.sequence - previous - 1
                 }
                 lastSequence = packet.sequence
+                // Level estimation occurs only on the consumer, never inside
+                // a Core Audio callback; raw samples are not printed or stored.
                 for sample in packet.interleavedSamples {
-                    sumSquares += Double(sample * sample)
+                    let value = Double(sample)
+                    sumSquares += value * value
                 }
             }
+
+            // The clock is monotonic. Never keep the capture running just
+            // because the consumer keeps receiving frames under CPU load.
+            let deadline = DispatchTime.now().uptimeNanoseconds +
+                           UInt64(seconds) * 1_000_000_000
+            while DispatchTime.now().uptimeNanoseconds < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+                // Bound each batch as well as the total capture duration.
+                for _ in 0..<64 {
+                    guard DispatchTime.now().uptimeNanoseconds < deadline,
+                          let frame = queue.dequeue() else { break }
+                    consume(frame)
+                }
+            }
+            capture.stop()
+            // After stopping, drain at most the finite ring capacity.
+            for _ in 0..<256 {
+                guard let frame = queue.dequeue() else { break }
+                consume(frame)
+            }
+
             let rms = capturedSamples > 0
                 ? (sumSquares / Double(capturedSamples)).squareRoot() : 0
             print("Stopped. packets=\(packets) frames=\(capturedFrames) " +

@@ -156,6 +156,7 @@ class QuestionTurnMachine:
         self._last_final_end = -1
         self._seen: OrderedDict[str, _Segment] = OrderedDict()
         self._active: QuestionSnapshot | None = None
+        self._interrupted: tuple[str, QuestionSnapshot] | None = None
 
     def current(self) -> QuestionSnapshot | None:
         with self._lock:
@@ -168,6 +169,7 @@ class QuestionTurnMachine:
         with self._lock:
             self.turns.cancel()
             self._active = None
+            self._interrupted = None
             self._blocked_generation = self._remote_generation
 
     def _remember(self, e: TranscriptEvent, digest: bytes) -> None:
@@ -193,6 +195,7 @@ class QuestionTurnMachine:
                     or event.stream_generation > self._remote_generation):
                 self.turns.cancel()
                 self._active = None
+                self._interrupted = None
                 self._seen.clear()
                 self._last_final_end = -1
                 self._remote_generation = event.stream_generation
@@ -202,6 +205,7 @@ class QuestionTurnMachine:
             if event.status == "discontinuity":
                 self.turns.cancel()
                 self._active = None
+                self._interrupted = None
                 self._seen.clear()
                 self._blocked_generation = event.stream_generation
                 return TurnDecision("cancelled", "asr_discontinuity")
@@ -217,6 +221,7 @@ class QuestionTurnMachine:
                     if not (prior.status == "partial" and event.status == "final"):
                         self.turns.cancel()
                         self._active = None
+                        self._interrupted = None
                         self._blocked_generation = event.stream_generation
                         return TurnDecision("conflict", "conflicting_segment_revision")
                 if prior.status == "final" and event.status == "partial":
@@ -225,16 +230,31 @@ class QuestionTurnMachine:
                 self._remember(event, digest)
                 self.turns.cancel()
                 self._active = None
+                self._interrupted = None
                 self._blocked_generation = event.stream_generation
                 return TurnDecision("cancelled", "transcript_retracted")
             if event.status == "partial":
                 self._remember(event, digest)
+                # A *tentatively classified* remote question or correction
+                # invalidates an in-flight answer before it becomes final.
+                # Preserve only the original context for a matching finalized
+                # correction/follow-up, never as an authorized partial answer.
+                if event.intent in ("question", "correction", "follow_up"):
+                    if self._active is not None:
+                        self._interrupted = (
+                            (event.segment_id, self._active)
+                            if event.intent in ("correction", "follow_up")
+                            else None
+                        )
+                        self.turns.cancel()
+                        self._active = None
                 return TurnDecision("pending", "partial_text_not_authoritative")
             if event.end_ms <= self._last_final_end and prior is None:
                 return TurnDecision("ignored", "late_final_after_newer_utterance")
             if prior is not None and prior.status == "final":
                 self.turns.cancel()
                 self._active = None
+                self._interrupted = None
                 self._remember(event, digest)
                 self._last_final_end = max(self._last_final_end, event.end_ms)
                 return TurnDecision("needs_review", "final_transcript_revised")
@@ -242,16 +262,22 @@ class QuestionTurnMachine:
             self._remember(event, digest)
             self._last_final_end = max(self._last_final_end, event.end_ms)
             if event.intent not in ("question", "correction", "follow_up"):
+                self._interrupted = None
                 return TurnDecision("ignored", "no_explicit_question_intent")
             if (event.confidence is not None
                     and event.confidence < MIN_QUESTION_CONFIDENCE):
-                if event.intent in ("correction", "follow_up"):
-                    self.turns.cancel()
-                    self._active = None
+                self.turns.cancel()
+                self._active = None
+                self._interrupted = None
                 return TurnDecision("needs_review", "low_asr_confidence")
             previous = self._active if (
                 self._active is not None and self.turns.is_current(self._active.token)
             ) else None
+            if (previous is None and self._interrupted is not None
+                    and self._interrupted[0] == event.segment_id
+                    and event.intent in ("correction", "follow_up")):
+                previous = self._interrupted[1]
+            self._interrupted = None
             if event.intent == "follow_up" and previous is None:
                 return TurnDecision("needs_review", "orphan_follow_up")
             if event.intent == "correction" and previous is None:

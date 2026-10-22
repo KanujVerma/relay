@@ -28,6 +28,8 @@ Statuses: Accepted = established requirement; Provisional = preferred implementa
 | ADR-021 | Provisional | Adaptive model routing (Luna quick, 6.1 Sol complex, Astra optional) | Documented capability/efficiency hierarchy, not empirically measured for Relay. Choose model after quality and p50/p95 latency comparisons. |
 | ADR-022 | Accepted | Request high-signal GitHub Codex reviews through PR comments; verify actual result | Use `@codex review` with AGENTS.md rules; GitHub PR review usage is not the same as free Codex approval auto-review. See docs/PR_REVIEW.md. |
 
+| ADR-023 | Provisional implementation | A dry-run-first, fixture-only local comparison CLI must require explicit --execute and cap requests per invocation | Prevent surprise plan usage, avoid personal content in CI, and compare models on identical prompts. Verify offline tests and actual user-run results separately. |
+
 ## Adding an ADR
 Record context, options, chosen trade-off, security implications, validation/evidence, implementation location, status and date. If tests falsify a provisional decision, supersede it in a new entry and update dependent docs.
 

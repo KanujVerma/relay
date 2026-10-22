@@ -1,0 +1,34 @@
+# Architectural decision records (ADR ledger)
+
+Statuses: Accepted = established requirement; Provisional = preferred implementation requiring proof; Blocked = external condition not satisfied; Deferred = outside current slice. Reviewed 2026-10-22. Update in reviewed PRs; do not quietly change history.
+
+| ID | Status | Decision | Trade-offs / validation |
+|---|---|---|---|
+| ADR-001 | Accepted | Local-first native macOS app, Apple Silicon target | Fits hardware and audio API. Avoid early cross-platform framework overhead. |
+| ADR-002 | Accepted | Real authorized interview performance, not tutoring, drives priority | Optimize response usefulness, accuracy, speed, and personal relevance. |
+| ADR-003 | Accepted | Start with Epic developer and junior BI/analytics Role Packs | Specific job posts override anecdotal company interview patterns. |
+| ADR-004 | Accepted | Separate Personal Brain from Learning Memory | Never confuse model suggestions with proven user ability or biography. |
+| ADR-005 | Accepted | Personal facts need source/provenance, scope, confirmation and freshness | Prevent fabricated metrics, roles and tool experience. |
+| ADR-006 | Accepted | Continuous learning foundational with reversible derived preferences | Track explicit corrections, topic patterns and regression results, not model fine-tuning by default. |
+| ADR-007 | Accepted | Minimal answer-first UI, optional expansion | Full essays are unusable during a live conversation. |
+| ADR-008 | Accepted | Fast deterministic answer checks and selective second-stage model review | Double generating every answer risks unusable latency and plan usage. |
+| ADR-009 | Provisional | SwiftUI with native Core Audio/SystemAudioKit, FluidAudio local ASR/VAD | Benchmark mic/remote capture, permissions, latency and RAM; evaluate upstream licenses. |
+| ADR-010 | Provisional | SQLite + FTS5 retrieval first, local embeddings only if necessary | Low RAM, provenance, local deletion; validate retrieval before adding vector models. |
+| ADR-011 | Provisional | Official ChatGPT-plan Sign in with ChatGPT OAuth to Responses | Docs describe it, but user's actual eligibility, model list and completed response are still untested. No cookie scraping or unapproved paid API. |
+| ADR-012 | Accepted | External Drive/GitHub/ChatGPT permissions are independent | ChatGPT sign-in does not grant ChatGPT memory, conversations or connected apps. |
+| ADR-013 | Accepted | Versioned append-only events and reversible derived state | Maintain auditability and permit improved evaluation rubrics. |
+| ADR-014 | Accepted | No personal data or secrets committed to Git even if private later | Public repo is intentional until owner changes it. |
+| ADR-015 | Accepted | Authorized recording/transcription and compliant AI use only | No stealth capture, detection evasion or guarantee of invisibility. |
+| ADR-016 | Accepted | One small scoped PR per slice and durable GitHub handoff | Avoid context rot and giant, unreviewable agent changes. |
+| ADR-017 | Accepted | Cheap offline Linux CI by default | Protect account-shared private Actions minutes; local Mac testing first. |
+| ADR-018 | Deferred | Advanced dashboards, mandatory practice plans and spaced repetition | Optional mock interviewer can test assistant response quality later. |
+| ADR-019 | Blocked | Production model selection and latency budget | Need actual authorized account catalog and measured streamed inference. |
+
+## Adding an ADR
+Record context, options, chosen trade-off, security implications, validation/evidence, implementation location, status and date. If tests falsify a provisional decision, supersede it in a new entry and update dependent docs.
+
+## Permission boundaries
+ChatGPT plan token, Drive file access, GitHub access, microphone and system-audio capture are independent consents. Do not cross their trust boundaries. Imported documents and transcripts are untrusted data, never executable instructions.
+
+## Security before shipping
+Keychain-based tokens, safe refresh rotation, granular connector revocation, local data encryption, retention/deletion controls, prompt injection filtering, and recording consent all require implementation and tests. Being named here does not mean those protections exist yet.

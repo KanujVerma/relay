@@ -176,6 +176,40 @@ class StreamSafetyTests(unittest.TestCase):
         self.assertEqual(view.state, "final_unverified")
         self.assertNotIn("SHOULD_NOT_APPEAR", view.text)
 
+    def test_terminal_completion_requires_explicit_status_object(self):
+        for payload in ({}, {"status": "incomplete"}, None, [], "completed"):
+            with self.subTest(response=payload):
+                def malformed(clock):
+                    yield from frames(clock, [
+                        (0.1, "response.output_text.delta", DIRECT, 1)
+                    ])
+                    clock.now = 0.4
+                    yield b"event: response.completed\n"
+                    yield ("data: " + json.dumps({
+                        "type": "response.completed", "response": payload,
+                        "sequence_number": 2,
+                    }) + "\n").encode()
+                    yield b"\n"
+                t, _, clock, out = run(malformed)
+                self.assertFalse(out.completed)
+                self.assertEqual(out.error_code, "stream_error")
+                view, shown = deliver(out, t, clock)
+                self.assertEqual(view.state, "unavailable")
+                self.assertIsNone(view.text)
+                self.assertEqual(len(shown), 1)
+
+    def test_nonadjacent_old_sse_sequence_rejected_not_replayed(self):
+        def out_of_order(clock):
+            return frames(clock, [
+                (0.1, "response.output_text.delta", "Partial ", 1),
+                (0.2, "response.created", None, 2),
+                (0.3, "response.output_text.delta", "Partial ", 1),
+                (0.5, "response.completed", None, 3),
+            ])
+        t, _, clock, out = run(out_of_order)
+        self.assertFalse(out.completed)
+        self.assertEqual(out.error_code, "stream_error")
+
     def test_conflicting_sequence_replay_aborts(self):
         t, _, clock, out = run(lambda c: frames(c, [
             (0.1, "response.output_text.delta", "first", 1),

@@ -1,0 +1,29 @@
+name: Slice 00 contract fixtures
+
+on:
+  pull_request:
+    paths:
+      - 'EVALS/**'
+      - '.github/workflows/contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'EVALS/**'
+      - '.github/workflows/contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-slim
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate fixture schema and coverage
+        run: python3 EVALS/validate.py

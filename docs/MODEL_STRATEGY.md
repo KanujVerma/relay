@@ -1,17 +1,17 @@
 # Model strategy and evidence, 2026-10-22
 
-Status: **provisional model routing**. The initial local paired benchmark now has **10 owner-reported, completed requests** (six default-effort, four explicit-effort) in addition to the earlier single feasibility response. This is a small exploratory sample, not production performance evidence.
+Status: **evidence-limited development routing**. The owner supplied **22 completed synthetic model requests** (18 default-effort responses across nine matched Luna/Sol pairs, and four explicit Low/Medium requests), in addition to the original single-model feasibility response. This supports a *provisional* Luna Medium default during the next development slice, not production or real-interview correctness claims.
 
 ## Observed local baseline
 User ran the Relay CLI with browser OAuth, verified ChatGPT plan permission, listed eight available models, and completed a synthetic SQL WHERE/HAVING response on `gpt-6.1-sol`. Reported timings: first text 2640 ms, response.completed 8306 ms, 906 characters. The OAuth-only CLI has no ordinary billed API key path. These are user-reported numbers, not independently repeated measurements or proof of unlimited access.
 
 Model list at that moment: `gpt-6.1-sol`, `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-daybreak-blue-latest`. Future model availability is not guaranteed.
 
-## Proposed routing, pending broader correctness and latency evidence
-- **Fast questions:** `gpt-6-luna` candidate for common SQL definitions, brief explanations and scoped topics. Favor only if technical accuracy and multi-part coverage meet acceptance.
-- **Complex questions:** `gpt-6.1-sol` candidate for code, debugging, SQL edge cases, nontrivial follow-ups and nuanced grounded personal experiences.
-- **Offline complex analysis:** `gpt-6-astra` optional, never a latency-sensitive default without evidence.
-- No automatic parallel model generation or mandatory full second-model critique: usage and latency matter.
+## Provisional routing for the next development slice
+- **Default candidate:** `gpt-6-luna` at its observed Medium default for ordinary questions and initial coding/SQL replies, subject to actual QA results. It finished sooner in 8 of 9 paired comparisons and did not show an obvious correctness deficit in this narrow fixture subset.
+- **Selective candidate:** `gpt-6.1-sol` for explicitly requested depth or answers flagged by a future grounded QA policy. Harder coding alone does **not** prove Sol should always be called; it began output faster in the two E09 runs but finished later.
+- **Offline complex analysis:** `gpt-6-astra` remains optional, not a live default without testing.
+- No unconditional parallel inference, silent second model call, high-effort override, or separately billed API-key fallback. Routing must remain user-controllable and be revisited with held-out factual-accuracy and first-*useful*-answer measures.
 
 OpenAI describes Luna as fastest/efficient, Sol as balanced near-Astra, and Astra as its most capable. These labels are not a substitute for measured performance on Relay's tasks.
 
@@ -34,7 +34,7 @@ For each run capture selected model, fixture ID, prompt variant, first_text_ms, 
 - https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations
 
 ## Slice 01B-A implementation status
-The CLI and benchmark are **merged in PR #8**, after passing offline CI and a completed Codex GitHub review with three P2 fixes. The `--execute` flag permits a **bounded** local model comparison with the authorized ChatGPT plan; `--show-answers` prints only synthetic-case model outputs for human review. The format metrics are purely mechanical, not factual correctness scores. See [RUN_LOCAL_MODEL_BENCHMARK.md](RUN_LOCAL_MODEL_BENCHMARK.md). A first user-run paired comparison on three cases has now been supplied and recorded below; the production default remains provisional until harder repeated cases and independent correctness review. [Issue #9](https://github.com/KanujVerma/relay/issues/9) tracks the local validation.
+The CLI and benchmark are **merged in PR #8**, after passing offline CI and a completed Codex GitHub review with three P2 fixes. The `--execute` flag permits a **bounded** local model comparison with the authorized ChatGPT plan; `--show-answers` prints only synthetic-case model outputs for human review. The format metrics are purely mechanical, not factual correctness scores. See [RUN_LOCAL_MODEL_BENCHMARK.md](RUN_LOCAL_MODEL_BENCHMARK.md). An initial three-case paired comparison and a subsequent three-case repeated harder comparison have been supplied and recorded below. The assistant inspected printed synthetic answers against fixture rubrics but did not execute code/SQL or perform independent expert adjudication. Production routing remains unvalidated. [Issue #9](https://github.com/KanujVerma/relay/issues/9) tracks the local validation.
 
 ## Reasoning effort settings: Slice 01B-A1 (Low/Medium verified locally)
 
@@ -80,6 +80,28 @@ Both models produced plausible, technically sound responses on this fixture subs
 
 This proves the **four tested override combinations** work with this account/preview, not that Low universally beats Medium. Confirmed default-server Medium is different from **explicit** Medium; keep those groups separate. Do not select automatic production routing or claim a reliable p95 from three or fewer observations per model/effort group.
 
-## Next verification gate: harder, repeated local fixtures
+## Repeated harder-case local benchmark, 2026-10-22 (12 additional responses)
 
-Keep [issue #9](https://github.com/KanujVerma/relay/issues/9) open for a single 12-request paired benchmark at default effort: D13 (SQL salary ties/rank semantics), D07 (multipart CTE/subquery optimizer caveats), E09 (binary search, sortedness, empty input). Use `--repeats 2` with identical prompts for Luna and Sol 6.1, manually judge **technical accuracy, completeness, assumptions and interview readability**, and preserve synthetic answers locally. See [RUN_LOCAL_MODEL_BENCHMARK.md](RUN_LOCAL_MODEL_BENCHMARK.md). Even then, latency and routing remain exploratory, not production guarantees. The upcoming [Slice 01B-B0 issue #12](https://github.com/KanujVerma/relay/issues/12) adds an offline QA contract rather than mandatory second-model calls.
+The owner completed `--cases D13,D07,E09 --repeats 2 --show-answers` on Luna and Sol 6.1 at default (server-reported Medium) effort. All twelve streams completed. Times below are first nonempty generated text / full completion, in milliseconds.
+
+| Case and repetition | Luna first / total | Sol 6.1 first / total |
+| --- | ---: | ---: |
+| D13, salary RANK/ROW_NUMBER, rep 1 | 2235 / 5305 | 7987 / 11337 |
+| D13, rep 2 | 3601 / 6818 | 5179 / 8968 |
+| D07, CTE/subquery/performance, rep 1 | 5220 / 7467 | 3692 / 8184 |
+| D07, rep 2 | 1195 / 3804 | 8292 / 12797 |
+| E09, binary search, rep 1 | 4932 / 7918 | 4258 / 8761 |
+| E09, rep 2 | 3265 / 6371 | 2957 / 7519 |
+| **Median of these six per model** | **3433 / 6594.5** | **4718.5 / 8864.5** |
+
+**Assistant inspection against the 26-fixture evaluation corpus, not an execution-based correctness score:** All four D13 answers distinguish `RANK` and `ROW_NUMBER` tie behavior and partition by department. Examples choose either top-one or top-three, illustrating the ambiguity of "top earners." All four D07 answers address each part and correctly avoid universal CTE performance guarantees. All four E09 answers supply plausible correct iterative binary search for an ascending-order list, with O(log n) time, O(1) extra space and code that handles empty input. One Luna E09 response leads with code and omits an *explicit spoken* empty-input caveat, although the code returns -1 for an empty list. None of this proves factual correctness in an unobserved interview or validates the SQL against an actual database.
+
+## Combined exploratory default-effort observations
+
+Across **nine matched question/repetition pairs per model** (D02, D01, E01 once, plus D13/D07/E09 twice), the median **first text / full completion** was **Luna 3265 / 6371 ms** and **Sol 6.1 4258 / 8761 ms**. Luna completed sooner in **8 of 9** paired cases but started nonempty output first in only **5 of 9**. Both E09 coding runs started earlier on Sol but finished earlier on Luna. This argues for a Luna-first *development policy*, not a permanent or exhaustive quality ranking.
+
+These nine samples per model remain below the current **10-per-model-and-effort p95 reporting threshold**. Do not claim p95 or guaranteed sub-4-second usefulness; first nonempty text does not measure the time to a readable answer. The stream timing does not include permitted audio capture, local ASR, retrieval, verification, or rendering latency. The four explicit Low/Medium results above remain separate and do not demonstrate a reasoning-effort winner.
+
+## Decision and next slice
+
+The synthetic comparison gate in [issue #9](https://github.com/KanujVerma/relay/issues/9) is complete with the above limitations. Stop spending plan requests on trivial re-benchmarks for now. Begin [issue #12](https://github.com/KanujVerma/relay/issues/12), an **offline, deterministic QA contract** that recognizes incomplete/stale output, missing verified personal facts, and possible multipart omissions, and emits a **nonbinding** selective-review recommendation without making another model call. Future tests must assess *first useful text*, actual correctness on held-out harder cases, personal provenance, and whether selective Sol/second-pass review gives measurable improvement. Never treat a deterministic `pass` or a model critique as independent ground truth.

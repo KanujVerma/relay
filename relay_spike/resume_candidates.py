@@ -142,6 +142,11 @@ class ReviewGateway:
         if (host_capability is None or
                 isinstance(host_capability, (str, bytes, int, float, bool))):
             raise BrainError("Use an opaque trusted host capability object.")
+        # Register one gateway per store lifetime. Model/parser code must never
+        # be handed either the host capability or this ledger authorization.
+        ledger_guard = object()
+        store._bind_resume_review_gate(ledger_guard)
+        self.__ledger_guard = ledger_guard
         self._store = store
         self.__host_capability = host_capability
 
@@ -249,6 +254,7 @@ class ReviewGateway:
                 reviewed_actor=approved_actor, reviewed_claim_key=claim_key,
                 expected_snippet_sha256=card.snippet_sha256,
                 replaces_fact_id=replaces_fact_id,
+                reviewer_token=self.__ledger_guard,
             )
         else:
             raise BrainError("Unknown review decision.")

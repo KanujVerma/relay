@@ -1,6 +1,6 @@
 # Codex GitHub PR review policy, 2026-10-22
 
-This is a review workflow, not a claim that Codex is enabled on Relay.
+Codex GitHub Code Review was verified connected for Relay by an actual bot review on PR #6 (2026-10-22). Future PRs still require a distinct request or configured automatic trigger, and completion must be verified.
 
 ## Manual request
 1. Open a reviewable PR with passing local/CI checks.

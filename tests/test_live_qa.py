@@ -112,6 +112,7 @@ class BridgeUnitTests(unittest.TestCase):
         for case, model, effort in [
             ("E08", "gpt-6-luna", "default"),  # A personal fixture is never sent.
             ("E07", "gpt-6-luna", "default"),
+            ("D01", "gpt-6-luna", "default"),  # Technical but not preapproved.
             ("D12", "gpt-6-luna", "default"),  # Requires a real turn-state engine.
             ("NOPE", "gpt-6-luna", "default"),
             ("D02", "gpt-6-astra", "default"),
@@ -122,7 +123,7 @@ class BridgeUnitTests(unittest.TestCase):
                 validate_live_case(case, model, effort)
 
     def test_synthetic_first_person_negative_screen(self):
-        self.assertEqual(synthetic_nonpersonal_classification(DIRECT, "sql"), "absent")
+        self.assertEqual(synthetic_nonpersonal_classification(DIRECT, "sql", case_id="D02"), "absent")
         for text in (
             PERSONAL,
             "In my internship the retention metric was different.",
@@ -134,10 +135,10 @@ class BridgeUnitTests(unittest.TestCase):
         ):
             with self.subTest(text=text):
                 self.assertNotEqual(
-                    synthetic_nonpersonal_classification(text, "sql"), "absent"
+                    synthetic_nonpersonal_classification(text, "sql", case_id="D02"), "absent"
                 )
         self.assertEqual(
-            synthetic_nonpersonal_classification(DIRECT, "personal"), "uncertain"
+            synthetic_nonpersonal_classification(DIRECT, "personal", case_id="D02"), "uncertain"
         )
 
     def test_real_sse_bytes_flow_through_existing_qa_then_publish(self):
@@ -220,7 +221,7 @@ class BridgeUnitTests(unittest.TestCase):
         for claim in claims:
             with self.subTest(claim=claim):
                 self.assertEqual(
-                    synthetic_nonpersonal_classification(claim, "sql"), "present"
+                    synthetic_nonpersonal_classification(claim, "sql", case_id="D02"), "present"
                 )
                 clock, calls, shown = Clock(), [], []
                 out = run_live_synthetic_case(
@@ -236,6 +237,42 @@ class BridgeUnitTests(unittest.TestCase):
                 self.assertIsNone(out.presentation.first_scannable_candidate_ms)
                 self.assertEqual(len(calls), 1)
                 self.assertTrue(all(view.text is None for view in shown))
+
+    def test_unrecognized_present_tense_work_claims_cannot_pass(self):
+        # Negative keyword detectors cannot enumerate all verb forms.
+        claim = (
+            "Riley builds dashboards at Epic and boosts retention by 30%. "
+            "WHERE filters rows; HAVING filters groups."
+        )
+        self.assertEqual(
+            synthetic_nonpersonal_classification(claim, "sql", case_id="D02"),
+            "uncertain",
+        )
+        clock, calls, shown = Clock(), [], []
+        out = run_live_synthetic_case(
+            "token", case_id="D02", model="gpt-6-luna",
+            on_present=shown.append, clock=clock,
+            response_stream=source_for(clock, response_rows(claim), calls),
+        )
+        self.assertEqual(out.assessment.qa.status, "needs_revision")
+        self.assertEqual(out.presentation.state, "needs_revision")
+        self.assertIsNone(out.presentation.text)
+        self.assertEqual(len(shown), 1)
+        self.assertIsNone(shown[0].text)
+
+    def test_extra_generated_sentence_cannot_extend_whole_answer_allowlist(self):
+        clock, calls, shown = Clock(), [], []
+        out = run_live_synthetic_case(
+            "token", case_id="D02", model="gpt-6-luna",
+            on_present=shown.append, clock=clock,
+            response_stream=source_for(
+                clock, response_rows(DIRECT + " An unrelated fact follows."), calls
+            ),
+        )
+        self.assertNotEqual(out.assessment.qa.status, "pass")
+        self.assertIsNone(out.presentation.text)
+        self.assertEqual(len(shown), 1)
+        self.assertIsNone(shown[0].text)
 
     def test_incomplete_and_malformed_after_partial_never_publish(self):
         for rows in (

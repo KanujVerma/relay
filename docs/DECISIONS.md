@@ -30,6 +30,8 @@ Statuses: Accepted = established requirement; Provisional = preferred implementa
 
 | ADR-023 | Provisional implementation | A dry-run-first, fixture-only local comparison CLI must require explicit --execute and cap requests per invocation | Prevent surprise plan usage, avoid personal content in CI, and compare models on identical prompts. Verify offline tests and actual user-run results separately. |
 
+| ADR-024 | Provisional until OAuth plan test | Optional model-specific reasoning.effort in Responses; default field omitted, effective medium documented for Luna and Sol 6.1 | Explicit levels are supported in the standard API and not preview-blacklisted, but ChatGPT-plan OAuth acceptance must be observed. Validate before auth, cap cross-product requests, group per-effort benchmark results, no automatic high/pro mode or paid fallback. See docs/MODEL_STRATEGY.md. |
+
 ## Adding an ADR
 Record context, options, chosen trade-off, security implications, validation/evidence, implementation location, status and date. If tests falsify a provisional decision, supersede it in a new entry and update dependent docs.
 

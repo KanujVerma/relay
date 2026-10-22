@@ -80,9 +80,10 @@ transactions for state changes and rollback on conflicts.
 5. Rejection and fact revocation redact that candidate's text and key.
    Source revocation invalidates all dependent active verified facts,
    including facts from other sources that depend on its experience grouping.
-   It redacts the revoked source's external ref/checksum, directly supported
-   candidate text/keys, dependent experience labels, and historical verified
-   claim keys, while retaining opaque audit tombstones.
+   It redacts the revoked source's external ref/checksum, **all dependent
+   candidate text/keys (even claims from a different source that reference its
+   experience grouping)**, dependent experience labels, and historical
+   verified claim keys, while retaining opaque audit tombstones.
 6. A revoked source never silently regains consent. Later user-supplied
    evidence must enter as a **new** source with new permission/approval.
 

@@ -120,6 +120,52 @@ class TurnAcceptance(unittest.TestCase):
         # No fabricated SQL reconstruction is performed by this slice.
         self.assertNotIn("SELECT ", third.snapshot.prompt)
 
+    def test_retraction_of_intermediate_correction_invalidates_current_chain(self):
+        original = self.machine.ingest(remote(
+            "root", "List top customers by revenue.",
+            start_ms=0, end_ms=200,
+        ))
+        middle = self.machine.ingest(remote(
+            "correction-B", "No, by distinct orders in 2025.",
+            intent="correction", start_ms=250, end_ms=420,
+        ))
+        last = self.machine.ingest(remote(
+            "correction-C", "Make that 2024.",
+            intent="correction", start_ms=480, end_ms=620,
+        ))
+        self.assertEqual(last.state, "ready")
+        self.assertEqual(last.snapshot.dependency_segment_ids,
+                         ("root", "correction-B", "correction-C"))
+        self.assertFalse(self.machine.turns.is_current(middle.token))
+        retracted = self.machine.ingest(remote(
+            "correction-B", "", revision=2, status="retracted",
+            intent="unknown", start_ms=250, end_ms=700,
+        ))
+        self.assertEqual(retracted.state, "cancelled")
+        self.assertFalse(self.machine.turns.is_current(last.token))
+        self.assertIsNone(self.machine.current())
+        self.assertFalse(self.machine.turns.is_current(original.token))
+
+    def test_excessive_correction_chain_fails_closed_at_capacity(self):
+        first = self.machine.ingest(remote(
+            "root", "Explain a query.", start_ms=0, end_ms=100,
+        ))
+        self.assertEqual(first.state, "ready")
+        for i in range(15):
+            response = self.machine.ingest(remote(
+                f"correction-{i}", f"Make that variant {i}.",
+                intent="correction", start_ms=150+i*150,
+                end_ms=230+i*150,
+            ))
+            self.assertEqual(response.state, "ready")
+        rejected = self.machine.ingest(remote(
+            "correction-too-long", "Make that another variant.",
+            intent="correction", start_ms=2500, end_ms=2600,
+        ))
+        self.assertEqual(rejected.state, "needs_review")
+        self.assertEqual(rejected.reason, "correction_chain_too_long")
+        self.assertIsNone(self.machine.current())
+
     def test_follow_up_after_correction_keeps_both_reference_levels(self):
         self.machine.ingest(remote("root", "Explain RANK.", end_ms=200))
         self.machine.ingest(remote(
@@ -565,6 +611,37 @@ class TurnSafety(unittest.TestCase):
         self.assertIn("Superseded question", accepted.snapshot.prompt)
         self.assertIn("top five customers by revenue", accepted.snapshot.prompt)
 
+    def test_revised_partial_keeps_first_leading_interval_not_later_interval(self):
+        self.machine.ingest(remote(
+            "root", "Top five customers by revenue.",
+            start_ms=0, end_ms=100,
+        ))
+        self.assertEqual(self.machine.ingest(remote(
+            "older-A", "No, top five",
+            status="partial", intent="correction", revision=1,
+            start_ms=150, end_ms=200,
+        )).state, "pending")
+        self.assertEqual(self.machine.ingest(remote(
+            "older-A", "No, top five by orders",
+            status="partial", intent="correction", revision=2,
+            start_ms=300, end_ms=350,
+        )).state, "pending")
+        self.assertEqual(self.machine._leading_partial,
+                         ("older-A", 150, 200))
+        newer = self.machine.ingest(remote(
+            "newer-B", "Explain database indexing.",
+            intent="question", start_ms=230, end_ms=280,
+        ))
+        self.assertEqual(newer.state, "ready")
+        late = self.machine.ingest(remote(
+            "older-A", "No, top five by distinct orders.",
+            intent="correction", revision=3, status="final",
+            start_ms=340, end_ms=600,
+        ))
+        self.assertEqual(late.state, "ignored")
+        self.assertEqual(late.reason, "superseded_source_start")
+        self.assertEqual(self.machine.current().token, newer.token)
+
     def test_old_partial_revisions_cannot_retake_lead(self):
         self.machine.ingest(remote(
             "partial-A", "Write a",
@@ -673,6 +750,22 @@ class TurnSafety(unittest.TestCase):
         ))
         self.assertEqual(unclassified.state, "needs_review")
         self.assertEqual(unclassified.reason, "unclassified_remote_utterance")
+        self.assertFalse(self.machine.turns.is_current(initial.token))
+        self.assertIsNone(self.machine.current())
+
+    def test_contained_unclassified_final_preempts_active_question(self):
+        initial = self.machine.ingest(remote(
+            "main-question", "Explain database normalization.",
+            start_ms=0, end_ms=1000,
+        ))
+        self.assertEqual(initial.state, "ready")
+        contained = self.machine.ingest(remote(
+            "unclassified", "I may need to correct that requirement.",
+            intent="unknown", start_ms=500, end_ms=800,
+        ))
+        self.assertEqual(contained.state, "needs_review")
+        self.assertEqual(contained.reason,
+                         "unclassified_overlapping_remote_utterance")
         self.assertFalse(self.machine.turns.is_current(initial.token))
         self.assertIsNone(self.machine.current())
 

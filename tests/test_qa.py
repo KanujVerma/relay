@@ -13,8 +13,9 @@ def example(case_id="D02", category="sql", answer=None, **kwargs):
     values = {
         "case_id": case_id, "role": "epic" if case_id.startswith("E") else "analytics",
         "category": category, "answer": answer, "completed": True,
-        "turn_id": "synthetic-turn-1", "turn_version": 3,
-        "active_turn_version": 3,
+        "turn_id": "synthetic-turn-1", "active_turn_id": "synthetic-turn-1",
+        "turn_version": 3, "active_turn_version": 3,
+        "personal_claim_classification": "absent",
     }
     values.update(kwargs)
     return QAInput(**values)
@@ -28,12 +29,14 @@ class GatingTests(unittest.TestCase):
         self.assertFalse(reviewed.second_review_recommended)
         self.assertEqual(reviewed.case_id, "D02")
         self.assertEqual(reviewed.turn_version, 3)
+        self.assertEqual(reviewed.active_turn_id, "synthetic-turn-1")
         self.assertGreater(reviewed.words, 4)
 
     def test_incomplete_and_stale_never_pass_or_request_model(self):
         for kwargs, reason in [
             ({"completed": False}, "incomplete_stream"),
             ({"active_turn_version": 4}, "superseded_turn"),
+            ({"active_turn_id": "new-interviewer-question"}, "superseded_turn"),
             ({"answer": " "}, "empty_answer"),
             ({"category": "not_a_real_category"}, "unknown_question_category"),
         ]:
@@ -90,6 +93,34 @@ class GatingTests(unittest.TestCase):
         ))
         self.assertEqual(generic.status, "pass")
 
+    def test_contribution_phrasings_and_unknown_classification_fail_closed(self):
+        for claim in (
+            "I've built the reporting platform for my employer.",
+            "I wrote the pipeline at work.",
+            "I was responsible for the migration.",
+            "I contributed to the dashboard design.",
+            "I have 5 years in reporting.",
+        ):
+            with self.subTest(claim=claim):
+                outcome = assess(example(
+                    "D01", "sql", answer="Join fanout is important. " + claim
+                ))
+                self.assertEqual(outcome.status, "abstain")
+                self.assertIn("missing_verified_personal_context", outcome.reasons)
+
+        explicit_claim = assess(example(
+            "D02", "sql", personal_claim_classification="present",
+            answer="This synthetic string makes no named job reference."
+        ))
+        self.assertEqual(explicit_claim.status, "abstain")
+
+        unknown = assess(example(
+            "D02", "sql", personal_claim_classification="uncertain"
+        ))
+        self.assertEqual(unknown.status, "needs_revision")
+        self.assertIn("personal_attribution_not_classified", unknown.reasons)
+        self.assertFalse(unknown.second_review_recommended)
+
     def test_multi_part_e04_heuristic_flags_missing_collision_or_worst_case(self):
         indicators = (
             CoverageIndicator("definition", ("hash table", "hash map")),
@@ -129,6 +160,15 @@ class GatingTests(unittest.TestCase):
                            coverage_indicators=markers))
         self.assertEqual(r.status, "needs_revision")
         self.assertEqual(r.missing_coverage_indicators, ("performance",))
+
+        # "cte" inside the word "selected" is NOT evidence that a CTE was discussed.
+        false_positive = assess(example(
+            "D07", "multi_part",
+            answer="A subquery is selected based on optimizer performance.",
+            coverage_indicators=markers,
+        ))
+        self.assertEqual(false_positive.status, "needs_revision")
+        self.assertEqual(false_positive.missing_coverage_indicators, ("CTE",))
 
     def test_technical_risk_decides_selective_review_without_extra_inference(self):
         for case, category, flags in [
@@ -180,6 +220,8 @@ class GatingTests(unittest.TestCase):
             {"verified_source_ids": ("a", "a")},
             {"verified_source_ids": ("",)},
             {"risk_flags": ("",)},
+            {"active_turn_id": ""},
+            {"personal_claim_classification": "nope"},
             {"coverage_indicators": (CoverageIndicator("", ("term",)),)},
             {"coverage_indicators": (CoverageIndicator("part", ()),)},
         ]

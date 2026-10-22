@@ -393,6 +393,21 @@ class TurnSafety(unittest.TestCase):
         self.assertIn("merge joins", current.snapshot.prompt)
         self.assertNotIn("hash joins", current.snapshot.prompt)
 
+    def test_final_overlapping_pending_remote_utterance_requires_review(self):
+        self.assertEqual(self.machine.ingest(remote(
+            "pending-A", "Explain database",
+            status="partial", intent="question",
+            start_ms=0, end_ms=300,
+        )).state, "pending")
+        unclear = self.machine.ingest(remote(
+            "overlapping-B", "Explain transaction isolation.",
+            status="final", intent="question",
+            start_ms=240, end_ms=500,
+        ))
+        self.assertEqual(unclear.state, "needs_review")
+        self.assertEqual(unclear.reason, "overlapping_pending_utterances")
+        self.assertIsNone(self.machine.current())
+
     def test_newer_partial_correction_retains_context_after_prior_partial(self):
         original = self.machine.ingest(remote(
             "original", "Explain top five customers by revenue.", end_ms=300,

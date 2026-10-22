@@ -271,6 +271,12 @@ class QuestionTurnMachine:
                     self._reopened.add(event.segment_id)
                     return TurnDecision("pending", "final_reopened_as_partial")
             if event.status == "retracted":
+                if (prior is not None and
+                        self._active is not None and
+                        self._active.current_segment_id != event.segment_id):
+                    # A delayed retraction of a superseded segment must not
+                    # erase a newer finalized question's active answer.
+                    return TurnDecision("ignored", "superseded_segment_retraction")
                 self._remember(event, digest)
                 self.turns.cancel()
                 self._active = None
@@ -300,6 +306,7 @@ class QuestionTurnMachine:
             # from that older partial must not become current after newer
             # accepted questions. The replay hash alone is not ordering.
             if (event.end_ms <= self._last_final_end
+                    and event.segment_id not in self._reopened
                     and (prior is None or prior.status != "final")):
                 self._reopened.discard(event.segment_id)
                 return TurnDecision("ignored", "late_final_after_newer_utterance")

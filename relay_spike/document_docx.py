@@ -15,6 +15,18 @@ WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 MAIN_DOCUMENT_RELATIONSHIP = OFFICE_REL_NS + "/officeDocument"
+# Relationships, not part names, determine which content a document uses.
+# A header/footer can legitimately have an arbitrary XML part name, which
+# python-docx Document.paragraphs does not include. Reject the complete
+# secondary-text relationship classes rather than infer from word/header*.
+_SECONDARY_TEXT_RELATIONSHIP_TYPES = frozenset(
+    f"{namespace}/{kind}"
+    for namespace in (
+        OFFICE_REL_NS,
+        "http://purl.oclc.org/ooxml/officeDocument/relationships",
+    )
+    for kind in ("header", "footer", "comments", "footnotes", "endnotes")
+)
 _PROPERTY_CONTENT_TAGS = frozenset({
     f"{{{WORD_NS}}}p",
     f"{{{WORD_NS}}}r",
@@ -242,6 +254,12 @@ def inspect_docx(data: bytes):
                     except Exception:
                         raise InvalidDocx("docx_relationships_invalid") from None
                 for relationship in relationships.iter(f"{{{REL_NS}}}Relationship"):
+                    # The relationship Type is authoritative even when its
+                    # internal Target is named e.g. word/qualifier12.xml.
+                    # Reject these unsupported content layers before opening
+                    # python-docx, regardless of their filename or text.
+                    if relationship.attrib.get("Type") in _SECONDARY_TEXT_RELATIONSHIP_TYPES:
+                        raise UnsupportedDocx("docx_secondary_text_relationship")
                     target_mode = relationship.attrib.get("TargetMode", "").strip().casefold()
                     parsed_target = urlsplit(relationship.attrib.get("Target", ""))
                     if (target_mode == "external" or

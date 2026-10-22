@@ -214,6 +214,7 @@ def assess_synthetic_stream(
     clock: Callable[[], float] = time.monotonic,
     started_at: float | None = None,
     attribution_classifier: Callable[[str, str], str] | None = None,
+    strict_replay: bool = False,
 ) -> StreamAssessment:
     """Collect a mock/authorized-caller-provided SSE iterator and apply B0 QA.
 
@@ -264,6 +265,7 @@ def assess_synthetic_stream(
         stream_metrics = consume_stream(
             byte_lines, started=started, clock=clock, on_delta=on_delta,
             should_continue=lambda: turns.is_current(token),
+            strict_replay=strict_replay,
         )
     except (StreamError, UnicodeError, ValueError):
         # No text or exception details are sent to the presenter on failure.

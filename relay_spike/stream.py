@@ -117,7 +117,8 @@ def sse_events(byte_lines):
 
 
 def consume_stream(byte_lines, *, started: float, clock=time.monotonic,
-                   on_delta=None, should_continue=None) -> dict:
+                   on_delta=None, should_continue=None,
+                   strict_replay: bool = False) -> dict:
     first_output = None
     completed = False
     count = 0
@@ -144,7 +145,9 @@ def consume_stream(byte_lines, *, started: float, clock=time.monotonic,
             if sequence == last_sequence:
                 if digest != last_digest:
                     raise StreamError("Conflicting duplicate SSE event.")
-                continue  # Exact adjacent replay, not another text fragment.
+                if strict_replay:
+                    raise StreamError("Adjacent SSE replay rejected in strict mode.")
+                continue  # Legacy infer/benchmark tolerate an exact adjacent replay.
             last_sequence, last_digest = sequence, digest
         typ = event.get("type") or event_type
         if typ == "response.output_text.delta":

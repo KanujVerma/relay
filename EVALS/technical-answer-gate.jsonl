@@ -48,3 +48,7 @@
 {"id":"E09-N15","case_id":"E09","candidate":"Binary search requires sorted input and halves the range. Its iterative time is O(log n) and auxiliary space is O(1), while worst case time is O(n).","expected":"withhold"}
 {"id":"E09-N16","case_id":"E09","candidate":"Binary search requires sorted input, halves the remaining range, and has iterative time O(log n) with O(1) auxiliary space but worst case time O(n).","expected":"withhold"}
 {"id":"E09-N17","case_id":"E09","candidate":"Binary search on sorted arrays halves the range. Its iterative time is O(log n) with O(1) space. Time is O(n).","expected":"withhold"}
+{"id":"D02-N18","case_id":"D02","candidate":"WHERE filters rows and groups before grouping. HAVING filters groups after grouping.","expected":"withhold"}
+{"id":"D02-N19","case_id":"D02","candidate":"WHERE filters rows before grouping and groups. HAVING filters groups after grouping.","expected":"withhold"}
+{"id":"E09-N18","case_id":"E09","candidate":"Binary search requires sorted input and halves the range. Its iterative auxiliary space uses O(log n) and time uses O(1).","expected":"withhold"}
+{"id":"E09-N19","case_id":"E09","candidate":"Binary search on sorted arrays halves the remaining range. Iterative time uses O(1) and auxiliary space uses O(log n).","expected":"withhold"}

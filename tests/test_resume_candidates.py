@@ -143,6 +143,24 @@ class ResumeContractTests(unittest.TestCase):
             )
         self.assertEqual(self.brain.verified_claims(), ())
 
+    def test_reviewed_direct_store_bypass_and_second_gateway_are_rejected(self):
+        _, cards = self.select_and_stage()
+        card = cards[0]
+        with self.assertRaises(MissingEvidence):
+            self.brain.confirm_fact(
+                card.fact_id, confirmation=UserConfirmation("synthetic-forge"),
+                reviewed_actor="self", reviewed_claim_key="project.sql",
+                expected_snippet_sha256=card.snippet_sha256,
+            )
+        # Only the initially registered trusted host gateway may approve this
+        # synthetic source in the current BrainStore process.
+        with self.assertRaises(InvalidState):
+            ReviewGateway(self.brain, host_capability=object())
+        self.assertEqual(self.brain.verified_claims(), ())
+        self.gateway.decide(card, decision="approve", capability=self.host_key,
+                            approved_actor="self", claim_key="project.sql")
+        self.assertEqual(len(self.brain.verified_claims(actor="self")), 1)
+
     def test_forged_or_modified_card_rejected_without_approval(self):
         _, cards = self.select_and_stage()
         card = cards[0]

@@ -21,8 +21,8 @@ Updated: 2026-10-22. [AGENTS.md](AGENTS.md) defines how each new coding agent st
 - `tests/test_benchmark.py`: offline negative tests; `docs/RUN_LOCAL_MODEL_BENCHMARK.md`: local instructions.
 - Codex PR #8 review completed, three P2 findings fixed (truthful compactness metric, actual p95 emission, explicit role for direct inference), all threads resolved and exact-head CI passed. **No live Luna vs Sol comparison has yet been performed**, and CI must never call a model.
 
-## Current Slice 01B-A1: explicit reasoning effort (issue #10)
-Separate small branch adds optional `infer --effort`, `benchmark --efforts`, and per-model compatibility checks, with offline regression tests. It defaults to omitting the field, so existing runs still use the documented model default (Medium for GPT-6 Luna and GPT-6.1 Sol). **Actual ChatGPT-plan OAuth acceptance of an explicit effort remains untested.** See docs/MODEL_STRATEGY.md and docs/RUN_LOCAL_MODEL_BENCHMARK.md. The user-run model comparison in issue #9 remains the next performance gate after this PR is reviewed and merged.
+## Slice 01B-A1 completed: reasoning effort controls (PR #11 merged)
+PR #11 passed offline CI and Codex GitHub review (**completed, no findings**) at the exact merged head. It added optional `infer --effort`, `benchmark --efforts`, model-specific effort validation, bounded cross-product requests and per-model/per-effort timing groups with new regression tests. Default CLI calls **omit** `reasoning.effort`, so Luna and Sol 6.1 use their documented Medium defaults. **An explicit effort override is not yet proven to work on this user's ChatGPT-plan OAuth preview**, despite being documented in the standard Responses API. The next gate is [issue #9](https://github.com/KanujVerma/relay/issues/9): user-run synthetic Luna versus Sol, Low versus Medium comparison, then human quality judgment.
 
 ## Provisional model routing
 - Luna: preferred fast/simple-question candidate, must pass factual and coverage checks.

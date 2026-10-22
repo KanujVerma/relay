@@ -67,7 +67,10 @@ public actor PCMTranscriptWorker {
     // Swift actors are reentrant across awaits. Invalidate in-flight ASR
     // before cancelled/replaced audio can return a stale final transcript.
     private var invalidationEpoch: UInt64 = 0
-    private var cancelledThroughGeneration: UInt64?
+    // Cancellation is terminal for this worker: a new authorized capture
+    // must create a NEW worker, so queued old frames can never restart ASR.
+    private var cancelled = false
+    private var resetInProgress = false
 
     /// 'authorizedCapture' must come from a real host consent event in the
     /// shipping app. This prototype accepts an explicit caller assertion only.
@@ -81,6 +84,7 @@ public actor PCMTranscriptWorker {
     }
 
     public func ingest(_ frame: PCMFrame) async -> [FinalTranscriptEvent] {
+        guard !cancelled, !resetInProgress else { return [] }
         guard authorized else {
             return [event(.unavailable, generation: frame.streamGeneration)]
         }
@@ -90,23 +94,11 @@ public actor PCMTranscriptWorker {
             await reset()
             return [marker]
         }
-        if let cancelledThroughGeneration,
-           frame.streamGeneration <= cancelledThroughGeneration {
-            return []
-        }
         if let generation, frame.streamGeneration < generation {
             // Old callback after device restart. No state mutation.
             return []
         }
         var transition: FinalTranscriptEvent?
-        if let cancelledThroughGeneration,
-           frame.streamGeneration > cancelledThroughGeneration {
-            // A genuinely new callback generation is the sole way back
-            // after an explicit session cancellation. Tell downstream that
-            // prior segment boundaries cannot be joined.
-            self.cancelledThroughGeneration = nil
-            transition = event(.discontinuity, generation: frame.streamGeneration)
-        }
         let sequenceChanged = previousSequence.map {
             frame.sequence != ($0 &+ 1)
         } ?? false
@@ -115,8 +107,16 @@ public actor PCMTranscriptWorker {
             || (sampleRate != nil && sampleRate != frame.sampleRate) {
             // Invalidate incomplete prior audio, but reuse this valid first
             // packet of the new segment instead of discarding it as well.
-            transition = event(.discontinuity, generation: frame.streamGeneration)
+            let priorEpoch = invalidationEpoch
             await reset()
+            guard !cancelled, invalidationEpoch == priorEpoch &+ 1 else {
+                // reset() is async; a concurrent stop/turn correction could
+                // have superseded this ingestion during the backend reset.
+                return []
+            }
+            // Reset has cleared previous-generation timestamps. Do not label
+            // old host ticks as belonging to the new generation.
+            transition = event(.discontinuity, generation: frame.streamGeneration)
         }
 
         do {
@@ -168,7 +168,8 @@ public actor PCMTranscriptWorker {
     /// are flushed on the worker, never from a HAL callback. No text from a
     /// cancelled/discontinuous generation is reconstructed from stale buffers.
     public func finishAtStop() async -> FinalTranscriptEvent? {
-        guard authorized, let generation, let sampleRate else {
+        guard authorized, !cancelled, !resetInProgress,
+              let generation, let sampleRate else {
             await reset()
             return nil
         }
@@ -202,13 +203,9 @@ public actor PCMTranscriptWorker {
     }
 
     public func cancel() async {
-        // A cancelled callback generation must not be reaccepted if queued
-        // packets arrive after the session was explicitly stopped.
-        if let generation {
-            cancelledThroughGeneration = max(
-                cancelledThroughGeneration ?? 0, generation
-            )
-        }
+        // Explicit stop/consent revocation is TERMINAL, even if no first
+        // frame has arrived yet. Create a new worker on a new authorized start.
+        cancelled = true
         await reset()
     }
 
@@ -257,6 +254,8 @@ public actor PCMTranscriptWorker {
 
     private func reset() async {
         invalidationEpoch &+= 1
+        let ticket = invalidationEpoch
+        resetInProgress = true
         pendingMono.removeAll(keepingCapacity: true)
         utteranceFrames = 0
         startHostTime = nil
@@ -265,5 +264,6 @@ public actor PCMTranscriptWorker {
         sampleRate = nil
         generation = nil
         await backend.reset()
+        if invalidationEpoch == ticket { resetInProgress = false }
     }
 }

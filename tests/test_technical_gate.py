@@ -70,7 +70,7 @@ class TechnicalGateTests(unittest.TestCase):
                 self.assertIsNone(verdict.rendered_text)
 
     def test_unsupported_cases_and_malformed_model_candidates(self):
-        for case_id in ("E08", "D01", "D13", "D12", "", None):
+        for case_id in ("E08", "D01", "D13", "D12", "", None, [], {}):
             with self.subTest(case_id=case_id):
                 verdict = review_technical_candidate(case_id, _SAFE_RENDER["D02"])
                 self.assertFalse(verdict.publishable)

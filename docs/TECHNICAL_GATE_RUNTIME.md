@@ -21,7 +21,13 @@ model request:
 
     python3 -m relay_spike live-qa --case D02 --technical-card --execute
 
-The new mode collects bounded SSE using the same B1 parser. It neither shows
+The new mode collects bounded SSE using the same B1 parser with
+`strict_replay=True`: **every data-bearing SSE frame must have a valid
+sequence_number**, and any missing number or repeated sequence fails closed.
+The original B2/infer/benchmark paths keep their legacy adjacent-replay
+deduplication behavior. Strict validation may withhold output if the provider
+ever emits unnumbered frames, which is a deliberate opt-in feasibility
+constraint, not a proven account-wide wire guarantee. It neither shows
 nor judges partials before response.completed. After completion it checks the
 raw candidate against the reviewed B3A-0 technical propositions. If accepted,
 it returns a **local fixed technical card** instead of generated model prose,

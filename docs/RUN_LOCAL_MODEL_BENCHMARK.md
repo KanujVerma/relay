@@ -65,21 +65,8 @@ The benchmark performs every case/model/effort combination, sequentially, with a
 
 If any explicit effort returns HTTP 400 or another unsupported-param error, record the non-sensitive status and stop that test rather than altering the authorization pathway or retrying with paid API credentials. Successful Low/Medium tests on one account do not establish universal preview support.
 
-## Next bounded harder-case comparison (issue #9)
+## Completed harder-case comparison, 2026-10-22
 
-The first Mac session completed **10** synthetic model requests: D02/D01/E01 with default effort (6), followed by explicit Low/Medium on D02 (4). The default-effort medians were Luna 2138 ms first text / 3880 ms total versus Sol 6.1 2615 ms first text / 5587 ms total, three observations each. See [MODEL_STRATEGY.md](MODEL_STRATEGY.md) for full per-case results and caveats.
+The owner successfully ran the 12 planned requests for `D13,D07,E09 --repeats 2` on both models at their default (server-reported Medium) effort. **Do not rerun automatically**. Along with the first 10-request round, Relay now has 22 user-reported completed synthetic model calls, including four explicit Low/Medium override tests. Timings, rubric-based assistant inspection and sample-size limits are in [MODEL_STRATEGY.md](MODEL_STRATEGY.md) and [issue #9](https://github.com/KanujVerma/relay/issues/9).
 
-The next single benchmark focuses on different technical failure modes, with exactly **12 planned model requests**: D13 (salary ranking ties), D07 (multipart CTE/subquery/performance), and E09 (binary search), repeated twice with each model. Run from the existing Relay clone:
-
-```bash
-git pull
-source .venv/bin/activate
-# Inspect the plan: strictly zero model requests
-python3 -m relay_spike benchmark --cases D13,D07,E09 --repeats 2
-# Only after accepting 12 plan-backed model uses:
-python3 -m relay_spike benchmark --execute --cases D13,D07,E09 --repeats 2 --show-answers
-```
-
-**Manual answer review:** D13 must distinguish `ROW_NUMBER` and `RANK` under salary ties and partitioning. D07 must answer all three parts and avoid claiming that a CTE universally materializes or speeds up queries. E09 must require sorted input, give correct index bounds and empty-list handling, with O(log n) time (iterative O(1) auxiliary space if using an iterative solution). For each model/case note correctness, missing parts, unsupported claims and readability; machine word-count and table flags are not accuracy metrics.
-
-No p95 should be claimed from two repeats per model/case. Do not send private interview content or OAuth credentials. No benchmark call occurs in GitHub CI; no background or automatic billed fallback is supported. If the user's plan usage budget is tight, **run only the dry run** and defer live execution. The next implementation issue, [#12](https://github.com/KanujVerma/relay/issues/12), is an offline QA contract and can be prepared without more model requests.
+Further model calls need a new, narrow evaluation purpose and explicit owner consent. Do not claim p95 from nine default-effort responses per model or confuse first output text with a useful complete answer. The next coding slice is [issue #12](https://github.com/KanujVerma/relay/issues/12), an entirely **offline-only QA decision contract**, so no more ChatGPT-plan usage is needed to begin.

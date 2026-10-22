@@ -19,6 +19,30 @@ class StreamError(RuntimeError):
     """Sanitized response or transport error."""
 
 
+# Only explicitly documented combinations may use a reasoning override.
+# Unknown model slugs may still run using their default effort.
+SUPPORTED_EFFORTS = {
+    "gpt-6-luna": frozenset(("none", "low", "medium", "high", "xhigh", "max")),
+    "gpt-6-sol": frozenset(("none", "low", "medium", "high", "xhigh", "max")),
+    "gpt-6.1-sol": frozenset(("low", "medium", "high", "xhigh", "max")),
+    "gpt-6-astra": frozenset(("low", "medium", "high", "xhigh", "max")),
+}
+
+
+def validated_reasoning_effort(model: str, effort: str | None) -> str | None:
+    """Return an explicit valid effort, or None to omit and use model default."""
+    if effort is None or effort == "default":
+        return None
+    if not isinstance(effort, str):
+        raise StreamError("Reasoning effort must be a string or omitted.")
+    allowed = SUPPORTED_EFFORTS.get(model)
+    if allowed is None:
+        raise StreamError("Explicit effort has not been verified for this model.")
+    if effort not in allowed:
+        raise StreamError("Unsupported reasoning effort for selected model.")
+    return effort
+
+
 def visible_models(catalog: dict) -> list[dict]:
     result = []
     rows = catalog.get("models", [])
@@ -36,7 +60,8 @@ def visible_models(catalog: dict) -> list[dict]:
     return result
 
 
-def response_payload(model: str, question: str, *, instructions: str | None = None) -> dict:
+def response_payload(model: str, question: str, *, instructions: str | None = None,
+                     effort: str | None = None) -> dict:
     if not model.strip() or not question.strip():
         raise StreamError("Model and question must not be empty.")
     payload = {
@@ -51,6 +76,9 @@ def response_payload(model: str, question: str, *, instructions: str | None = No
         if not isinstance(instructions, str) or not instructions.strip():
             raise StreamError("Instructions must be a nonempty string when provided.")
         payload["instructions"] = instructions
+    selected_effort = validated_reasoning_effort(model, effort)
+    if selected_effort is not None:
+        payload["reasoning"] = {"effort": selected_effort}
     return payload
 
 
@@ -91,6 +119,7 @@ def consume_stream(byte_lines, *, started: float, clock=time.monotonic,
     first_output = None
     completed = False
     count = 0
+    server_reported_effort = None
     for event_type, event in sse_events(byte_lines):
         typ = event.get("type") or event_type
         if typ == "response.output_text.delta":
@@ -118,6 +147,11 @@ def consume_stream(byte_lines, *, started: float, clock=time.monotonic,
                 status = response.get("status", "completed")
                 if status != "completed":
                     raise StreamError("Response completion did not report completed status.")
+                reasoning = response.get("reasoning")
+                if isinstance(reasoning, dict):
+                    reported = reasoning.get("effort")
+                    if isinstance(reported, str):
+                        server_reported_effort = reported
             completed = True
             break
     if not completed:
@@ -129,13 +163,17 @@ def consume_stream(byte_lines, *, started: float, clock=time.monotonic,
         "total_ms": round(1000 * (clock() - started)),
         "output_chars": count,
         "completed": True,
+        "server_reported_reasoning_effort": server_reported_effort,
     }
 
 
 def stream_answer(access_token: str, model: str, question: str, *, on_delta=None,
-                  timeout: float = 75.0, instructions: str | None = None) -> dict:
+                  timeout: float = 75.0, instructions: str | None = None,
+                  effort: str | None = None) -> dict:
     # There is deliberately no support for OPENAI_API_KEY or API-key billing.
-    body = json.dumps(response_payload(model, question, instructions=instructions)).encode("utf-8")
+    body = json.dumps(response_payload(
+        model, question, instructions=instructions, effort=effort
+    )).encode("utf-8")
     req = Request(RESPONSES, data=body, headers={
         "Authorization": "Bearer " + access_token,
         "Content-Type": "application/json",

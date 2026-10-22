@@ -43,6 +43,7 @@ class PlanTests(unittest.TestCase):
         self.assertEqual([x["model"] for x in plan[:2]], list(benchmark.DEFAULT_MODELS))
         self.assertEqual(plan[0]["case"]["id"], plan[1]["case"]["id"])
         self.assertEqual(plan[0]["repetition"], 1)
+        self.assertEqual(plan[0]["requested_reasoning_effort"], "default")
 
     def test_unknown_and_duplicate_case_or_model_rejected(self):
         with self.assertRaises(benchmark.BenchmarkError):
@@ -61,26 +62,27 @@ class PlanTests(unittest.TestCase):
 
     def test_result_metrics_are_not_fake_accuracy_scores(self):
         plan = benchmark.make_plan(["gpt-6-luna"], ["D02", "D08"])
-        def synthetic(_model, _case):
+        def synthetic(_model, _case, _effort):
             return ({"first_text_ms": 123, "total_ms": 700, "completed": True},
                     "WHERE filters rows. HAVING filters groups.")
         rows = benchmark.evaluate_plan(plan, synthetic)
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["correctness"], "unreviewed")
+        self.assertEqual(rows[0]["requested_reasoning_effort"], "default")
         self.assertEqual(rows[0]["first_text_ms"], 123)
         self.assertEqual(rows[0]["output_chars"],
                          len("WHERE filters rows. HAVING filters groups."))
         self.assertTrue(rows[0]["under_word_ceiling"])
         result = benchmark.summary(rows)
-        self.assertEqual(result["gpt-6-luna"]["median_total_ms"], 700)
-        self.assertTrue(result["gpt-6-luna"]["p95_not_reported"])
-        self.assertIsNone(result["gpt-6-luna"]["p95_total_ms"])
+        self.assertEqual(result["gpt-6-luna / default"]["median_total_ms"], 700)
+        self.assertTrue(result["gpt-6-luna / default"]["p95_not_reported"])
+        self.assertIsNone(result["gpt-6-luna / default"]["p95_total_ms"])
 
     def test_failed_stream_does_not_get_quality_score(self):
         with self.assertRaises(benchmark.BenchmarkError):
             benchmark.evaluate_plan(
                 benchmark.make_plan(["gpt-6-luna"], ["D02"]),
-                lambda model, case: ({"completed": False}, "Partial")
+                lambda model, case, effort: ({"completed": False}, "Partial")
             )
 
     def test_format_checks_are_not_factual_accuracy(self):
@@ -94,12 +96,12 @@ class CliTests(unittest.TestCase):
     def test_p95_is_present_when_ten_or_more_runs_exist(self):
         self.assertIsNone(benchmark.percentile95([1, 2, 3]))
         rows = [
-            {"model": "gpt-6-luna", "first_text_ms": i * 10,
+            {"model": "gpt-6-luna", "requested_reasoning_effort": "default", "first_text_ms": i * 10,
              "total_ms": 100 + i * 10, "under_word_ceiling": True,
              "contains_markdown_table": False}
             for i in range(12)
         ]
-        report = benchmark.summary(rows)["gpt-6-luna"]
+        report = benchmark.summary(rows)["gpt-6-luna / default"]
         self.assertFalse(report["p95_not_reported"])
         self.assertEqual(report["p95_total_ms"], 204)
         self.assertEqual(report["compact_no_table"], 12)

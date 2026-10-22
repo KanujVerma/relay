@@ -10,8 +10,11 @@ from pathlib import Path
 import re
 import statistics
 
+from .stream import StreamError, validated_reasoning_effort
+
 FIXTURES = Path(__file__).resolve().parents[1] / "EVALS" / "interview-questions.jsonl"
 DEFAULT_MODELS = ("gpt-6-luna", "gpt-6.1-sol")
+DEFAULT_EFFORTS = ("default",)
 DEFAULT_CASES = ("D02", "D01", "E01")
 MAX_RUNS = 12
 
@@ -66,20 +69,33 @@ def load_cases(ids: tuple[str, ...] | list[str]) -> list[dict]:
 
 
 def make_plan(models: tuple[str, ...] | list[str], ids: tuple[str, ...] | list[str],
-              repeats: int = 1) -> list[dict]:
+              repeats: int = 1,
+              effort_levels: tuple[str, ...] | list[str] = DEFAULT_EFFORTS) -> list[dict]:
     if (not models or len(set(models)) != len(models) or
             not all(isinstance(model, str) and model and
                     re.fullmatch(r"[a-z0-9][a-z0-9.-]*", model) for model in models)):
         raise BenchmarkError("Choose distinct nonempty model slugs.")
     if not isinstance(repeats, int) or not 1 <= repeats <= 3:
         raise BenchmarkError("Repetitions must be between one and three.")
+    if (not effort_levels or len(set(effort_levels)) != len(effort_levels)
+            or not all(isinstance(x, str) for x in effort_levels)):
+        raise BenchmarkError("Choose distinct, nonempty reasoning effort levels.")
+    # Validate before account/network calls, including model-specific restrictions.
+    for model in models:
+        for level in effort_levels:
+            try:
+                validated_reasoning_effort(model, level)
+            except StreamError as exc:
+                raise BenchmarkError(str(exc)) from None
     cases = load_cases(ids)
-    if len(cases) * len(models) * repeats > MAX_RUNS:
+    if len(cases) * len(models) * repeats * len(effort_levels) > MAX_RUNS:
         raise BenchmarkError(f"At most {MAX_RUNS} live requests per invocation.")
-    # Pair models on the same case/rep, instead of all one model first.
+    # Compare identical cases at each selected effort before moving to next case.
     return [
-        {"model": model, "case": case, "repetition": rep + 1}
-        for case in cases for rep in range(repeats) for model in models
+        {"model": model, "case": case, "repetition": rep + 1,
+         "requested_reasoning_effort": level}
+        for case in cases for rep in range(repeats)
+        for level in effort_levels for model in models
     ]
 
 
@@ -100,13 +116,18 @@ def evaluate_plan(plan: list[dict], run_one) -> list[dict]:
     results = []
     for entry in plan:
         case = entry["case"]
-        metrics, answer = run_one(entry["model"], case)
+        requested_effort = entry["requested_reasoning_effort"]
+        metrics, answer = run_one(
+            entry["model"], case, validated_reasoning_effort(entry["model"], requested_effort)
+        )
         if not metrics.get("completed"):
             raise BenchmarkError("Cannot grade an incomplete model stream.")
         if not isinstance(answer, str):
             raise BenchmarkError("Expected a text response for an offline benchmark.")
         results.append({
             "model": entry["model"], "case_id": case["id"],
+            "requested_reasoning_effort": requested_effort,
+            "server_reported_reasoning_effort": metrics.get("server_reported_reasoning_effort"),
             "role": case["role"], "category": case["category"],
             "repetition": entry["repetition"],
             "first_text_ms": metrics["first_text_ms"],
@@ -130,14 +151,23 @@ def percentile95(values: list[int]) -> int | None:
 
 
 def summary(rows: list[dict]) -> dict:
-    models = sorted({r["model"] for r in rows})
+    # Never mix default/low/medium etc within a model's latency aggregate.
+    combinations = sorted({
+        (r["model"], r["requested_reasoning_effort"]) for r in rows
+    })
     data = {}
-    for model in models:
-        samples = [r for r in rows if r["model"] == model]
+    for model, requested_effort in combinations:
+        samples = [
+            r for r in rows
+            if r["model"] == model
+            and r["requested_reasoning_effort"] == requested_effort
+        ]
         first = [r["first_text_ms"] for r in samples if r["first_text_ms"] is not None]
         total = [r["total_ms"] for r in samples]
-        data[model] = {
+        data[f"{model} / {requested_effort}"] = {
             "n": len(samples),
+            "model": model,
+            "requested_reasoning_effort": requested_effort,
             "median_first_text_ms": round(statistics.median(first)) if first else None,
             "median_total_ms": round(statistics.median(total)) if total else None,
             "p95_first_text_ms": percentile95(first),

@@ -8,6 +8,7 @@ Each slice gets a narrow issue, branch, small PR, reproducible tests, updated ar
 | 00B | Durable agent handoff, ADRs, flows, personal memory design, inference contract | PR merged, links and status consistent |
 | 01A | ChatGPT subscription-backed inference authorization proof | Met in user-reported local OAuth and gpt-6.1-sol response.completed on 2026-10-22; offline tests in PRs #4 and #5 |
 | 01B-A | Concise answer formatting and fast-vs-complex model comparison | Compare Luna and Sol on identical synthetic interview prompts, local only; collect correctness and latency |
+| 01B-A1 | Optional model-specific reasoning effort CLI and benchmark dimension | Separate small PR: default omitted, explicit supported levels, offline negative tests, dry-run unchanged, real OAuth override validation pending |
 | 01B-B | Grounded text answer pipeline and fast quality review | Human-reviewed negative/edge cases, no invented personal claims, measured p50/p95 latency |
 | 02A | Resume ingestion, verified facts, conversational probing | No invented personal facts, attribution and deletion tests |
 | 02B | Selected Drive/GitHub imports, incremental sync | Independent OAuth, least privilege, revoke/delete tests |

@@ -52,3 +52,11 @@ Consent denied or missing scope: no inference. Invalid_grant: discard code, reau
 Do not log callback codes, token fields, browser links containing identity hints, personal source text or credentials. Never use ChatGPT cookies or undocumented backend endpoints. Do not let a CLI fallback to separately charged API billing.
 
 The experimental callback now checks loopback Host and OAuth state **before** consuming the callback, so unsolicited malformed requests cannot prematurely terminate the sign-in attempt. Before persisting credentials, token fields are type-checked and require a nonempty access token, Bearer token type and positive expiry. Offline negative tests cover both guards. This is preliminary hardening, **not** a substitute for an interactive security/entitlement test on the Mac.
+
+## Optional reasoning effort: unverified on OAuth plan preview
+
+As of 2026-10-22, the standard Responses API documents `reasoning.effort`; GPT-6 Luna and GPT-6.1 Sol each default to Medium, and Sol 6.1 rejects None/Minimal. The Sign in with ChatGPT preview restrictions explicitly prohibit several request fields, **but do not name `reasoning` in that prohibited list**. This is not itself proof that the preview accepts explicit effort.
+
+Relay passes a validated top-level `reasoning: {"effort": "low"}` only with an explicit CLI flag; the default omits it. It is a *single real-model local test* that must establish the parameter is accepted and whether it improves first useful output latency. Do not infer effective effort from the requested value when the server does not report one. No retry should add a paid API key, unsupported pro-mode option, or extra usage without the user's approval.
+
+Official sources: https://developers.openai.com/api/docs/guides/reasoning and https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations.

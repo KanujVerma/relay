@@ -43,3 +43,24 @@ The CLI limits each invocation to twelve planned requests, without unlimited loo
 After the run, share only model slugs, non-sensitive synthetic responses if desired, and timing/format metrics. Do not share account IDs, raw recordings, access tokens or local credential paths.
 
 Sources and rationale: docs/MODEL_STRATEGY.md, docs/INFERENCE_AUTH.md, https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations.
+
+## Optional reasoning effort override (Slice 01B-A1)
+
+The original commands remain unchanged. Both Luna and Sol use their documented **medium defaults** when `--effort` or `--efforts` are omitted. The new flags are **experimental** for the ChatGPT-plan OAuth route until confirmed with a real test.
+
+```bash
+# Confirm request count before any account use, 4 requests if executed:
+python3 -m relay_spike benchmark --cases D02 --efforts low,medium
+
+# Explicit comparison of both models at Low and Medium, synthetic case only:
+python3 -m relay_spike benchmark --execute --cases D02 --efforts low,medium --show-answers
+
+# Single direct test with an explicit effort:
+python3 -m relay_spike infer --model gpt-6.1-sol --effort low
+```
+
+The benchmark performs every case/model/effort combination, sequentially, with a strict maximum of 12 potential requests per run. `--efforts none` **cannot** be combined with Sol 6.1, because that model does not support none. Run `--models gpt-6-luna --efforts none` separately if desired.
+
+`requested_reasoning_effort` is an input choice; `server_reported_reasoning_effort` is populated only if actually returned in a terminal response. Timing medians/p95 are grouped by model and requested effort, with p95 still withheld below 10 responses for that combination. Default behavior omits the `reasoning` field.
+
+If an explicit effort returns HTTP 400 or another unsupported-param error, record the non-sensitive status and stop that test rather than altering the authorization pathway or retrying with paid API credentials. The preview documentation permits no assumption that the override will work on your particular account.

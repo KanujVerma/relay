@@ -35,3 +35,23 @@ For each run capture selected model, fixture ID, prompt variant, first_text_ms, 
 
 ## Slice 01B-A implementation status
 The CLI and benchmark are **merged in PR #8**, after passing offline CI and a completed Codex GitHub review with three P2 fixes. The `--execute` flag permits a **bounded** local model comparison with the authorized ChatGPT plan; `--show-answers` prints only synthetic-case model outputs for human review. The format metrics are purely mechanical, not factual correctness scores. See [RUN_LOCAL_MODEL_BENCHMARK.md](RUN_LOCAL_MODEL_BENCHMARK.md). No user-run live Luna-versus-Sol comparison has been supplied yet; the production default remains provisional. [Issue #9](https://github.com/KanujVerma/relay/issues/9) tracks the local validation.
+
+## Reasoning effort settings: Slice 01B-A1 (experimental)
+
+OpenAI's standard Responses API supports top-level `reasoning: {"effort": LEVEL}`; official GPT-6 docs state **both Luna and Sol 6.1 default to medium when the field is omitted**. The Sign in with ChatGPT preview limits do not list `reasoning` as an unsupported field, but we have **not** observed an explicit-effort OAuth plan request succeed yet. A model-list response alone does not prove a parameter works.
+
+| Model | Explicit permitted efforts | Documented default |
+|---|---|---|
+| gpt-6-luna | none, low, medium, high, xhigh, max | medium |
+| gpt-6-sol | none, low, medium, high, xhigh, max | medium |
+| gpt-6.1-sol | low, medium, high, xhigh, max | medium |
+| gpt-6-astra | low, medium, high, xhigh, max | verify for particular model; Relay leaves it unspecified by default |
+
+Relay's `infer --effort` and `benchmark --efforts` are opt-in. `default` omits the field and does not claim a server-reported effective level. Real benchmark output separates **requested** effort from an optional **server-reported** effort. Comparisons must group by both model and effort. A request that the subscription preview rejects is recorded as a failed test, not silently retried with a higher effort or paid API key.
+
+**Recommended first test:** Luna Low versus Sol Low, then compare with both Medium using the same synthetic case and prompt. Do not automatically use High or Pro mode in a latency-sensitive interview.
+
+References:
+- https://developers.openai.com/api/docs/guides/reasoning
+- https://developers.openai.com/api/docs/models/gpt-6-luna
+- https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations

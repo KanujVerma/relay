@@ -65,6 +65,32 @@ actor SuspendedEou: LocalEouRecognizer {
     func reset() async {}
 }
 
+/// Holds the *final* recognition await while another capture frame arrives.
+actor SuspendedFinishEou: LocalEouRecognizer {
+    private var pending: CheckedContinuation<String, Never>?
+    private(set) var accepted = 0
+
+    func accept(_ samples: [Float]) async throws -> Bool {
+        accepted += 1
+        return accepted == 1
+    }
+
+    func finish() async throws -> String {
+        await withCheckedContinuation { continuation in
+            pending = continuation
+        }
+    }
+
+    func finishIsPending() -> Bool { pending != nil }
+
+    func release() {
+        pending?.resume(returning: "stale finalized response")
+        pending = nil
+    }
+
+    func reset() async {}
+}
+
 final class LocalASRWorkerTests: XCTestCase {
     /// Construct the actual owned capture packets using the merged SPSC ring.
     /// This exercises source/sequence/ownership without exposing an internal
@@ -213,6 +239,45 @@ final class LocalASRWorkerTests: XCTestCase {
         XCTAssertNil(stopped)
         let used = await fake.accepted
         XCTAssertEqual(used, 0)
+    }
+
+    func testNewFrameDuringSuspendedFinishInvalidatesStaleFinal() async throws {
+        let backend = SuspendedFinishEou()
+        let ring = try OwnedPCMQueue(source: .remoteAudio)
+        let worker = PCMTranscriptWorker(
+            source: .remoteAudio, authorizedCapture: true, backend: backend
+        )
+        _ = await worker.ingest(try packet(ring))
+        _ = await worker.ingest(try packet(ring))
+        let eouFrame = try packet(ring)
+        let inflight = Task { await worker.ingest(eouFrame) }
+
+        var entered = false
+        for _ in 0..<2000 {
+            if await backend.finishIsPending() {
+                entered = true
+                break
+            }
+            await Task.yield()
+        }
+        if !entered {
+            // Do not leave the suspended task behind on test failure.
+            await backend.release()
+            inflight.cancel()
+            XCTFail("Fake EOU recognizer did not suspend in finish()")
+            return
+        }
+
+        let later = await worker.ingest(try packet(ring))
+        XCTAssertEqual(later.map(\.status), [.discontinuity])
+        XCTAssertNil(later.first?.text)
+        XCTAssertNil(later.first?.startHostTime)
+        XCTAssertNil(later.first?.endHostTime)
+        await backend.release()
+        let stale = await inflight.value
+        XCTAssertTrue(stale.isEmpty)
+        let stop = await worker.finishAtStop()
+        XCTAssertNil(stop)
     }
 
     func testCancellationWhileBackendAwaitingNeverPublishesStaleText() async throws {

@@ -28,8 +28,12 @@ REVIEW_CATEGORIES = frozenset({
 # A deliberately conservative trigger for autobiographical work-attribution language
 # in otherwise technical answers. This is only a heuristic, not a semantic proof.
 FIRST_PERSON_WORK_CLAIM = re.compile(
-    r"\b(?:I\s+(?:built|implemented|developed|created|led|owned|shipped|managed|"
-    r"designed|delivered|worked\s+on)|in\s+my\s+(?:role|job|experience)|"
+    r"\b(?:(?:I|I've|I have)\s+(?:built|implemented|developed|created|led|"
+    r"owned|shipped|managed|designed|delivered|wrote|written|"
+    r"contributed\s+to|was\s+responsible\s+for|"
+    r"worked\s+(?:on|as|at|with)|helped\s+(?:build|ship|deliver))|"
+    r"(?:I|I've)\s+have\s+\d+\s+years?|"
+    r"in\s+my\s+(?:role|job|experience)|"
     r"my\s+(?:team|employer|project|professional\s+experience))\b",
     re.IGNORECASE,
 )
@@ -51,8 +55,12 @@ class QAInput:
     answer: str
     completed: bool
     turn_id: str
+    active_turn_id: str
     turn_version: int
     active_turn_version: int
+    # Only a trusted non-model-derived classifier may assert "absent";
+    # uncertain is intentionally fail-closed for real user-generated answers.
+    personal_claim_classification: Literal["absent", "present", "uncertain"] = "uncertain"
     verified_source_ids: tuple[str, ...] = ()
     coverage_indicators: tuple[CoverageIndicator, ...] = ()
     risk_flags: tuple[str, ...] = ()
@@ -66,6 +74,7 @@ class QAResult:
     second_review_recommended: bool
     case_id: str
     turn_id: str
+    active_turn_id: str
     turn_version: int
     verified_source_ids: tuple[str, ...]
     missing_coverage_indicators: tuple[str, ...]
@@ -75,7 +84,7 @@ class QAResult:
 def _validate(data: QAInput) -> None:
     if not isinstance(data, QAInput):
         raise TypeError("QAInput required.")
-    for value in (data.case_id, data.role, data.category, data.turn_id):
+    for value in (data.case_id, data.role, data.category, data.turn_id, data.active_turn_id):
         if not isinstance(value, str) or not value.strip():
             raise ValueError("Nonempty case, role, category, and turn identifiers required.")
     if not isinstance(data.answer, str):
@@ -86,6 +95,8 @@ def _validate(data: QAInput) -> None:
         raise TypeError("Turn versions must be integers.")
     if data.turn_version < 0 or data.active_turn_version < 0:
         raise ValueError("Turn versions must be nonnegative.")
+    if data.personal_claim_classification not in ("absent", "present", "uncertain"):
+        raise ValueError("Personal claim classification must be absent, present or uncertain.")
     if not isinstance(data.verified_source_ids, tuple) or not isinstance(data.risk_flags, tuple):
         raise TypeError("Source IDs and risk flags must be tuples.")
     if not isinstance(data.coverage_indicators, tuple):
@@ -108,6 +119,12 @@ def _validate(data: QAInput) -> None:
         raise ValueError("Duplicate coverage indicator labels.")
 
 
+def _has_indicator(text: str, literal: str) -> bool:
+    """Match a literal token/phrase rather than inside another word."""
+    return re.search(r"(?<!\w)" + re.escape(literal) + r"(?!\w)",
+                     text, flags=re.IGNORECASE) is not None
+
+
 def assess(data: QAInput) -> QAResult:
     """Return a *deterministic gate*, not an answer correctness judgment.
 
@@ -124,12 +141,14 @@ def assess(data: QAInput) -> QAResult:
         return QAResult(
             status=status, reasons=tuple(reasons), warnings=tuple(warnings),
             second_review_recommended=recommend, case_id=data.case_id,
-            turn_id=data.turn_id, turn_version=data.turn_version,
+            turn_id=data.turn_id, active_turn_id=data.active_turn_id,
+            turn_version=data.turn_version,
             verified_source_ids=data.verified_source_ids,
             missing_coverage_indicators=tuple(missing), words=words,
         )
 
-    if data.turn_version != data.active_turn_version:
+    if (data.turn_id != data.active_turn_id or
+            data.turn_version != data.active_turn_version):
         reasons.append("superseded_turn")
         return result("abstain")
     if not data.completed:
@@ -158,18 +177,23 @@ def assess(data: QAInput) -> QAResult:
     if inferred_personal_attribution:
         warnings.append("possible_first_person_work_claim_heuristic")
     personal = (data.category in PERSONAL_CATEGORIES or
-                "personal_claim" in data.risk_flags or inferred_personal_attribution)
+                "personal_claim" in data.risk_flags or
+                data.personal_claim_classification == "present" or
+                inferred_personal_attribution)
     if personal and not data.verified_source_ids:
         reasons.append("missing_verified_personal_context")
         return result("abstain")
     if personal:
         reasons.append("personal_claims_need_actual_source_review")
+    elif data.personal_claim_classification == "uncertain":
+        # Without trusted classification, do not claim a clean technical
+        # answer contains no made-up first-person contribution.
+        reasons.append("personal_attribution_not_classified")
 
     # A literal keyword can indicate a missing subpart, not verify correctness.
     if data.coverage_indicators:
-        folded = data.answer.casefold()
         for indicator in data.coverage_indicators:
-            if not any(needle.casefold() in folded for needle in indicator.any_of):
+            if not any(_has_indicator(data.answer, needle) for needle in indicator.any_of):
                 missing.append(indicator.label)
         warnings.append("keyword_coverage_is_not_semantic_verification")
         if missing:

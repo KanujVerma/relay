@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - 'spikes/macos-audio/asr/**'
+      - 'spikes/macos-audio/Package.swift'
+      - 'spikes/macos-audio/Sources/RelayAudioBuffer/**'
+      - 'spikes/macos-audio/Packaging/Info.plist'
       - '.github/workflows/local-asr.yml'
   workflow_dispatch:
 

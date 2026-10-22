@@ -46,3 +46,5 @@ Consent denied or missing scope: no inference. Invalid_grant: discard code, reau
 
 ## Security
 Do not log callback codes, token fields, browser links containing identity hints, personal source text or credentials. Never use ChatGPT cookies or undocumented backend endpoints. Do not let a CLI fallback to separately charged API billing.
+
+The experimental callback now checks loopback Host and OAuth state **before** consuming the callback, so unsolicited malformed requests cannot prematurely terminate the sign-in attempt. Before persisting credentials, token fields are type-checked and require a nonempty access token, Bearer token type and positive expiry. Offline negative tests cover both guards. This is preliminary hardening, **not** a substitute for an interactive security/entitlement test on the Mac.

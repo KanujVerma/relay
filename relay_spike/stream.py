@@ -115,12 +115,26 @@ def sse_events(byte_lines):
 
 
 def consume_stream(byte_lines, *, started: float, clock=time.monotonic,
-                   on_delta=None) -> dict:
+                   on_delta=None, should_continue=None) -> dict:
     first_output = None
     completed = False
     count = 0
     server_reported_effort = None
+    seen_sequence: dict[int, dict] = {}
     for event_type, event in sse_events(byte_lines):
+        # Optional caller-owned turn guard. Pure CLI behavior is unchanged.
+        if should_continue is not None and not should_continue():
+            raise StreamError("Stream was superseded.")
+        sequence = event.get("sequence_number")
+        if sequence is not None:
+            if type(sequence) is not int or sequence < 0:
+                raise StreamError("Invalid SSE sequence number.")
+            previous = seen_sequence.get(sequence)
+            if previous is not None:
+                if previous != event:
+                    raise StreamError("Conflicting duplicate SSE event.")
+                continue  # Replay, not a second text fragment.
+            seen_sequence[sequence] = event
         typ = event.get("type") or event_type
         if typ == "response.output_text.delta":
             text = event.get("delta")

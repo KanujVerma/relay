@@ -47,6 +47,7 @@ struct RelayAudioSpikeCLI {
 
             var packets = 0
             var capturedFrames = 0
+            var capturedSamples = 0
             var observedGaps: UInt64 = 0
             var lastSequence: UInt64?
             var sumSquares = 0.0
@@ -56,6 +57,7 @@ struct RelayAudioSpikeCLI {
                 while let packet = queue.dequeue() {
                     packets += 1
                     capturedFrames += packet.frameCount
+                capturedSamples += packet.interleavedSamples.count
                     if let lastSequence, packet.sequence > lastSequence {
                         observedGaps += packet.sequence - lastSequence - 1
                     }
@@ -70,6 +72,7 @@ struct RelayAudioSpikeCLI {
             while let packet = queue.dequeue() {
                 packets += 1
                 capturedFrames += packet.frameCount
+                capturedSamples += packet.interleavedSamples.count
                 if let lastSequence, packet.sequence > lastSequence {
                     observedGaps += packet.sequence - lastSequence - 1
                 }
@@ -78,8 +81,8 @@ struct RelayAudioSpikeCLI {
                     sumSquares += Double(sample * sample)
                 }
             }
-            let rms = capturedFrames > 0
-                ? (sumSquares / Double(capturedFrames)).squareRoot() : 0
+            let rms = capturedSamples > 0
+                ? (sumSquares / Double(capturedSamples)).squareRoot() : 0
             print("Stopped. packets=\(packets) frames=\(capturedFrames) " +
                   "sequence_gaps_observed=\(observedGaps) rms=\(rms)")
             print("Sequence gaps do not count losses before the first frame " +

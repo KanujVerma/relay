@@ -104,7 +104,7 @@ These nine samples per model remain below the current **10-per-model-and-effort 
 
 ## Slice 01B-B1 provisional model policy and latency measurement contract
 
-The current [PR #16](https://github.com/KanujVerma/relay/pull/16) adds `ModelPolicy` to the **offline-only** synthetic SSE/QA adapter. The default remains **Luna** using the CLI's normal omitted effort field (observed Medium for the tested account). Explicit Sol selection is possible; a QA `second_review_recommended` flag may suggest Sol but **cannot invoke it**. No evidence supports automatic escalation on every coding prompt.
+The merged [PR #16](https://github.com/KanujVerma/relay/pull/16) adds `ModelPolicy` to the **offline-only** synthetic SSE/QA adapter. The default remains **Luna** using the CLI's normal omitted effort field (observed Medium for the tested account). Explicit Sol selection is possible; a QA `second_review_recommended` flag may suggest Sol but **cannot invoke it**. No evidence supports automatic escalation on every coding prompt.
 
 Timing names must be precise: `first_text_ms` is first nonempty generated delta; `first_scannable_candidate_ms` is a heuristic completed leading sentence, timed and withheld from presentation until the stream is complete; `completed_ms` is terminal `response.completed`; `qa_decided_ms` and `presented_ms` record deterministic QA and synchronous publication. `first_useful_verified_ms` deliberately stays null: a natural-sounding sentence is **not** proof of factual utility. This mock stream adapter produces **no new user-account latency observations** and is not yet called from the real OAuth CLI or native user interface.
 

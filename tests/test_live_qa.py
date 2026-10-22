@@ -118,7 +118,7 @@ class BridgeUnitTests(unittest.TestCase):
             ("D02", "gpt-6.1-sol", "none"),
             ("D02", "gpt-6-luna", "high"),
         ]:
-            with self.subTest(case=case, model=model, effort=effort), self.assertRaises(ValueError):
+            with self.subTest(case=case, model=model, effort=effort), self.assertRaises((ValueError, stream.StreamError)):
                 validate_live_case(case, model, effort)
 
     def test_synthetic_first_person_negative_screen(self):

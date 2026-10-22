@@ -103,7 +103,14 @@ def _review_d02(text: str, words: tuple[str, ...]) -> bool:
         return False
     if w & _AFTER or h & _BEFORE:
         return False
-    if w & _GROUPS and not w & _BEFORE:
+    # WHERE may describe the grouping stage only as a BEFORE condition,
+    # never claim to filter the grouped entities themselves.
+    pre_position = next((i for i, word in enumerate(where) if word in _BEFORE), None)
+    for index, word in enumerate(where):
+        if word in _GROUPS and (pre_position is None or index < pre_position):
+            return False
+    if re.search(r"\b(?:and|or)\s+(?:group|groups|aggregated|aggregate)\b",
+                 " ".join(where)):
         return False
     if h & _ROWS:
         return False
@@ -155,6 +162,24 @@ def _review_e09(text: str, words: tuple[str, ...]) -> bool:
         text,
     ):
         return False
+    # Bind EACH time/space complexity to its local statement rather than
+    # accepting correct formula tokens that occur in the wrong roles.
+    # Compound answers may use a different clause order, but every complexity
+    # bearing clause must have exactly one compatible complexity family.
+    for clause in re.split(r"[.;,]|\b(?:and|with|whereas|while)\b", text):
+        terms = set(re.findall(r"[a-z]+", clause))
+        has_log = bool(re.search(
+            r"\bo\s*\(\s*log\s*n\s*\)|\blogarithmic\b", clause
+        ))
+        has_one = bool(re.search(
+            r"\bo\s*\(\s*1\s*\)|\bconstant\b", clause
+        ))
+        if has_log and (not "time" in terms or "space" in terms or "memory" in terms):
+            return False
+        if has_one and (
+            not ({"space", "memory"} & terms) or "time" in terms
+        ):
+            return False
     if "time" not in vocabulary or not vocabulary.intersection({"space", "auxiliary"}):
         return False
     if not vocabulary.intersection({"iterative", "iteratively", "loop"}):

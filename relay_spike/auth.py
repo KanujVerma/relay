@@ -123,12 +123,16 @@ def authorization_url(*, client_id: str, host_id: str, redirect_uri: str,
     return AUTHORIZE_URL + "?" + urlencode(payload)
 
 
+def callback_state_is_valid(query: dict[str, list[str]], expected_state: str) -> bool:
+    """Ignore unsolicited callbacks without terminating an active OAuth attempt."""
+    states = query.get("state", [])
+    return len(states) == 1 and hmac.compare_digest(states[0], expected_state)
+
+
 def verify_callback(query: dict[str, list[str]], expected_state: str,
                     selected_client_id: str) -> tuple[str, str]:
     # An OAuth authorization code is one-time and must be bound to this attempt.
-    if len(query.get("state", [])) != 1 or not hmac.compare_digest(
-        query["state"][0], expected_state
-    ):
+    if not callback_state_is_valid(query, expected_state):
         raise AuthError("OAuth state did not match.")
     if "error" in query:
         raise AuthError("User declined consent or authorization failed.")
@@ -204,7 +208,26 @@ def verify_id_token(id_token: str, client_id: str, expected_nonce: str) -> dict:
     return claims
 
 
-def _callback_server():
+def validate_token_fields(tokens: dict) -> tuple[str, list[str], int]:
+    """Fail closed on unusable or malformed OAuth token responses."""
+    access_token = tokens.get("access_token")
+    if not isinstance(access_token, str) or not access_token:
+        raise AuthError("Authorization returned no usable access token.")
+    if tokens.get("token_type") != "Bearer":
+        raise AuthError("Authorization returned an unexpected token type.")
+    scope = tokens.get("scope", "")
+    if not isinstance(scope, str):
+        raise AuthError("Authorization returned invalid permission scopes.")
+    try:
+        lifetime = int(tokens.get("expires_in", 0))
+    except (TypeError, ValueError):
+        raise AuthError("Authorization returned invalid access token expiry.") from None
+    if lifetime <= 0:
+        raise AuthError("Authorization returned expired access token credentials.")
+    return access_token, scope.split(), lifetime
+
+
+def _callback_server(expected_state: str):
     result: dict = {}
 
     class Handler(BaseHTTPRequestHandler):
@@ -217,7 +240,16 @@ def _callback_server():
             if parsed.path != AUTH_PATH:
                 self.send_error(404)
                 return
-            result["query"] = parse_qs(parsed.query, keep_blank_values=True)
+            # Reject stray local requests and DNS-rebinding Host headers.
+            # Never let an unsolicited request consume the OAuth callback.
+            if self.headers.get("Host") != f"127.0.0.1:{self.server.server_port}":
+                self.send_error(400)
+                return
+            query = parse_qs(parsed.query, keep_blank_values=True)
+            if not callback_state_is_valid(query, expected_state):
+                self.send_error(400)
+                return
+            result["query"] = query
             body = b"Return to Relay in your terminal to finish sign-in."
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
@@ -239,7 +271,7 @@ def sign_in(timeout_seconds: float = 240.0) -> dict:
     selected_client_id = selected_client_id or "dynamic_agent_client"
     state, nonce = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
     verifier, challenge = pkce_pair()
-    server, result = _callback_server()
+    server, result = _callback_server(state)
     redirect = f"http://127.0.0.1:{server.server_port}{AUTH_PATH}"
     url = authorization_url(
         client_id=selected_client_id, host_id=host, redirect_uri=redirect,
@@ -277,16 +309,16 @@ def sign_in(timeout_seconds: float = 240.0) -> dict:
     claims = verify_id_token(id_token, issued_client_id, nonce)
     if existing and existing.get("subject") != claims["sub"]:
         raise AuthError("Returning authorization selected a different ChatGPT account.")
-    scopes = tokens.get("scope", "").split()
+    access_token, scopes, expires_in = validate_token_fields(tokens)
     record = {
         "client_id": issued_client_id,
         "ext_agent_host_id": host,
         "subject": claims["sub"],
         "scopes": scopes,
         "id_token": id_token,
-        "access_token": tokens.get("access_token", ""),
+        "access_token": access_token,
         "refresh_token": tokens.get("refresh_token", ""),
-        "expires_in": int(tokens.get("expires_in", 0)),
+        "expires_in": expires_in,
         "saved_at": time.time(),
     }
     _write_protected(TOKEN_PATH, record)

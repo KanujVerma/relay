@@ -146,7 +146,7 @@ final class LocalASRWorkerTests: XCTestCase {
         XCTAssertTrue(isEmptyResult5.isEmpty)
     }
 
-    func testExplicitCancelRejectsOldQueuedGeneration() async throws {
+    func testExplicitCancelPermanentlyStopsOldWorker() async throws {
         let fake = FakeEou(eouAt: 1)
         let ring = try OwnedPCMQueue(source: .remoteAudio)
         let worker = PCMTranscriptWorker(
@@ -156,15 +156,32 @@ final class LocalASRWorkerTests: XCTestCase {
         XCTAssertTrue(first.isEmpty)
         await worker.cancel()
 
-        // A producer may still emit late callbacks from generation #7.
+        // Even a higher generation cannot revive a cancelled capture worker.
         let late = await worker.ingest(try packet(ring, generation: 7))
+        let future = await worker.ingest(try packet(ring, generation: 8))
         XCTAssertTrue(late.isEmpty)
-        let fresh = await worker.ingest(try packet(ring, generation: 8))
-        XCTAssertEqual(fresh.map(\.status), [.discontinuity])
-        let onward = await worker.ingest(try packet(ring, generation: 8))
-        XCTAssertTrue(onward.isEmpty)
-        let untrusted = await worker.finishAtStop()
-        XCTAssertNotEqual(untrusted?.streamGeneration, 7)
+        XCTAssertTrue(future.isEmpty)
+        let stopped = await worker.finishAtStop()
+        XCTAssertNil(stopped)
+        let used = await fake.accepted
+        XCTAssertEqual(used, 0)
+        // A new authorized capture requires a new worker instance.
+    }
+
+    func testCancellationBeforeFirstQueuedPacketFailsClosed() async throws {
+        let fake = FakeEou(eouAt: 1)
+        let ring = try OwnedPCMQueue(source: .microphone)
+        let worker = PCMTranscriptWorker(
+            source: .microphone, authorizedCapture: true, backend: fake
+        )
+        await worker.cancel()
+        // The producer may have buffered audio before stop took effect.
+        let queued = await worker.ingest(try packet(ring, generation: 1))
+        XCTAssertTrue(queued.isEmpty)
+        let stopped = await worker.finishAtStop()
+        XCTAssertNil(stopped)
+        let used = await fake.accepted
+        XCTAssertEqual(used, 0)
     }
 
     func testUnauthorizedAndWrongSourceNeverCallASR() async throws {

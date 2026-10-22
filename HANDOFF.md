@@ -9,17 +9,17 @@ Updated: 2026-10-22. [AGENTS.md](AGENTS.md) defines how each new coding agent st
 - Slice 01A real-user feasibility: **the user provided successful Mac terminal output** on 2026-10-22. Browser authentication and ChatGPT plan inference permission succeeded, eight models listed and `gpt-6.1-sol` returned `response.completed` for a synthetic SQL WHERE/HAVING question. First text: **2640 ms**, total stream: **8306 ms**, output: **906 characters**. This is one user-reported run, not an independently repeated benchmark or evidence of unlimited usage.
 
 ## Current change
-**PR #6 merged**, after Codex GitHub review identified three documentation P2 issues, all fixed and resolved, with passing exact-head CI; issue #2 closed. Issue #7, Slice 01B-A, is the active implementation.
+**PR #6 merged**, after Codex review found three documentation inconsistencies, all resolved with green CI; issue #2 closed. **PR #8 merged** after Codex review found three P2 correctness/metrics issues, all fixed with regression tests and green exact-head CI; issue #7 closed. The next active gate is [issue #9](https://github.com/KanujVerma/relay/issues/9), user-run local Luna-versus-Sol benchmark.
 
 ## Exact next implementation slice
-**Issue [#7: Slice 01B-A](https://github.com/KanujVerma/relay/issues/7)**. Implement short-answer prompts and a locally invoked, offline-tested benchmark comparing `gpt-6-luna` and `gpt-6.1-sol` on identical synthetic role-specific questions. No billable API fallback, no model calls from CI, no recording/Personal Brain implementation in this slice. Update HANDOFF.md with actual results.
+**Issue [#9: validate Luna versus Sol](https://github.com/KanujVerma/relay/issues/9)**. Locally run the now-merged dry-run-first benchmark (instructions in [docs/RUN_LOCAL_MODEL_BENCHMARK.md](docs/RUN_LOCAL_MODEL_BENCHMARK.md)) on synthetic cases. Collect model-specific first-text latency, total time, concise-format compliance and **human-reviewed technical correctness**. No live model calls in CI or paid API fallback. After observed benchmark results, decide model routing and open a small Slice 01B-B grounding/quality-gate PR.
 
-## Slice 01B-A in-progress artifacts (not yet merged)
+## Slice 01B-A completed artifacts (merged in PR #8)
 - `relay_spike/benchmark.py`: synthetic role cases, bounded paired comparison plan, output-format metrics, no automatically assigned correctness score.
 - `relay_spike/stream.py`: preview-safe top-level concise instructions.
 - `relay_spike/__main__.py`: `benchmark` command; dry-run unless `--execute` is supplied; no OAuth or model requests without execution permission.
 - `tests/test_benchmark.py`: offline negative tests; `docs/RUN_LOCAL_MODEL_BENCHMARK.md`: local instructions.
-- No live Luna vs Sol measurements have yet been performed, and CI must never call a model.
+- Codex PR #8 review completed, three P2 findings fixed (truthful compactness metric, actual p95 emission, explicit role for direct inference), all threads resolved and exact-head CI passed. **No live Luna vs Sol comparison has yet been performed**, and CI must never call a model.
 
 ## Provisional model routing
 - Luna: preferred fast/simple-question candidate, must pass factual and coverage checks.
@@ -40,4 +40,4 @@ No native SwiftUI app, authorized Zoom audio capture, diarization, live question
 Repository is PUBLIC until the owner chooses otherwise. Never commit credentials, OAuth callbacks, recordings, résumés or private interview source content even after going private. Linux CI performs offline fixture/doc/tests only. GitHub Codex PR reviews are tracked usage and should be explicitly verified, not assumed free or finished just because a comment was submitted.
 
 ## New-agent action
-Read [AGENTS.md](AGENTS.md), [PRODUCT.md](PRODUCT.md), [ARCHITECTURE.md](ARCHITECTURE.md), [docs/DECISIONS.md](docs/DECISIONS.md), and [docs/SLICES.md](docs/SLICES.md). Inspect the latest PR and then implement **only Slice 01B-A (issue #7)**. One small PR, actual tests, reviewed findings, updated handoff and exact next step.
+Read [AGENTS.md](AGENTS.md), [PRODUCT.md](PRODUCT.md), [ARCHITECTURE.md](ARCHITECTURE.md), [docs/DECISIONS.md](docs/DECISIONS.md), and [docs/SLICES.md](docs/SLICES.md). Inspect merged PR #8 and open issue #9. **Current next gate: opt-in, local user-run synthetic model comparison**, not more code. After recording actual results, take only the next small Slice 01B-B issue/PR; preserve tests, Codex review findings, and handoff.

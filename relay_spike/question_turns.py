@@ -153,6 +153,7 @@ class QuestionTurnMachine:
         self._lock = Lock()
         self._remote_generation: int | None = None
         self._blocked_generation: int | None = None
+        self._stopped = False
         self._last_final_end = -1
         self._seen: OrderedDict[str, _Segment] = OrderedDict()
         self._active: QuestionSnapshot | None = None
@@ -165,12 +166,28 @@ class QuestionTurnMachine:
             return self._active
 
     def cancel(self) -> None:
-        """Stop/permission loss suppresses all remaining events in generation."""
+        """Explicit user stop/permission loss. Only explicit resume can reopen."""
         with self._lock:
             self.turns.cancel()
             self._active = None
             self._interrupted = None
+            self._stopped = True
             self._blocked_generation = self._remote_generation
+
+    def resume(self) -> None:
+        """Start a new local session after upstream authorization checks.
+
+        Calling resume is not proof of consent; the native host must enforce it.
+        """
+        with self._lock:
+            self.turns.cancel()
+            self._active = None
+            self._interrupted = None
+            self._stopped = False
+            self._remote_generation = None
+            self._blocked_generation = None
+            self._last_final_end = -1
+            self._seen.clear()
 
     def _remember(self, e: TranscriptEvent, digest: bytes) -> None:
         self._seen[e.segment_id] = _Segment(e.revision, e.status, digest)
@@ -188,6 +205,8 @@ class QuestionTurnMachine:
         if event.source_channel != "remote":
             return TurnDecision("ignored", "not_confirmed_remote_source")
         with self._lock:
+            if self._stopped:
+                return TurnDecision("ignored", "stopped_until_explicit_resume")
             if (self._remote_generation is not None
                     and event.stream_generation < self._remote_generation):
                 return TurnDecision("ignored", "stale_stream_generation")
@@ -240,6 +259,8 @@ class QuestionTurnMachine:
                 # Preserve only the original context for a matching finalized
                 # correction/follow-up, never as an authorized partial answer.
                 if event.intent in ("question", "correction", "follow_up"):
+                    if event.intent == "question":
+                        self._interrupted = None
                     if self._active is not None:
                         self._interrupted = (
                             (event.segment_id, self._active)

@@ -14,7 +14,7 @@ from typing import Callable, Iterable
 
 from .benchmark import load_cases, instructions_for
 from .qa import QAInput, assess
-from .technical_gate import review_technical_candidate
+from .technical_gate import TechnicalVerdict, _SAFE_RENDER, review_technical_candidate
 from .stream import StreamError, response_sse_lines, validated_reasoning_effort
 from .streaming_qa import (
     ActiveTurns, ModelPolicy, Presentation, StreamAssessment, SyntheticContext,
@@ -112,29 +112,42 @@ def _review_completed_technical_card(assessed: StreamAssessment, *,
 
     try:
         verdict = review_technical_candidate(case["id"], assessed.answer or "")
+        # The candidate gate is an internal component, but the caller must
+        # still validate its entire result before upgrading untrusted text.
+        # A mocked, corrupt or tampered verdict cannot supply a novel string.
+        canonical = _SAFE_RENDER.get(case["id"])
+        approved = (
+            type(verdict) is TechnicalVerdict
+            and verdict.case_id == case["id"]
+            and verdict.publishable is True
+            and type(verdict.rendered_text) is str
+            and type(canonical) is str
+            and verdict.rendered_text == canonical
+            and verdict.reason == "reviewed_synthetic_card"
+        )
     except Exception:
         return redacted, "candidate_gate_failed_closed"
-    if not verdict.publishable or not verdict.rendered_text:
+    if not approved:
         initial = redacted.qa
         if initial is not None:
-            # No raw model prose is included in reason codes.
+            # Local fixed reason codes only, never propagate verdict.reason.
             reasons = tuple(initial.reasons) + ("technical_candidate_not_reviewed",)
             state = "abstain" if initial.status == "abstain" else "needs_revision"
             redacted = replace(
                 redacted, qa=replace(initial, status=state, reasons=reasons),
                 qa_decided_ms=max(0, round(1000 * (clock() - redacted.started))),
             )
-        return redacted, verdict.reason
+        return redacted, "candidate_not_approved"
 
-    # The classification applies ONLY to the independently reviewed fixed
-    # technical card, never to the original candidate. No Personal Brain facts
-    # or model-provided source identifiers can be admitted by this gate.
+    # The classification applies ONLY to independently reviewed canonical,
+    # never to raw generated text or a caller-injected substitute verdict.
+    # No Personal Brain or model-provided sources are admitted.
     current = turns.current()
     if current != token:
         return redacted, "superseded_turn"
     qa = assess(QAInput(
         case_id=case["id"], role=case["role"], category=case["category"],
-        answer=verdict.rendered_text, completed=True,
+        answer=canonical, completed=True,
         turn_id=token.turn_id, active_turn_id=current.turn_id,
         turn_version=token.version, active_turn_version=current.version,
         personal_claim_classification="absent", verified_source_ids=(),
@@ -143,7 +156,7 @@ def _review_completed_technical_card(assessed: StreamAssessment, *,
     if qa.status != "pass":
         return replace(redacted, qa=qa), "canonical_card_qa_not_passed"
     return replace(
-        redacted, answer=verdict.rendered_text, qa=qa,
+        redacted, answer=canonical, qa=qa,
         qa_decided_ms=max(0, round(1000 * (clock() - redacted.started))),
     ), "reviewed_synthetic_card"
 

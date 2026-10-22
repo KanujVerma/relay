@@ -33,9 +33,9 @@ The first 10 user-reported requests: six default-effort D02/D01/E01 Luna/Sol pai
 - **Astra** remains optional offline analysis. Do not make hard-coded final route or high-effort choices from nine paired samples. For future launch validation, compare held-out technical correctness, personal-source fidelity, p50/p95 *first useful text*, and changes to plan availability.
 
 ## Slice 01B-B0 implementation contract (PR #14)
-- `relay_spike/qa.py`: offline typed `QAInput`/`QAResult`, explicit source IDs/turn versions, `pass`/`needs_revision`/`abstain` and nonbinding `second_review_recommended`.
+- `relay_spike/qa.py`: offline typed `QAInput`/`QAResult`, explicit source IDs/turn IDs and versions, conservative personal-claim classification, `pass`/`needs_revision`/`abstain` and nonbinding `second_review_recommended`.
 - No personal answer can pass without **real** source review; empty verified-source references cause abstention, and bare source IDs alone never prove a claim is supported.
-- Incomplete/superseded answers abstain; a consumer must *also* re-check turn freshness immediately before rendering.
+- Incomplete or superseded **turn IDs/versions** abstain, even if two distinct turns reuse the same version number. A consumer must *also* re-check both active ID and version immediately before rendering. Without a trusted absence-of-personal-attribution classification, even otherwise clean technical output needs revision.
 - Optional keyword indicators only flag **possible** missing subparts. A deterministic PASS is not a correctness score. Code-first answers may warn about scanability; high-risk flags recommend (but do not invoke) deeper review.
 - Synthetic negative tests cover missing provenance, stale/failed output, SQL/coding risks, multipart omissions, malformed metadata and format problems. In this slice there is no model request, persistent store, personal import, audio, UI or stream integration; those belong to follow-up slices.
 

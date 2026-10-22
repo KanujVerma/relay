@@ -147,6 +147,43 @@ final class OwnedPCMQueueTests: XCTestCase {
         XCTAssertNil(queue.dequeue())
     }
 
+    func testNonisolatedMicCallbackRunsOffMainThreadAndPublishesOwnedPCM() async throws {
+        let queue = try OwnedPCMQueue(source: .microphone)
+        // The returned function is explicitly @Sendable and constructed by a
+        // non-actor-isolated factory, not by MicrophoneCapture.start().
+        let callback = MicrophonePCMBridge.makeTapHandler(
+            queue: queue, streamGeneration: 23
+        )
+        let ranOnMainThread = try await Task.detached(priority: .userInitiated) {
+            let format = try XCTUnwrap(AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: 48_000,
+                channels: 1,
+                interleaved: false
+            ))
+            let buffer = try XCTUnwrap(AVAudioPCMBuffer(
+                pcmFormat: format, frameCapacity: 4
+            ))
+            buffer.frameLength = 4
+            let samples = try XCTUnwrap(buffer.floatChannelData)[0]
+            samples[0] = 0.125
+            samples[1] = -0.25
+            samples[2] = 0.5
+            samples[3] = 0.75
+            callback(buffer, AVAudioTime(hostTime: 4567))
+            // The callback was invoked from this detached worker, not MainActor.
+            return Thread.isMainThread
+        }.value
+        XCTAssertFalse(ranOnMainThread)
+
+        let frame = try XCTUnwrap(queue.dequeue())
+        XCTAssertEqual(frame.source, .microphone)
+        XCTAssertEqual(frame.streamGeneration, 23)
+        XCTAssertEqual(frame.hostTime, 4567)
+        XCTAssertEqual(frame.interleavedSamples, [0.125, -0.25, 0.5, 0.75])
+        XCTAssertNil(queue.dequeue())
+    }
+
     func testPacketOrderAndGenerationAfterConsumerReusesSlots() throws {
         let queue = try OwnedPCMQueue(source: .microphone)
         let first = [Float](repeating: 0.2, count: 32)

@@ -114,6 +114,7 @@ CREATE TABLE candidate_evidence (
     review_revision INTEGER NOT NULL DEFAULT 1 CHECK(review_revision>=1)
 );
 CREATE INDEX candidate_evidence_source_idx ON candidate_evidence(source_id);
+CREATE UNIQUE INDEX candidate_evidence_one_span_per_source ON candidate_evidence(source_id,span_start,span_end);
 """
 
 
@@ -374,14 +375,17 @@ class BrainStore:
                 " VALUES (?,?,?,?,?,?,?)",
                 (fact_id, source_id, claim_key, claim_text, actor, observed_at, _now()),
             )
-            self.db.execute(
-                "INSERT INTO candidate_evidence "
-                "(fact_id,source_id,source_sha256,snippet_sha256,span_start,span_end)"
-                " VALUES (?,?,?,?,?,?)",
-                (fact_id, source_id, document_sha256,
-                 sha256(claim_text.encode("utf-8")).hexdigest(),
-                 span_start, span_end),
-            )
+            try:
+                self.db.execute(
+                    "INSERT INTO candidate_evidence "
+                    "(fact_id,source_id,source_sha256,snippet_sha256,span_start,span_end)"
+                    " VALUES (?,?,?,?,?,?)",
+                    (fact_id, source_id, document_sha256,
+                     sha256(claim_text.encode("utf-8")).hexdigest(),
+                     span_start, span_end),
+                )
+            except sqlite3.IntegrityError:
+                raise InvalidState("Source span has already been staged.") from None
         return fact_id
 
     def confirm_fact(self, fact_id: str, *, confirmation: UserConfirmation,

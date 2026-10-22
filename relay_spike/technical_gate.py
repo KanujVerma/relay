@@ -75,117 +75,76 @@ class TechnicalVerdict:
             raise ValueError("Withheld candidates cannot carry visible output.")
 
 
+# Full-span reviewed grammar, NOT a keyword/negative word classifier.
+# Candidate-to-card acceptance requires the ENTIRE message to match two
+# unambiguous technical proposition templates. Alternatives permit limited
+# wording/order variation without permitting arbitrary appended assertions.
+_WHERE_GRAMMAR = (
+    r"(?:the\s+)?where(?:\s+clause)?\s+"
+    r"(?:filters|restricts|selects)\s+(?:the\s+)?"
+    r"(?:raw\s+|individual\s+)?(?:rows|records)\s+"
+    r"(?:before|prior\s+to)\s+(?:grouping|aggregation)"
+)
+_HAVING_GRAMMAR = (
+    r"(?:the\s+)?having(?:\s+clause)?\s+(?:which\s+)?"
+    r"(?:filters|restricts|selects)\s+(?:the\s+)?"
+    r"(?:aggregated\s+|aggregate\s+|grouped\s+)?(?:groups|results)\s+"
+    r"(?:after\s+(?:grouping|aggregation)|afterward)"
+)
+_D02_PREFIX = r"(?:in\s+sql,?\s+(?:the\s+)?)?"
+_D02_GLUE = (
+    r"(?:\s+(?:and|whereas|while|versus)\s+"
+    r"|,\s*(?:while|whereas|versus)\s+|[.;]\s+)"
+)
+_D02_GRAMMARS = tuple(
+    re.compile(_D02_PREFIX + first + _D02_GLUE + second + r"\.?")
+    for first, second in ((_WHERE_GRAMMAR, _HAVING_GRAMMAR),
+                          (_HAVING_GRAMMAR, _WHERE_GRAMMAR))
+)
+
+# All patterns are separate, locally reviewed complete propositions.
+# They may be combined across independently checked mechanism/complexity
+# variants, but never supplemented by unchecked model text.
+_E09_MECHANISMS = (
+    r"binary search requires (?:a\s+)?(?:sorted|ordered)\s+"
+    r"(?:array|input)\s+and\s+halves\s+the\s+range\s+each\s+iteration",
+    r"for sorted input,\s+binary search checks the midpoint and "
+    r"reduces the range by half",
+    r"binary search on a sorted array divides the remaining range "
+    r"in half each iteration",
+    r"binary search uses sorted data and compares the middle target "
+    r"each iteration,\s+halving the search range",
+    r"in a sorted array binary search halves the remaining range "
+    r"after each comparison",
+    r"binary search requires ordered input and uses the midpoint "
+    r"to halve the range",
+    r"for sorted arrays binary search compares the middle element "
+    r"and discards half the remaining range",
+    r"binary search on sorted input repeatedly halves its remaining range",
+)
+_E09_COMPLEXITIES = (
+    r"(?:its\s+|the\s+)?iterative time(?:\s+complexity)? "
+    r"is o\(log n\) and (?:auxiliary\s+)?space is o\(1\)",
+    r"iterative time complexity is o\(log n\),\s+with o\(1\) extra space",
+    r"iterative time is logarithmic with constant auxiliary space",
+    r"the iterative algorithm uses o\(log n\) time and o\(1\) auxiliary space",
+    r"iteratively it uses logarithmic time with constant extra space",
+    r"the iterative search requires o\(log n\) time and constant auxiliary space",
+)
+_E09_GRAMMARS = tuple(
+    re.compile(mechanism + r"\.\s+" + complexity + r"\.?")
+    for mechanism in _E09_MECHANISMS for complexity in _E09_COMPLEXITIES
+)
+
+
 def _review_d02(text: str, words: tuple[str, ...]) -> bool:
-    """Accept fully scoped WHERE/row and HAVING/group propositions only."""
-    clauses = [segment.strip() for segment in re.split(r"[.;!?]+", text) if segment.strip()]
-    if not 1 <= len(clauses) <= 2:
-        return False
-    if len(clauses) == 2:
-        # Two statements must each concern exactly one required SQL clause.
-        # A free-floating conclusion can contradict the recognized answer.
-        mentioned = [
-            set(re.findall(r"\b(?:where|having)\b", segment))
-            for segment in clauses
-        ]
-        if mentioned != [{"where"}, {"having"}] and mentioned != [{"having"}, {"where"}]:
-            return False
-    if words.count("where") != 1 or words.count("having") != 1:
-        return False
-    wpos, hpos = words.index("where"), words.index("having")
-    if wpos < hpos:
-        where, having = words[wpos + 1:hpos], words[hpos + 1:]
-    else:
-        having, where = words[hpos + 1:wpos], words[wpos + 1:]
-    w, h = set(where), set(having)
-    if not (w & _FILTER and w & _ROWS):
-        return False
-    if not (h & _FILTER and h & _GROUPS):
-        return False
-    if w & _AFTER or h & _BEFORE:
-        return False
-    # WHERE may describe the grouping stage only as a BEFORE condition,
-    # never claim to filter the grouped entities themselves.
-    pre_position = next((i for i, word in enumerate(where) if word in _BEFORE), None)
-    for index, word in enumerate(where):
-        if word in _GROUPS:
-            # WHERE may say "before aggregation", but must not claim to
-            # filter groups or aggregates, regardless of their position.
-            if word != "aggregation" or pre_position is None or index <= pre_position:
-                return False
-    if h & _ROWS:
-        return False
-    return True
+    """Only entire reviewed WHERE/HAVING grammar variations can select a card."""
+    return any(pattern.fullmatch(text) for pattern in _D02_GRAMMARS)
 
 
 def _review_e09(text: str, words: tuple[str, ...]) -> bool:
-    """Require sorted precondition, halving, log time and iterative constant space."""
-    vocabulary = set(words)
-    # Reject every unreviewed asymptotic expression, even when the answer
-    # ALSO includes the expected O(log n) and O(1) somewhere else.
-    formulas = re.findall(r"\bo\s*\([^)]*\)", text)
-    if any(not re.fullmatch(r"o\s*\(\s*(?:log\s*n|1)\s*\)", x)
-           for x in formulas):
-        return False
-    without_formulas = re.sub(r"\bo\s*\(\s*(?:log\s*n|1)\s*\)", " ", text)
-    if re.search(r"\b(?:n|1)\b", without_formulas):
-        return False
-    if "binary" not in vocabulary or "search" not in vocabulary:
-        return False
-    if not re.search(
-        r"\b(?:sorted|ordered)\b.{0,35}\b(?:input|array|arrays|data)\b"
-        r"|\b(?:input|array|arrays|data)\b.{0,35}\b(?:sorted|ordered)\b", text
-    ):
-        return False
-    if not vocabulary.intersection({
-        "halves", "halve", "halving", "half", "midpoint", "middle", "divide",
-        "dividing", "discard", "discards", "split", "splits"
-    }):
-        return False
-    if not re.search(r"\bo\s*\(\s*log\s*n\s*\)|\blogarithmic\b", text):
-        return False
-    if not (
-        re.search(r"\bo\s*\(\s*1\s*\)", text)
-        or re.search(r"\bconstant\b.{0,40}\b(?:space|memory)\b", text)
-    ):
-        return False
-    # Bind the complexity to the relevant quantity, not just words nearby.
-    # A reversed O(1)-time/O(log n)-space claim is not an acceptable answer.
-    if re.search(
-        r"\bo\s*\(\s*1\s*\)\s*(?:time|complexity)\b"
-        r"|\btime(?:\s+complexity)?\s+(?:is|of|:)\s*o\s*\(\s*1\s*\)",
-        text,
-    ):
-        return False
-    if re.search(
-        r"\bo\s*\(\s*log\s*n\s*\)\s*(?:auxiliary|extra)?\s*(?:space|memory)\b"
-        r"|\b(?:space|memory)(?:\s+complexity)?\s+(?:is|of|:)\s*o\s*\(\s*log\s*n\s*\)",
-        text,
-    ):
-        return False
-    # Bind EACH time/space complexity to its local statement rather than
-    # accepting correct formula tokens that occur in the wrong roles.
-    # Compound answers may use a different clause order, but every complexity
-    # bearing clause must have exactly one compatible complexity family.
-    for clause in re.split(r"[.;,]|\b(?:and|with|whereas|while)\b", text):
-        terms = set(re.findall(r"[a-z]+", clause))
-        has_log = bool(re.search(
-            r"\bo\s*\(\s*log\s*n\s*\)|\blogarithmic\b", clause
-        ))
-        has_one = bool(re.search(
-            r"\bo\s*\(\s*1\s*\)|\bconstant\b", clause
-        ))
-        if has_log and (not "time" in terms or "space" in terms or "memory" in terms):
-            return False
-        if has_one and (
-            not ({"space", "memory"} & terms) or "time" in terms
-        ):
-            return False
-    if "time" not in vocabulary or not vocabulary.intersection({"space", "auxiliary"}):
-        return False
-    if not vocabulary.intersection({"iterative", "iteratively", "loop"}):
-        return False
-    return True
-
+    """Only entire reviewed iterative binary-search grammar variations pass."""
+    return any(pattern.fullmatch(text) for pattern in _E09_GRAMMARS)
 
 def review_technical_candidate(case_id: str, candidate: str) -> TechnicalVerdict:
     """Bounded, deterministic candidate-to-canonical technical reference gate.

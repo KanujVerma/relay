@@ -19,18 +19,9 @@ from .streaming_qa import (
     TurnToken, assess_synthetic_stream, publish_assessment,
 )
 
-# Restrict this bridge to non-personal, already-reviewed synthetic question types.
-# A genuine interview will need a separate permission/grounding/turn classifier.
-TECHNICAL_CATEGORIES = frozenset({
-    "sql", "coding", "edge_case", "ambiguity", "multi_part", "correction",
-    "metrics", "visualization",
-})
-FIRST_PERSON_TERMS = re.compile(
-    r"\b(?:i|me|my|mine|myself|we|us|our|ours|ourselves)\b", re.IGNORECASE
-)
-# Implicit-subject résumé claims need a conservative veto even without
-# a literal "I" or "we". False negatives are possible: NOT a trust classifier
-# suitable for real interview or Personal Brain text.
+# Only reviewed synthetic technical whole responses may clear the guard.
+# A real interview requires independent trusted grounding and turn checks.
+# Additional conservative risk label. Never used to authorize display.
 WORK_HISTORY_TERMS = re.compile(
     r"\b(?:built|implemented|developed|designed|created|led|owned|"
     r"managed|shipped|delivered|interned|internship|graduated|"
@@ -43,31 +34,44 @@ WORK_HISTORY_TERMS = re.compile(
 )
 
 
-def synthetic_nonpersonal_classification(answer: str, category: str) -> str:
-    """Narrow negative screen, NOT a general proof of facts or attribution.
+# Whole-answer smoke matches only. Model-generated text is untrusted and an
+# absence of flagged regex words never certifies an absence of personal claims.
+APPROVED_SMOKE_ANSWERS: dict[str, frozenset[str]] = {
+    "D02": frozenset({
+        "WHERE filters input rows before grouping, while HAVING filters aggregated groups after grouping.",
+        "WHERE filters rows before grouping, while HAVING filters groups after aggregation.",
+    }),
+    "E09": frozenset({
+        "Binary search halves the sorted search range with each comparison, using logarithmic time and constant auxiliary space.",
+    }),
+}
+APPROVED_SMOKE_CATEGORIES = {"D02": "sql", "E09": "coding"}
 
-    A non-personal *synthetic technical* fixture has no user biography in its
-    input. Any first-person wording, including quoted or code text, makes the
-    output uncertain. This does NOT validate technical answer correctness.
+
+def synthetic_nonpersonal_classification(answer: str, category: str, *, case_id: str) -> str:
+    """Positive, exact synthetic technical phrase allowlist, NOT semantic QA.
+
+    A different generated phrase remains uncertain, no matter what words are
+    missing from our optional risk regex. Model text cannot certify its own
+    absence of invented personal history.
     """
-    if category not in TECHNICAL_CATEGORIES or not isinstance(answer, str) or not answer.strip():
+    if not isinstance(answer, str) or category != APPROVED_SMOKE_CATEGORIES.get(case_id):
         return "uncertain"
-    # Suspected biography, including implicit/third-person work claims, is
-    # treated as personal and abstains without verified personal source IDs.
-    if WORK_HISTORY_TERMS.search(answer):
+    normalized = " ".join(answer.split())
+    if normalized in APPROVED_SMOKE_ANSWERS.get(case_id, frozenset()):
+        return "absent"
+    if WORK_HISTORY_TERMS.search(normalized):
         return "present"
-    if FIRST_PERSON_TERMS.search(answer):
-        return "uncertain"
-    return "absent"
-
+    return "uncertain"
 
 def validate_live_case(case_id: str, model: str, effort: str) -> dict:
     """Validate all public CLI parameters BEFORE authentication or inference."""
     case = load_cases((case_id,))[0]
-    if case["category"] not in TECHNICAL_CATEGORIES:
+    if (case_id not in APPROVED_SMOKE_ANSWERS or
+            case["category"] != APPROVED_SMOKE_CATEGORIES[case_id]):
         raise StreamError(
-            "Live QA is restricted to synthetic technical cases; "
-            "personal, behavioral and interruption cases are deferred."
+            "Live QA supports only the reviewed D02/E09 technical smoke cases. "
+            "Other questions await trusted attribution and answer review."
         )
     if model not in ("gpt-6-luna", "gpt-6.1-sol"):
         raise StreamError("Live QA only supports the reviewed Luna/Sol models.")
@@ -126,7 +130,9 @@ def run_live_synthetic_case(
             byte_lines,
             turns=turns, token=token, context=SyntheticContext(case_id),
             clock=clock, started_at=started,
-            attribution_classifier=synthetic_nonpersonal_classification,
+            attribution_classifier=lambda answer, category: synthetic_nonpersonal_classification(
+                answer, category, case_id=case_id
+            ),
         )
     presentation = publish_assessment(
         assessed, turns=turns, on_present=on_present,

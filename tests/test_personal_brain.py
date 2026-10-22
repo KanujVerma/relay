@@ -91,6 +91,73 @@ class BrainStoreTests(unittest.TestCase):
                 self.assertEqual(migrated.db.execute(
                     "PRAGMA user_version").fetchone()[0], 2)
 
+    def test_corrupt_legacy_v1_migration_rolls_back_schema_and_version(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "synthetic-orphan-v1.db"
+            with sqlite3.connect(path) as legacy:
+                legacy.executescript(SCHEMA)
+                self.assertEqual(legacy.execute(
+                    "PRAGMA foreign_keys").fetchone()[0], 0)
+                legacy.execute(
+                    "INSERT INTO candidate_fact "
+                    "(id,source_id,claim_key,claim_text,actor,state,"
+                    "observed_at,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    ("orphan", "missing-source-id", "project.test",
+                     "Untrusted synthetic claim", "self", "candidate",
+                     WHEN, WHEN),
+                )
+                legacy.execute("PRAGMA user_version=1")
+            with self.assertRaises(BrainError):
+                BrainStore(path)
+            with sqlite3.connect(path) as after:
+                self.assertEqual(after.execute(
+                    "PRAGMA user_version").fetchone()[0], 1)
+                self.assertIsNone(after.execute(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE name='candidate_evidence'"
+                ).fetchone())
+                self.assertIsNotNone(after.execute(
+                    "PRAGMA foreign_key_check").fetchone())
+
+    def test_migration_preserves_previously_confirmed_legacy_resume(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "synthetic-verified-v1.db"
+            with sqlite3.connect(path) as legacy:
+                legacy.executescript(SCHEMA)
+                legacy.execute(
+                    "INSERT INTO source "
+                    "(id,kind,observed_at,consent_scope,consented_at)"
+                    " VALUES (?,?,?,?,?)",
+                    ("source-legacy", "resume", WHEN, "personal_brain", WHEN),
+                )
+                legacy.execute(
+                    "INSERT INTO candidate_fact "
+                    "(id,source_id,claim_key,claim_text,actor,state,"
+                    "observed_at,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    ("fact-legacy", "source-legacy", "project.legacy",
+                     "Synthetic previously user-confirmed fact.",
+                     "self", "confirmed", WHEN, WHEN),
+                )
+                legacy.execute(
+                    "INSERT INTO history_event "
+                    "(id,fact_id,action,confirmation_id,recorded_at)"
+                    " VALUES (?,?,?,?,?)",
+                    ("event-legacy", "fact-legacy", "fact_confirmed",
+                     "synthetic-legacy-click", WHEN),
+                )
+                legacy.execute(
+                    "INSERT INTO verified_fact "
+                    "(fact_id,claim_key,confirmation_event_id,confirmed_at)"
+                    " VALUES (?,?,?,?)",
+                    ("fact-legacy", "project.legacy", "event-legacy", WHEN),
+                )
+                legacy.execute("PRAGMA user_version=1")
+            with BrainStore(path) as upgraded:
+                self.assertEqual(upgraded.db.execute(
+                    "PRAGMA user_version").fetchone()[0], 2)
+                self.assertEqual(upgraded.verified_claims(actor="self")[0].fact_id,
+                                 "fact-legacy")
+
     def test_source_registration_requires_separate_consent(self):
         sid = self.brain.register_source(
             kind="github", observed_at=WHEN, external_ref="synthetic/repo"

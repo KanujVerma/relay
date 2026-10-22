@@ -322,7 +322,7 @@ final class LocalASRWorkerTests: XCTestCase {
 
     func testConverterProduces16kMonoWithFiniteAmplitude() throws {
         let converter = ASRMonoConverter()
-        let ring = try OwnedPCMQueue(source: .remoteAudio)
+        let ring = try OwnedPCMQueue(source: .remoteAudio, maximumFrames: 4096)
         let hz = 440.0
         let sr = 48_000.0
         var pcm = [Float]()

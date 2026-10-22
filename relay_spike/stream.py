@@ -4,6 +4,7 @@ The stream completion event, not an output token or [DONE], proves success.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from urllib.error import HTTPError, URLError
@@ -115,12 +116,35 @@ def sse_events(byte_lines):
 
 
 def consume_stream(byte_lines, *, started: float, clock=time.monotonic,
-                   on_delta=None) -> dict:
+                   on_delta=None, should_continue=None) -> dict:
     first_output = None
     completed = False
     count = 0
     server_reported_effort = None
+    # A single fingerprint bounds replay-tracking memory independently of stream
+    # length. Duplicates of the immediately preceding event are skipped;
+    # out-of-order older events fail closed rather than being replayed.
+    last_sequence: int | None = None
+    last_digest: bytes | None = None
     for event_type, event in sse_events(byte_lines):
+        # Optional caller-owned turn guard. Pure CLI behavior is unchanged.
+        if should_continue is not None and not should_continue():
+            raise StreamError("Stream was superseded.")
+        sequence = event.get("sequence_number")
+        if sequence is not None:
+            if type(sequence) is not int or sequence < 0:
+                raise StreamError("Invalid SSE sequence number.")
+            digest = hashlib.sha256(json.dumps(
+                event, sort_keys=True, ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")).digest()
+            if last_sequence is not None and sequence < last_sequence:
+                raise StreamError("Out-of-order SSE event.")
+            if sequence == last_sequence:
+                if digest != last_digest:
+                    raise StreamError("Conflicting duplicate SSE event.")
+                continue  # Exact adjacent replay, not another text fragment.
+            last_sequence, last_digest = sequence, digest
         typ = event.get("type") or event_type
         if typ == "response.output_text.delta":
             text = event.get("delta")
@@ -142,16 +166,16 @@ def consume_stream(byte_lines, *, started: float, clock=time.monotonic,
                 raise StreamError(f"ChatGPT plan use is unavailable: {code}")
             raise StreamError("Response failed or was incomplete.")
         elif typ == "response.completed":
-            response = event.get("response", {})
-            if isinstance(response, dict):
-                status = response.get("status", "completed")
-                if status != "completed":
-                    raise StreamError("Response completion did not report completed status.")
-                reasoning = response.get("reasoning")
-                if isinstance(reasoning, dict):
-                    reported = reasoning.get("effort")
-                    if isinstance(reported, str):
-                        server_reported_effort = reported
+            response = event.get("response")
+            # Explicit terminal confirmation is required; a missing status,
+            # null, list, or other malformed body is NOT completion.
+            if not isinstance(response, dict) or response.get("status") != "completed":
+                raise StreamError("Response completion did not report completed status.")
+            reasoning = response.get("reasoning")
+            if isinstance(reasoning, dict):
+                reported = reasoning.get("effort")
+                if isinstance(reported, str):
+                    server_reported_effort = reported
             completed = True
             break
     if not completed:

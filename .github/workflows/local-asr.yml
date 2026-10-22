@@ -1,0 +1,39 @@
+name: Local on-device ASR synthetic compile/tests
+
+on:
+  pull_request:
+    paths:
+      - 'spikes/macos-audio/asr/**'
+      - '.github/workflows/local-asr.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: relay-local-asr-${{ github.ref }}
+  cancel-in-progress: true
+
+# Public repository only. This job fetches the pinned FluidAudio SDK and
+# its upstream SwiftPM binary target, but NEVER downloads model weights,
+# requests mic/system audio capture or performs inference in CI.
+jobs:
+  asr-no-model-tests:
+    if: ${{ !github.event.repository.private }}
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Compile ASR adapter and test synthetic fake EOU
+        run: swift test --package-path spikes/macos-audio/asr
+      - name: Verify default CLI does no capture or model loading
+        run: swift run --package-path spikes/macos-audio/asr relay-asr-spike
+      - name: Validate purpose-string app package (never launch capture)
+        run: |
+          bash spikes/macos-audio/asr/scripts/build-asr-app.sh
+          APP="$(swift build -c debug --package-path spikes/macos-audio/asr --show-bin-path)/RelayASRSpike.app"
+          plutil -extract NSMicrophoneUsageDescription raw -o - "$APP/Contents/Info.plist"
+          plutil -extract NSAudioCaptureUsageDescription raw -o - "$APP/Contents/Info.plist"
+          "$APP/Contents/MacOS/relay-asr-spike"

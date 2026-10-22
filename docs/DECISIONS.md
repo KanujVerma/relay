@@ -14,7 +14,7 @@ Statuses: Accepted = established requirement; Provisional = preferred implementa
 | ADR-008 | Accepted | Fast deterministic answer checks and selective second-stage model review | Double generating every answer risks unusable latency and plan usage. |
 | ADR-009 | Provisional | SwiftUI with native Core Audio/SystemAudioKit, FluidAudio local ASR/VAD | Benchmark mic/remote capture, permissions, latency and RAM; evaluate upstream licenses. |
 | ADR-010 | Provisional | SQLite + FTS5 retrieval first, local embeddings only if necessary | Low RAM, provenance, local deletion; validate retrieval before adding vector models. |
-| ADR-011 | Provisional | Official ChatGPT-plan Sign in with ChatGPT OAuth to Responses | Docs describe it, but user's actual eligibility, model list and completed response are still untested. No cookie scraping or unapproved paid API. |
+| ADR-011 | Accepted for local feasibility | Official ChatGPT-plan OAuth to Responses | User-reported local browser OAuth plan grant, eight-model catalog and gpt-6.1-sol response.completed on 2026-10-22. Production reliability, refresh and usage caps remain unverified. |
 | ADR-012 | Accepted | External Drive/GitHub/ChatGPT permissions are independent | ChatGPT sign-in does not grant ChatGPT memory, conversations or connected apps. |
 | ADR-013 | Accepted | Versioned append-only events and reversible derived state | Maintain auditability and permit improved evaluation rubrics. |
 | ADR-014 | Accepted | No personal data or secrets committed to Git even if private later | Public repo is intentional until owner changes it. |
@@ -22,8 +22,11 @@ Statuses: Accepted = established requirement; Provisional = preferred implementa
 | ADR-016 | Accepted | One small scoped PR per slice and durable GitHub handoff | Avoid context rot and giant, unreviewable agent changes. |
 | ADR-017 | Accepted | Cheap offline Linux CI by default | Protect account-shared private Actions minutes; local Mac testing first. |
 | ADR-018 | Deferred | Advanced dashboards, mandatory practice plans and spaced repetition | Optional mock interviewer can test assistant response quality later. |
-| ADR-019 | Blocked | Production model selection and latency budget | Need actual authorized account catalog and measured streamed inference. |
+| ADR-019 | Provisional | Production model selection depends on measured speed and role-specific correctness | One reported Sol run: 2640ms first text, 8306ms complete, 906 chars. Benchmark Luna vs Sol on identical concise questions. |
 | ADR-020 | Accepted | OAuth callback must verify bound loopback Host and state before consuming a browser redirect; persist only validated Bearer credentials | Limits unsolicited loopback callback DoS and malformed credential persistence. Negative tests in tests/test_spike.py; **not yet security-tested on user Mac**. |
+
+| ADR-021 | Provisional | Adaptive model routing (Luna quick, 6.1 Sol complex, Astra optional) | Documented capability/efficiency hierarchy, not empirically measured for Relay. Choose model after quality and p50/p95 latency comparisons. |
+| ADR-022 | Accepted | Request high-signal GitHub Codex reviews through PR comments; verify actual result | Use `@codex review` with AGENTS.md rules; GitHub PR review usage is not the same as free Codex approval auto-review. See docs/PR_REVIEW.md. |
 
 ## Adding an ADR
 Record context, options, chosen trade-off, security implications, validation/evidence, implementation location, status and date. If tests falsify a provisional decision, supersede it in a new entry and update dependent docs.

@@ -247,6 +247,11 @@ class ReviewGateway:
         elif decision == "approve":
             if approved_actor not in ("self", "team", "teammate"):
                 raise MissingEvidence("Reviewer must explicitly select attribution.")
+            if card.actor_hint != "unknown" and approved_actor != card.actor_hint:
+                # A reviewed team or teammate sentence cannot be rewritten
+                # as the user's own individual work by changing only metadata.
+                # Reject/replace the source statement and require new evidence.
+                raise MissingEvidence("Reviewer attribution conflicts with source text.")
             if claim_key is None:
                 raise MissingEvidence("Reviewer must select canonical claim key.")
             self._store.confirm_fact(

@@ -5,6 +5,7 @@ The stream completion event, not an output token or [DONE], proves success.
 from __future__ import annotations
 
 import hashlib
+from contextlib import contextmanager
 import json
 import time
 from urllib.error import HTTPError, URLError
@@ -191,25 +192,40 @@ def consume_stream(byte_lines, *, started: float, clock=time.monotonic,
     }
 
 
-def stream_answer(access_token: str, model: str, question: str, *, on_delta=None,
-                  timeout: float = 75.0, instructions: str | None = None,
-                  effort: str | None = None) -> dict:
-    # There is deliberately no support for OPENAI_API_KEY or API-key billing.
+@contextmanager
+def response_sse_lines(access_token: str, model: str, question: str, *,
+                       timeout: float = 75.0, instructions: str | None = None,
+                       effort: str | None = None):
+    """Yield the original Responses SSE byte lines without displaying or caching deltas.
+
+    This is the SAME OAuth-backed transport used by the existing infer CLI.
+    Its caller owns completion checks, cancellation and any permission to display.
+    """
+    # Never fall back to a conventional API key or separately billed endpoint.
     body = json.dumps(response_payload(
         model, question, instructions=instructions, effort=effort
     )).encode("utf-8")
-    req = Request(RESPONSES, data=body, headers={
+    request = Request(RESPONSES, data=body, headers={
         "Authorization": "Bearer " + access_token,
         "Content-Type": "application/json",
         "Accept": "text/event-stream",
     }, method="POST")
-    started = time.monotonic()
     try:
-        with urlopen(req, timeout=timeout) as response:
-            return consume_stream(
-                iter(response.readline, b""), started=started, on_delta=on_delta
-            )
+        with urlopen(request, timeout=timeout) as response:
+            yield iter(response.readline, b"")
     except HTTPError as exc:
         raise StreamError(f"Responses request rejected (HTTP {exc.code}).") from None
-    except (URLError, TimeoutError):
+    except (URLError, TimeoutError, OSError):
         raise StreamError("Network or timeout failure while streaming response.") from None
+
+
+def stream_answer(access_token: str, model: str, question: str, *, on_delta=None,
+                  timeout: float = 75.0, instructions: str | None = None,
+                  effort: str | None = None) -> dict:
+    """Preserve the existing infer/benchmark behavior through the shared transport."""
+    started = time.monotonic()
+    with response_sse_lines(
+        access_token, model, question, timeout=timeout,
+        instructions=instructions, effort=effort,
+    ) as byte_lines:
+        return consume_stream(byte_lines, started=started, on_delta=on_delta)

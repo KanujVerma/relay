@@ -212,6 +212,8 @@ def assess_synthetic_stream(
     token: TurnToken,
     context: SyntheticContext,
     clock: Callable[[], float] = time.monotonic,
+    started_at: float | None = None,
+    attribution_classifier: Callable[[str, str], str] | None = None,
 ) -> StreamAssessment:
     """Collect a mock/authorized-caller-provided SSE iterator and apply B0 QA.
 
@@ -222,7 +224,7 @@ def assess_synthetic_stream(
     if not isinstance(context, SyntheticContext):
         raise TypeError("SyntheticContext is required.")
     spec = _fixture_spec(context.case_id)
-    started = clock()
+    started = clock() if started_at is None else started_at
     if not turns.is_current(token):
         return StreamAssessment(token, context.case_id, None, False, None,
                                 None, None, None, None, started, "superseded_turn")
@@ -233,6 +235,14 @@ def assess_synthetic_stream(
     fragment_size = 0
     stream_metrics = None
     error: Literal["stream_error", "superseded_turn"] | None = None
+    # A synthetic-only independent classifier may classify the completed answer.
+    # Provisional scannability remains a timing-only hint and is discarded if
+    # the final classification is not absent. Nothing is shown before QA.
+    scannable_attribution = context.attribution
+    if attribution_classifier is not None and spec["category"] not in (
+        "personal", "behavioral", "interruption"
+    ):
+        scannable_attribution = "absent"
 
     def on_delta(delta: str) -> None:
         nonlocal first_text_ms, first_candidate_ms, fragment_size
@@ -246,7 +256,7 @@ def assess_synthetic_stream(
         fragments.append(delta)
         if first_candidate_ms is None and _scannable_prefix(
             "".join(fragments), category=spec["category"],
-            attribution=context.attribution,
+            attribution=scannable_attribution,
         ):
             first_candidate_ms = _ms(clock(), started)
 
@@ -271,13 +281,26 @@ def assess_synthetic_stream(
         return StreamAssessment(token, context.case_id, None, False, None,
                                 first_text_ms, first_candidate_ms, None, None,
                                 started, "superseded_turn")
+    # A trusted, independently implemented classifier is optional; unknown
+    # or failing classification can never upgrade the QA gate.
+    attribution = context.attribution
+    if completed and attribution_classifier is not None:
+        try:
+            classified = attribution_classifier(answer, spec["category"])
+            attribution = classified if classified in (
+                "absent", "present", "uncertain"
+            ) else "uncertain"
+        except Exception:
+            attribution = "uncertain"
+    if attribution != "absent":
+        first_candidate_ms = None
     # An incomplete stream must never be scored/published as a successful answer.
     qa = assess(QAInput(
         case_id=context.case_id, role=spec["role"], category=spec["category"],
         answer=answer, completed=completed,
         turn_id=token.turn_id, active_turn_id=current.turn_id,
         turn_version=token.version, active_turn_version=current.version,
-        personal_claim_classification=context.attribution,
+        personal_claim_classification=attribution,
         verified_source_ids=context.verified_source_ids,
         coverage_indicators=_CASE_COVERAGE.get(context.case_id, ()),
         risk_flags=_CASE_RISKS.get(context.case_id, ()),

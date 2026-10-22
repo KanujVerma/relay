@@ -212,6 +212,51 @@ class ResumeContractTests(unittest.TestCase):
         self.assertEqual(approved[0].actor, "teammate")
         self.assertEqual(self.brain.verified_claims(actor="self"), ())
 
+    def test_canonical_claim_key_conflicts_across_case_and_nfkc_unicode(self):
+        _, cards = self.select_and_stage()
+        first, second = cards[0], cards[3]
+        self.gateway.decide(first, decision="approve", capability=self.host_key,
+                            approved_actor="self", claim_key="Project.API.Owner")
+        self.assertEqual(self.brain.verified_claims()[0].claim_key,
+                         "project.api.owner")
+        with self.assertRaises(FactConflict):
+            self.gateway.decide(second, decision="approve",
+                capability=self.host_key, approved_actor="teammate",
+                claim_key="project.api.owner")
+        with self.assertRaises(FactConflict):
+            self.gateway.decide(second, decision="approve",
+                capability=self.host_key, approved_actor="teammate",
+                claim_key="Ｐｒｏｊｅｃｔ．ＡＰＩ．Ｏｗｎｅｒ")
+        self.gateway.decide(second, decision="approve",
+            capability=self.host_key, approved_actor="teammate",
+            claim_key="Ｐｒｏｊｅｃｔ．ＡＰＩ．Ｏｗｎｅｒ",
+            replaces_fact_id=first.fact_id)
+        self.assertEqual(self.brain.verified_claims()[0].claim_key,
+                         "project.api.owner")
+        with self.assertRaises(BrainError):
+            self.gateway.decide(cards[4], decision="approve",
+                capability=self.host_key, approved_actor="self",
+                claim_key="emoji.🙂")
+
+    def test_legacy_resume_without_review_evidence_cannot_be_confirmed(self):
+        source = self.brain.register_source(kind="resume", observed_at=WHEN)
+        self.brain.grant_consent(source, confirmation=UserConfirmation(
+            "synthetic-legacy-resume-consent"
+        ))
+        candidate = self.brain.add_candidate(
+            source_id=source, claim_key="legacy.resume.work",
+            claim_text="I built an unreviewed legacy module.",
+            actor="self", observed_at=WHEN,
+        )
+        with self.assertRaises(MissingEvidence):
+            self.brain.confirm_fact(candidate, confirmation=UserConfirmation(
+                "synthetic-fake-legacy-resume-approve"
+            ))
+        self.assertEqual(self.brain.verified_claims(), ())
+        self.assertEqual(self.brain.db.execute(
+            "SELECT state FROM candidate_fact WHERE id=?", (candidate,)
+        ).fetchone()["state"], "candidate")
+
     def test_source_revision_mismatch_fails_without_adding_candidates(self):
         source = self.gateway.select_source(
             SAMPLE, observed_at=WHEN, capability=self.host_key)

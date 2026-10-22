@@ -21,6 +21,9 @@ Updated: 2026-10-22. [AGENTS.md](AGENTS.md) defines how each new coding agent st
 - `tests/test_benchmark.py`: offline negative tests; `docs/RUN_LOCAL_MODEL_BENCHMARK.md`: local instructions.
 - Codex PR #8 review completed, three P2 findings fixed (truthful compactness metric, actual p95 emission, explicit role for direct inference), all threads resolved and exact-head CI passed. **No live Luna vs Sol comparison has yet been performed**, and CI must never call a model.
 
+## Current Slice 01B-A1: explicit reasoning effort (issue #10)
+Separate small branch adds optional `infer --effort`, `benchmark --efforts`, and per-model compatibility checks, with offline regression tests. It defaults to omitting the field, so existing runs still use the documented model default (Medium for GPT-6 Luna and GPT-6.1 Sol). **Actual ChatGPT-plan OAuth acceptance of an explicit effort remains untested.** See docs/MODEL_STRATEGY.md and docs/RUN_LOCAL_MODEL_BENCHMARK.md. The user-run model comparison in issue #9 remains the next performance gate after this PR is reviewed and merged.
+
 ## Provisional model routing
 - Luna: preferred fast/simple-question candidate, must pass factual and coverage checks.
 - GPT-6.1 Sol: preferred more complex coding/debugging/follow-up candidate.

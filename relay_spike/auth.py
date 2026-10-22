@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 import secrets
 import stat
+import sys
 import tempfile
 import time
 from urllib.error import HTTPError, URLError
@@ -55,6 +56,36 @@ class UnusableRefreshToken(AuthError):
     """Only a confirmed terminal OAuth refresh error warrants token clearing."""
 
 
+class MalformedRefreshResponse(AuthError):
+    """The token endpoint returned HTTP 200 but no valid JSON token object.
+
+    A successful HTTP response may already have spent the rotating grant, so
+    do not retry the old refresh token automatically.
+    """
+
+
+def _durable_sync(fd: int) -> None:
+    """Best available file/directory flush for local rotating credentials.
+
+    Apple's ordinary fsync does not request the drive's hardware buffer flush.
+    On the target macOS platform, require F_FULLFSYNC (no silent downgrade).
+    This is an OS/filesystem assurance, not a blanket guarantee of power-loss
+    safety on every drive; actual APFS behavior requires a native Mac test.
+    """
+    if sys.platform == "darwin":
+        cmd = getattr(fcntl, "F_FULLFSYNC", None)
+        if cmd is None:
+            raise AuthError("Strong macOS credential sync is unavailable on this runtime.")
+        try:
+            fcntl.fcntl(fd, cmd)
+        except OSError:
+            raise AuthError(
+                "Strong macOS credential sync is unsupported on this filesystem."
+            ) from None
+    else:
+        os.fsync(fd)
+
+
 def _sync_parent_directory(path: Path) -> None:
     """Sync the post-rename directory entry for crash-sensitive token rotation.
 
@@ -69,7 +100,7 @@ def _sync_parent_directory(path: Path) -> None:
         try:
             if not stat.S_ISDIR(os.fstat(fd).st_mode):
                 raise AuthError("Credential parent is not a directory.")
-            os.fsync(fd)
+            _durable_sync(fd)
         finally:
             os.close(fd)
     except OSError:
@@ -89,7 +120,7 @@ def _write_protected(path: Path, value: dict) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as out:
             json.dump(value, out)
             out.flush()
-            os.fsync(out.fileno())  # Critical for crash-sensitive token rotation.
+            _durable_sync(out.fileno())  # Hardware-aware flush on macOS.
         os.replace(temp_path, path)
         _sync_parent_directory(path)
     finally:
@@ -224,17 +255,34 @@ def _refresh_access_token(record: dict) -> str:
             "ChatGPT session revoked or refresh token expired. "
             "Run: python3 -m relay_spike auth"
         ) from None
-    access, scopes, lifetime = validate_token_fields(payload)
-    replacement = payload.get("refresh_token")
-    if (not isinstance(replacement, str) or not replacement.strip()
-            or replacement == old_refresh):
-        raise AuthError("OAuth refresh did not rotate the refresh token. Sign in again.")
-    if REQUIRED_PLAN_SCOPE not in scopes or "offline_access" not in scopes:
-        raise AuthError("Refresh did not grant required ChatGPT plan permissions. Reauthorize.")
-    if payload.get("client_id", client_id) != client_id:
-        raise AuthError("OAuth refresh returned a different client registration.")
-    if access == record.get("access_token"):
-        raise AuthError("OAuth refresh did not replace access credentials.")
+    except MalformedRefreshResponse:
+        _clear_unusable_credentials(record)
+        raise AuthError(
+            "OAuth refresh returned an invalid success response. "
+            "Run: python3 -m relay_spike auth"
+        ) from None
+
+    # HTTP 200 may consume the old one-time refresh token even if another
+    # response field is invalid. Never leave that spent token on disk after
+    # rejecting a successful exchange, and never retry it automatically.
+    try:
+        access, scopes, lifetime = validate_token_fields(payload)
+        replacement = payload.get("refresh_token")
+        if (not isinstance(replacement, str) or not replacement.strip()
+                or replacement == old_refresh):
+            raise AuthError("OAuth refresh did not rotate the refresh token.")
+        if REQUIRED_PLAN_SCOPE not in scopes or "offline_access" not in scopes:
+            raise AuthError("OAuth refresh lacked required ChatGPT plan permissions.")
+        if payload.get("client_id", client_id) != client_id:
+            raise AuthError("OAuth refresh returned a different client registration.")
+        if access == record.get("access_token"):
+            raise AuthError("OAuth refresh did not replace access credentials.")
+    except AuthError:
+        _clear_unusable_credentials(record)
+        raise AuthError(
+            "OAuth refresh response could not be validated. "
+            "Run: python3 -m relay_spike auth"
+        ) from None
 
     # Preserve the original verified ID-token identity as a returning sign-in
     # hint. Do not trust a refreshed ID token without a new identity check.
@@ -335,6 +383,10 @@ def request_json(url: str, *, form: dict | None = None,
             try:
                 parsed = json.load(response)
             except (ValueError, UnicodeError):
+                if refresh_errors and url == TOKEN_URL:
+                    raise MalformedRefreshResponse(
+                        "OAuth refresh returned malformed JSON."
+                    ) from None
                 raise AuthError("Unexpected JSON response from identity/API service.") from None
     except HTTPError as exc:
         # Only the refresh endpoint needs machine-readable terminal errors.
@@ -360,6 +412,10 @@ def request_json(url: str, *, form: dict | None = None,
     except (URLError, TimeoutError, OSError):
         raise AuthError("Network or timeout failure during authorization.") from None
     if not isinstance(parsed, dict):
+        if refresh_errors and url == TOKEN_URL:
+            raise MalformedRefreshResponse(
+                "OAuth refresh returned a non-object response."
+            )
         raise AuthError("Unexpected JSON object from identity/API service.")
     return parsed
 

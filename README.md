@@ -15,6 +15,7 @@
 - [docs/WORKFLOWS.md](docs/WORKFLOWS.md): onboarding, permitted live session, quality gate, interruptions and feedback
 - [docs/MEMORY_AND_EVALUATION.md](docs/MEMORY_AND_EVALUATION.md): Personal Brain, Learning Memory, schema sketches and eval rules
 - [docs/PERSONAL_BRAIN_STORAGE.md](docs/PERSONAL_BRAIN_STORAGE.md): local confirmed-fact provenance ledger, open-source comparisons and privacy limits
+- [docs/RESUME_CANDIDATES.md](docs/RESUME_CANDIDATES.md): selected-text résumé candidates, exact provenance, review boundary and converter reuse decisions
 - [docs/INFERENCE_AUTH.md](docs/INFERENCE_AUTH.md): official subscription OAuth/streaming and actual proof status
 - [docs/MODEL_STRATEGY.md](docs/MODEL_STRATEGY.md): model routing and controlled benchmark
 - [docs/PR_REVIEW.md](docs/PR_REVIEW.md): GitHub Codex review requirements and usage caveats

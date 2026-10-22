@@ -219,6 +219,29 @@ class StreamSafetyTests(unittest.TestCase):
         view, shown = deliver(out, t, clock)
         self.assertEqual((view.state, shown), ("suppressed", []))
 
+    def test_cancel_during_stream_suppresses_without_new_turn(self):
+        t, key, clock, ctx = setup()
+        def aborting():
+            yield from frames(clock, [
+                (0.1, "response.output_text.delta", "Unfinished answer.", 1)
+            ])
+            t.cancel()
+            yield from frames(clock, [(0.5, "response.completed", None, 2)])
+        out = assess_synthetic_stream(aborting(), turns=t, token=key,
+                                      context=ctx, clock=clock)
+        self.assertEqual(out.error_code, "superseded_turn")
+        view, shown = deliver(out, t, clock)
+        self.assertEqual(view.state, "suppressed")
+        self.assertEqual(shown, [])
+
+    def test_oversized_synthetic_stream_aborts_without_answer(self):
+        t, _, clock, out = run(lambda c: complete(c, "word " * 4000))
+        self.assertFalse(out.completed)
+        self.assertEqual(out.error_code, "stream_error")
+        view, _ = deliver(out, t, clock)
+        self.assertEqual(view.state, "unavailable")
+        self.assertIsNone(view.text)
+
     def test_stale_at_start_does_not_even_iterate_stream(self):
         t, key, clock, ctx = setup()
         t.activate("new-question", 1)

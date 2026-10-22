@@ -53,6 +53,39 @@ class AuthTests(unittest.TestCase):
         )
         self.assertNotIn("agent_name_hint", parse_qs(urlparse(url).query))
 
+    def test_callback_ignores_missing_wrong_and_duplicate_state(self):
+        for query in (
+            {}, {"state": ["wrong"]}, {"state": ["ok", "ok"]}
+        ):
+            with self.subTest(query=query):
+                self.assertFalse(auth.callback_state_is_valid(query, "ok"))
+        self.assertTrue(auth.callback_state_is_valid({"state": ["ok"]}, "ok"))
+
+    def test_oauth_token_record_requires_valid_bearer_and_expiry(self):
+        valid = {
+            "access_token": "dummy", "token_type": "Bearer",
+            "scope": "openid chatgpt.tokens.use.direct", "expires_in": 3600
+        }
+        access_token, scopes, expiry = auth.validate_token_fields(valid)
+        self.assertEqual(access_token, "dummy")
+        self.assertIn(auth.REQUIRED_PLAN_SCOPE, scopes)
+        self.assertEqual(expiry, 3600)
+        mutations = [
+            {"access_token": ""},
+            {"access_token": None},
+            {"token_type": "Basic"},
+            {"token_type": None},
+            {"scope": ["openid"]},
+            {"expires_in": "bad"},
+            {"expires_in": -1}
+        ]
+        for mutation in mutations:
+            with self.subTest(mutation=mutation), self.assertRaises(auth.AuthError):
+                auth.validate_token_fields({**valid, **mutation})
+        # An identity-only grant remains legitimate but must not enable inference.
+        _, identity_scopes, _ = auth.validate_token_fields({**valid, "scope": "openid"})
+        self.assertNotIn(auth.REQUIRED_PLAN_SCOPE, identity_scopes)
+
     def test_dynamic_callback_requires_issued_client(self):
         with self.assertRaises(auth.AuthError):
             auth.verify_callback(

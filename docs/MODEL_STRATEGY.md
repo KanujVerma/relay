@@ -32,3 +32,6 @@ For each run capture selected model, fixture ID, prompt variant, first_text_ms, 
 - https://developers.openai.com/api/docs/guides/model-selection
 - https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference
 - https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations
+
+## Slice 01B-A implementation status
+A prototype `relay_spike/benchmark.py` and `python3 -m relay_spike benchmark` (dry run by default) is under review. The `--execute` flag permits a **bounded** local model comparison with the authorized ChatGPT plan; `--show-answers` prints only synthetic-case model outputs for human review. The format metrics are purely mechanical, not factual correctness scores. See [RUN_LOCAL_MODEL_BENCHMARK.md](RUN_LOCAL_MODEL_BENCHMARK.md). No model comparison has been run or benchmark default selected yet.

@@ -78,6 +78,76 @@ def _find_target_paragraph(root: ET.Element) -> tuple[ET.Element, int, ET.Elemen
     raise AssertionError("target paragraph not found in fabricated fixture")
 
 
+def _with_malformed_word_text(data: bytes, content_kind: str) -> bytes:
+    root = ET.fromstring(_read_part(data, "word/document.xml"))
+    body, _, paragraph = _find_target_paragraph(root)
+
+    def new_run() -> ET.Element:
+        return ET.Element(f"{{{WORD_NS}}}r")
+
+    def replace_runs(run: ET.Element) -> None:
+        for item in list(paragraph):
+            if item.tag == f"{{{WORD_NS}}}r":
+                paragraph.remove(item)
+        paragraph.append(run)
+
+    if content_kind == "text_under_break":
+        run = new_run()
+        ET.SubElement(run, f"{{{WORD_NS}}}t").text = "I built visible evidence."
+        hidden = ET.SubElement(run, f"{{{WORD_NS}}}br")
+        ET.SubElement(hidden, f"{{{WORD_NS}}}t").text = "I built dropped evidence."
+        replace_runs(run)
+    elif content_kind == "text_under_text":
+        run = new_run()
+        outer = ET.SubElement(run, f"{{{WORD_NS}}}t")
+        outer.text = "I built visible evidence."
+        ET.SubElement(outer, f"{{{WORD_NS}}}t").text = "I built dropped evidence."
+        replace_runs(run)
+    elif content_kind == "direct_break_text":
+        run = new_run()
+        ET.SubElement(run, f"{{{WORD_NS}}}t").text = "I built visible evidence."
+        ET.SubElement(run, f"{{{WORD_NS}}}br").text = "I built dropped evidence."
+        replace_runs(run)
+    elif content_kind == "direct_paragraph_text":
+        paragraph.text = "I built dropped evidence."
+    elif content_kind == "direct_run_text":
+        run = next(item for item in paragraph if item.tag == f"{{{WORD_NS}}}r")
+        run.text = "I built dropped evidence."
+    elif content_kind == "direct_body_text":
+        body.text = "I built dropped evidence."
+    else:
+        raise AssertionError("unknown malformed content kind")
+
+    return _rewrite_docx(
+        data,
+        replacements={"word/document.xml": _serialize(root)},
+    )
+
+
+def _with_valid_break_tab_and_unicode(data: bytes) -> tuple[bytes, str]:
+    root = ET.fromstring(_read_part(data, "word/document.xml"))
+    _, _, paragraph = _find_target_paragraph(root)
+    for item in list(paragraph):
+        if item.tag == f"{{{WORD_NS}}}r":
+            paragraph.remove(item)
+
+    run = ET.Element(f"{{{WORD_NS}}}r")
+    ET.SubElement(run, f"{{{WORD_NS}}}t").text = TARGET_PARAGRAPH
+    ET.SubElement(run, f"{{{WORD_NS}}}br")
+    ET.SubElement(run, f"{{{WORD_NS}}}t").text = "café résumé"
+    ET.SubElement(run, f"{{{WORD_NS}}}tab")
+    ET.SubElement(run, f"{{{WORD_NS}}}t").text = "ordinary text"
+    ET.SubElement(run, f"{{{WORD_NS}}}br")
+    ET.SubElement(run, f"{{{WORD_NS}}}t").text = "after the line break"
+    paragraph.append(run)
+    expected = TARGET_PARAGRAPH + "\ncafé résumé\tordinary text\nafter the line break"
+    mutated = _rewrite_docx(
+        data,
+        replacements={"word/document.xml": _serialize(root)},
+    )
+    return mutated, expected
+
+
 def _with_block_wrapper(data: bytes, wrapper_kind: str) -> bytes:
     root = ET.fromstring(_read_part(data, "word/document.xml"))
     body, index, paragraph = _find_target_paragraph(root)
@@ -234,6 +304,36 @@ class DocumentConversionIntegrationTests(unittest.TestCase):
                 mutated = _with_block_wrapper(source, wrapper_kind)
                 result = convert_document(mutated, file_type="docx")
                 self.assert_failed_conversion_is_not_stageable(result)
+
+    def test_malformed_leaf_and_container_text_fail_before_python_docx_or_staging(self):
+        source = (FIXTURES / "synthetic-unicode.docx").read_bytes()
+        for content_kind in (
+            "text_under_break",
+            "text_under_text",
+            "direct_break_text",
+            "direct_paragraph_text",
+            "direct_run_text",
+            "direct_body_text",
+        ):
+            with self.subTest(content=content_kind):
+                mutated = _with_malformed_word_text(source, content_kind)
+                with patch(
+                    "docx.Document",
+                    side_effect=AssertionError("python-docx ran before XML grammar rejection"),
+                ) as parser:
+                    result = convert_document(mutated, file_type="docx")
+                    self.assertFalse(parser.called, "python-docx parsed malformed Word XML")
+                self.assertIn(result.status, {"invalid", "unsupported"})
+                self.assert_failed_conversion_is_not_stageable(result)
+
+    def test_valid_empty_break_tab_unicode_and_intra_paragraph_newlines_are_preserved(self):
+        source = (FIXTURES / "synthetic-unicode.docx").read_bytes()
+        mutated, expected = _with_valid_break_tab_and_unicode(source)
+        result = convert_document(mutated, file_type="docx")
+        self.assertEqual(result.status, "converted", result.reason)
+        segment = next(item for item in result.segments if item.paragraph == 2)
+        self.assertEqual(segment.text, expected)
+        self.assertEqual(result.text[segment.start:segment.end], expected)
 
     def test_inline_content_control_cannot_erase_negation_or_stage_positive_claim(self):
         source = (FIXTURES / "synthetic-unicode.docx").read_bytes()

@@ -50,12 +50,12 @@ The benchmark verifies fixture hashes before conversion and prints no document t
 
 | Case | Claims recovered | Source locations | Cold / warm seconds | Per-case process peak RSS |
 |---|---:|---|---:|---:|
-| Native PDF, two pages | 3/3 | page numbers correct | 1.198 / 0.003 | 148 MiB |
-| Native Unicode DOCX | 5/5 | paragraph numbers correct | 0.042 / 0.006 | 55 MiB |
-| Native duplicate DOCX | 2/2 | separate paragraphs 2 and 3 | 0.039 / 0.006 | 55 MiB |
-| MarkItDown PDF | 3/3 | unavailable | 0.417 / 0.006 | 121 MiB |
-| MarkItDown DOCX | 5/5 | unavailable | 0.524 / 0.155 | 151 MiB |
-| Docling DOCX | 5/5 | unavailable | 0.908 / 0.017 | 167 MiB |
+| Native PDF, two pages | 3/3 | page numbers correct | 0.944 / 0.003 | 149 MiB |
+| Native Unicode DOCX | 5/5 | paragraph numbers correct | 0.043 / 0.006 | 55 MiB |
+| Native duplicate DOCX | 2/2 | separate paragraphs 2 and 3 | 0.043 / 0.006 | 55 MiB |
+| MarkItDown PDF | 3/3 | unavailable | 0.421 / 0.006 | 122 MiB |
+| MarkItDown DOCX | 5/5 | unavailable | 0.566 / 0.175 | 150 MiB |
+| Docling DOCX | 5/5 | unavailable | 0.992 / 0.018 | 166 MiB |
 
 Cold time includes lazy converter imports; warm time reuses Python module imports but constructs a new converter. Peak RSS is the process high-water mark across both runs. This is one small synthetic corpus and one host run, not a performance ranking or target-hardware guarantee.
 

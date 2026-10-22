@@ -47,6 +47,12 @@ class UnsupportedDocx(ValueError):
         self.reason = reason
 
 
+def _require_leaf(node, *, allow_text: bool = False) -> None:
+    """Enforce the accepted Word leaf grammar before projecting its content."""
+    if len(node) or (not allow_text and (node.text or "").strip()):
+        raise UnsupportedDocx("docx_word_leaf_invalid")
+
+
 def _text_free_properties(node) -> None:
     """Reject content hidden in property containers python-docx skips."""
     for item in node.iter():
@@ -57,6 +63,8 @@ def _text_free_properties(node) -> None:
 
 
 def _run_text(run) -> str:
+    if (run.text or "").strip():
+        raise UnsupportedDocx("docx_text_outside_supported_run")
     parts: list[str] = []
     seen_content = False
     seen_properties = False
@@ -67,24 +75,30 @@ def _run_text(run) -> str:
             seen_properties = True
             _text_free_properties(child)
         elif child.tag == f"{{{WORD_NS}}}t":
+            _require_leaf(child, allow_text=True)
             seen_content = True
             parts.append(child.text or "")
         elif child.tag == f"{{{WORD_NS}}}tab":
+            _require_leaf(child)
             seen_content = True
             parts.append("\t")
         elif child.tag == f"{{{WORD_NS}}}br":
+            _require_leaf(child)
             seen_content = True
             break_type = child.attrib.get(f"{{{WORD_NS}}}type", "textWrapping")
             if break_type not in {"textWrapping", "page", "column"}:
                 raise UnsupportedDocx("docx_break_type_unsupported")
             parts.append("\n" if break_type == "textWrapping" else "")
         elif child.tag == f"{{{WORD_NS}}}cr":
+            _require_leaf(child)
             seen_content = True
             parts.append("\n")
         elif child.tag == f"{{{WORD_NS}}}noBreakHyphen":
+            _require_leaf(child)
             seen_content = True
             parts.append("-")
         elif child.tag == f"{{{WORD_NS}}}ptab":
+            _require_leaf(child)
             seen_content = True
             parts.append("\t")
         else:
@@ -107,12 +121,15 @@ def _source_paragraph_texts(document_xml: bytes) -> list[str]:
     body = root[0]
     if body.tag != f"{{{WORD_NS}}}body":
         raise UnsupportedDocx("docx_document_structure_unsupported")
-    if (root.text or "").strip() or (root.tail or "").strip():
+    if ((root.text or "").strip() or (root.tail or "").strip() or
+            (body.text or "").strip() or (body.tail or "").strip()):
         raise UnsupportedDocx("docx_text_outside_supported_body")
 
     paragraphs: list[str] = []
     for child in body:
         if child.tag == f"{{{WORD_NS}}}p":
+            if (child.text or "").strip():
+                raise UnsupportedDocx("docx_text_outside_supported_paragraph")
             paragraph_text: list[str] = []
             seen_properties = False
             seen_run = False

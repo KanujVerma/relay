@@ -29,8 +29,10 @@ Official documentation reviewed 2026-10-22. **This documents a supported platfor
 - Use local speech recognition and independently authorized file connectors. Model catalog presence is not proof that a specific inference call will succeed.
 - Codex app-server is a supported alternative transport but adds local process/RPC complexity; keep it a potential fallback.
 
-## Slice 01A contract
-Build a small text-only local OAuth/streaming proof with synthetic questions. No GUI, live audio, user files, API key fallback or external billable integration. Measure monotonic first-output-token and completed-response latency. Test offline errors with mocks and report truthfully that offline simulation is not a live account authorization.
+## Slice 01A implementation and remaining live proof
+Python CLI code is now available in relay_spike/ with offline tests in tests/test_spike.py and steps in docs/RUN_LOCAL_SPIKE.md. **Only protocol code is implemented**; user account entitlement and end-to-end auth have not been verified.
+
+The goal is a small text-only local OAuth/streaming proof with synthetic questions. No GUI, live audio, user files, API key fallback or external billable integration. Measure monotonic first-output-token and completed-response latency. Test offline errors with mocks and report truthfully that offline simulation is not a live account authorization.
 
 ## Error/limit handling
 Consent denied or missing scope: no inference. Invalid_grant: discard code, reauthorize. Expired tokens: refresh per documented protocol or require explicit login. Usage-limit events (including subscription_sharing_usage_limit_exceeded and subscription_sharing_usage_unavailable): stop and explain account limit. Model unavailable: select from actual available list. Stream error/incomplete: never call partial output a validated answer. Network errors: no uncontrolled retries that duplicate inference.

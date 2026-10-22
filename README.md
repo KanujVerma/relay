@@ -2,7 +2,7 @@
 
 **Native, local-first macOS personal interview copilot.** Relay is being designed to detect questions in authorized interviews, retrieve verified personal/job context, and surface fast, accurate, concise talking points. Continuous learning improves the assistant's answers and relevance, not a generic tutoring curriculum.
 
-**Status (2026-10-22):** Slice 00 contract and 26 synthetic fixtures merged. Slice 00B documents the complete architecture and new-agent handoff. Inference authentication, live audio and the app are still **unimplemented/unverified**. Repository is public by owner's choice; never commit private data or credentials.
+**Status (2026-10-22):** Slice 00 contract and 26 synthetic fixtures merged. Slice 00B documents the complete architecture and new-agent handoff. The Slice 01A OAuth/Responses CLI is **implemented but not yet authorized or live-tested**; live audio and the macOS app are still unimplemented. Repository is public by owner's choice; never commit private data or credentials.
 
 ## New agent: start here
 [AGENTS.md](AGENTS.md) -> [HANDOFF.md](HANDOFF.md) -> [PRODUCT.md](PRODUCT.md) -> [docs/DECISIONS.md](docs/DECISIONS.md). GitHub is the durable source of truth, no conversation history required.
@@ -21,6 +21,6 @@
 - [ROLE_PACKS/junior-data-analytics.md](ROLE_PACKS/junior-data-analytics.md)
 
 ## Checks and next step
-Run: python3 EVALS/validate.py (structural validation, not language-model grading). GitHub Actions runs a short Linux fixture check. Next technical issue: [#2, prove subscription-backed text inference](https://github.com/KanujVerma/relay/issues/2), with no separately charged API calls and no real user data in code or CI.
+Run: python3 EVALS/validate.py, python3 EVALS/verify_docs.py, and python3 -m unittest discover -s tests -v (offline checks only). The minimal experimental CLI is in [relay_spike/](relay_spike/) and the safe local verification procedure is [docs/RUN_LOCAL_SPIKE.md](docs/RUN_LOCAL_SPIKE.md). Next technical issue: [#2, prove subscription-backed text inference](https://github.com/KanujVerma/relay/issues/2), with no separately charged API calls or private data in CI.
 
 Consent and privacy matter: the app will not guarantee undetectability or facilitate undisclosed live assessment help where prohibited.

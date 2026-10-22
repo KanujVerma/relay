@@ -52,3 +52,5 @@
 {"id":"D02-N19","case_id":"D02","candidate":"WHERE filters rows before grouping and groups. HAVING filters groups after grouping.","expected":"withhold"}
 {"id":"E09-N18","case_id":"E09","candidate":"Binary search requires sorted input and halves the range. Its iterative auxiliary space uses O(log n) and time uses O(1).","expected":"withhold"}
 {"id":"E09-N19","case_id":"E09","candidate":"Binary search on sorted arrays halves the remaining range. Iterative time uses O(1) and auxiliary space uses O(log n).","expected":"withhold"}
+{"id":"D02-N20","case_id":"D02","candidate":"WHERE filters rows before groups. HAVING filters groups after grouping.","expected":"withhold"}
+{"id":"D02-N21","case_id":"D02","candidate":"WHERE filters rows before aggregated groups. HAVING filters groups after aggregation.","expected":"withhold"}

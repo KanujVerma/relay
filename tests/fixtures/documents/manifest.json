@@ -1,0 +1,59 @@
+{
+  "purpose": "Fabricated public test data only; no user resume or personal records.",
+  "pdf_claims": [
+    {
+      "text": "I implemented a synthetic SQL reporting service.",
+      "page": 1
+    },
+    {
+      "text": "We designed a synthetic dashboard as a team.",
+      "page": 1
+    },
+    {
+      "text": "My teammate developed a synthetic authentication module.",
+      "page": 2
+    }
+  ],
+  "docx_claims": [
+    {
+      "text": "I implemented a synthetic SQL reporting service.",
+      "paragraph": 2
+    },
+    {
+      "text": "We designed a synthetic dashboard as a team.",
+      "paragraph": 3
+    },
+    {
+      "text": "My teammate developed a synthetic authentication module.",
+      "paragraph": 4
+    },
+    {
+      "text": "I implemented café résumé search in a synthetic project.",
+      "paragraph": 5
+    },
+    {
+      "text": "Used Power BI for synthetic reporting.",
+      "paragraph": 6
+    }
+  ],
+  "files": {
+    "synthetic-blank.pdf": "226bdbe274d3222c3ed276db4f6736d457282e01abf7982629360f7b4f1ad77b",
+    "synthetic-corrupt.docx": "100183dbd8334e7e4949f4158803ae78ed513340a6bcf2f971f60439a0b52f7a",
+    "synthetic-corrupt.pdf": "68bc4168fb5f978f7a648dc0605c40196d7241dff701032425e32226fdef98f4",
+    "synthetic-encrypted.pdf": "f59b4f991f4b2451e54064924b2cc207ba87169f415544de2132665480f141e8",
+    "synthetic-two-page.pdf": "90a527d82e3ebc60813f1eed12bd2547f6458bf5aa1f5c8e1416a004bbca0c75",
+    "synthetic-unicode.docx": "7a0ae0ca74683a6b2005e64d98da7cd95098745a9b4caaf8cfe2b766e9105c18",
+    "synthetic-duplicate.docx": "f59d54d419dae712b4482e8530bc50a2b4d50e7d48698f1337a4ed9b87f38eae",
+    "synthetic-too-many-pages.pdf": "b8e15119632e3d06b88872ebdf890d5fe64317c629ab6b862a60e7410ca45ffb"
+  },
+  "duplicate_claims": [
+    {
+      "text": "I implemented a synthetic SQL reporting service.",
+      "paragraph": 2
+    },
+    {
+      "text": "I implemented a synthetic SQL reporting service.",
+      "paragraph": 3
+    }
+  ]
+}

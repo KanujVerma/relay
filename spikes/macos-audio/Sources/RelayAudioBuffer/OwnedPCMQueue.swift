@@ -122,19 +122,21 @@ public final class OwnedPCMQueue: @unchecked Sendable {
         let header = tail.load(as: PacketHeader.self)
         let frames = Int(header.frameCount)
         let channels = Int(header.channelCount)
-        let occupied = PacketHeader.bytes +
-                       frames * channels * MemoryLayout<Float>.stride
-        let aligned = (occupied + 7) & ~7
         guard header.magic == PacketHeader.magicConstant,
               let tag = PCMSource(rawValue: header.sourceCode),
               tag == source,
               frames > 0, frames <= maximumFrames,
               (1...2).contains(channels),
-              header.sampleRate.isFinite, header.sampleRate > 0,
-              aligned <= Int(UInt32.max),
+              header.sampleRate.isFinite, header.sampleRate > 0 else {
+            // Check sizes BEFORE multiplying untrusted packet fields.
+            TPCircularBufferClear(storage)
+            return nil
+        }
+        let occupied = PacketHeader.bytes +
+                       frames * channels * MemoryLayout<Float>.stride
+        let aligned = (occupied + 7) & ~7
+        guard aligned <= Int(UInt32.max),
               header.totalBytes == UInt32(aligned) else {
-            // A corrupt internal packet cannot be safely decoded.
-            // Drop buffered content instead of exposing unrelated bytes.
             TPCircularBufferClear(storage)
             return nil
         }

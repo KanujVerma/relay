@@ -1,4 +1,5 @@
 import AVFoundation
+import Darwin
 import XCTest
 @testable import RelayAudioBuffer
 
@@ -172,7 +173,7 @@ final class OwnedPCMQueueTests: XCTestCase {
             samples[3] = 0.75
             callback(buffer, AVAudioTime(hostTime: 4567))
             // The callback was invoked from this detached worker, not MainActor.
-            return Thread.isMainThread
+            return pthread_main_np() != 0
         }.value
         XCTAssertFalse(ranOnMainThread)
 

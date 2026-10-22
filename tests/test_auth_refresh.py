@@ -327,6 +327,21 @@ class WireTests(unittest.TestCase):
                 self.assertNotIn("secret", str(caught.exception))
                 self.assertNotIn("private", str(caught.exception))
 
+    def test_malformed_success_body_reports_sanitized_auth_error(self):
+        with patch.object(auth, "urlopen",
+                          return_value=io.BytesIO(b'not JSON with sensitive content')):
+            with self.assertRaises(auth.AuthError) as caught:
+                auth.request_json(auth.TOKEN_URL, form={}, refresh_errors=True)
+        self.assertNotIn("sensitive", str(caught.exception))
+
+    def test_untrusted_error_code_array_does_not_crash_or_clear_tokens(self):
+        err = HTTPError(auth.TOKEN_URL, 400, "", {},
+                        io.BytesIO(b'{"error":{"code":["invalid_grant"]}}'))
+        with patch.object(auth, "urlopen", side_effect=err):
+            with self.assertRaises(auth.AuthError) as caught:
+                auth.request_json(auth.TOKEN_URL, form={}, refresh_errors=True)
+        self.assertNotIsInstance(caught.exception, auth.UnusableRefreshToken)
+
     def test_timeout_never_forces_reauthorization_or_leaks_data(self):
         with patch.object(auth, "urlopen",
                           side_effect=URLError("sensitive diagnostics")):

@@ -7,9 +7,10 @@ Each slice gets a narrow issue, branch, small PR, reproducible tests, updated ar
 | 00 | Product contract, initial roles, synthetic evaluation cases | PR #1 merged, fixture validation CI passed |
 | 00B | Durable agent handoff, ADRs, flows, personal memory design, inference contract | PR merged, links and status consistent |
 | 01A | ChatGPT subscription-backed inference authorization proof | Met in user-reported local OAuth and gpt-6.1-sol response.completed on 2026-10-22; offline tests in PRs #4 and #5 |
-| 01B-A | Concise answer formatting and fast-vs-complex model comparison | Compare Luna and Sol on identical synthetic interview prompts, local only; collect correctness and latency |
-| 01B-A1 | Optional model-specific reasoning effort CLI and benchmark dimension | **PR #11 merged**, offline CI and Codex review clear; user-run explicit-effort OAuth validation outstanding in issue #9 |
-| 01B-B | Grounded text answer pipeline and fast quality review | Human-reviewed negative/edge cases, no invented personal claims, measured p50/p95 latency |
+| 01B-A | Concise formatting and model comparison | PR #8 merged; 6 default-effort paired requests observed. Harder repeated cases and human correctness review still open in issue #9 |
+| 01B-A1 | Optional model-specific reasoning effort CLI | PR #11 merged and reviewed; 4 owner-reported Low/Medium requests succeeded with matching server-reported effort on the tested OAuth account |
+| 01B-B0 | Offline grounded answer QA contract | Issue #12 queued: deterministic pass/revise/abstain and selective-review triggers, synthetic negative tests, no live model calls |
+| 01B-B1 | Integrate the fast QA gate with streaming | Human-reviewed technical/personal negative cases, bounded selective second-pass evaluation, measured effect on latency and correctness |
 | 02A | Resume ingestion, verified facts, conversational probing | No invented personal facts, attribution and deletion tests |
 | 02B | Selected Drive/GitHub imports, incremental sync | Independent OAuth, least privilege, revoke/delete tests |
 | 03A | Authorized macOS audio capture and local ASR | Real mic/remote channel and memory benchmark on Mac |

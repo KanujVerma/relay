@@ -53,3 +53,4 @@ Read HANDOFF.md, inspect live GitHub PR/issues, then read the associated contrac
 - Flag unchecked promotion of interview transcripts into confirmed personal history, ignoring user corrections, or failure to invalidate stale question answers.
 ### Stream and data boundaries
 - Flag treating partial/failed SSE streams as successful without response.completed, leaking private files/tokens, or capturing meeting content without required consent. Keep review high-signal; leave formatting to CI.
+- Flag failing to invalidate an in-flight answer when a question is interrupted, corrected, or superseded; use turn-version checks so stale outputs cannot appear after a new question.

@@ -79,8 +79,8 @@ final class LocalASRWorkerTests: XCTestCase {
         XCTAssertEqual(finished, 1)
     }
 
-    func testFinishAtStopFlushesShortUtteranceButNoEarlyPartial() async throws {
-        let fake = FakeEou()
+    func testFinishAtStopFlushesOnlyRecognizedEOU() async throws {
+        let fake = FakeEou(eouAt: 1)
         let ring = try OwnedPCMQueue(source: .microphone)
         let worker = PCMTranscriptWorker(
             source: .microphone, authorizedCapture: true, backend: fake
@@ -92,8 +92,23 @@ final class LocalASRWorkerTests: XCTestCase {
         XCTAssertEqual(final.status, .final)
         XCTAssertEqual(final.source, .microphone)
         XCTAssertEqual(final.text, "what is the difference between where and having")
-        let nilResult6 = await worker.finishAtStop(
-        XCTAssertNil(nilResult6))
+        let nilResult6 = await worker.finishAtStop()
+        XCTAssertNil(nilResult6)
+    }
+
+    func testTimerStoppedMidQuestionIsUnavailableNotFinal() async throws {
+        let fake = FakeEou() // never emits EOU.
+        let ring = try OwnedPCMQueue(source: .microphone)
+        let worker = PCMTranscriptWorker(
+            source: .microphone, authorizedCapture: true, backend: fake
+        )
+        let before = await worker.ingest(try packet(ring))
+        XCTAssertTrue(before.isEmpty)
+        let result = await worker.finishAtStop()
+        XCTAssertEqual(result?.status, .unavailable)
+        XCTAssertNil(result?.text)
+        let count = await fake.finished
+        XCTAssertEqual(count, 0)
     }
 
     func testMissingPacketCancelsAndNeverReassemblesOldUtterance() async throws {

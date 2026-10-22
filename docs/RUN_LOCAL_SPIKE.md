@@ -32,6 +32,8 @@ If the CLI says plan usage scope is missing, or a model/usage limit prevents com
 - If the server reports `invalid_grant` or another terminal refresh error, the spike removes unusable secrets but retains its issued OAuth registration and asks for browser reauthorization.
 - Network and temporary server errors preserve the saved credential record rather than destroying it or retrying indefinitely.
 
+**Known provider caveat (Oct 2026):** Multiple developers report occasional `invalid_grant` refresh failures even with correctly implemented Sign in with ChatGPT rotating tokens, see [upstream issue #5](https://github.com/openai/sign-in-with-chatgpt-devkit/issues/5). An automatic refresh attempt cannot guarantee success until this is resolved and tested on your account. Relay intentionally asks you to sign in again in this terminal case; it does not retry with other authentication/billing methods.
+
 ## Offline versus real testing
 - CI can validate PKCE, callback state/client-ID rejection, credential modes/scope checks and SSE completion/error behavior without external requests.
 - CI **cannot** prove live account entitlement, cryptographic verification against live OpenAI keys, model availability, usage limits or measured network latency. A successful local authorization and response.completed event are required.

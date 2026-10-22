@@ -27,7 +27,12 @@ public enum SelectedAppProcesses {
             ".GPU", ".Networking", ".renderer"
         ] {
             if let range = bundle.range(of: suffixMarker) {
-                return String(bundle[..<range.lowerBound])
+                // Only real helper-component boundaries, not arbitrary
+                // substrings such as ".helperAttacker".
+                let remainder = bundle[range.upperBound...]
+                if remainder.isEmpty || remainder.first == "." {
+                    return String(bundle[..<range.lowerBound])
+                }
             }
         }
         return bundle
@@ -38,7 +43,11 @@ public enum SelectedAppProcesses {
         owningBundleID: String?
     ) -> Bool {
         guard isValidBundleID(selected) else { return false }
-        if owningBundleID == selected { return true }
+        // When the OS supplies a regular owner app, never let a spoofed
+        // helper bundle name override that different ownership.
+        if let owningBundleID {
+            return owningBundleID == selected
+        }
         guard let processBundleID else { return false }
         return processBundleID == selected
             || parentBundleID(processBundleID) == selected

@@ -29,6 +29,14 @@ final class SelectedAppTapTests: XCTestCase {
         XCTAssertFalse(SelectedAppProcesses.isSelected(
             "us.zoom.xos", processBundleID: nil, owningBundleID: nil
         ))
+        XCTAssertFalse(SelectedAppProcesses.isSelected(
+            "us.zoom.xos",
+            processBundleID: "us.zoom.xos.helper",
+            owningBundleID: "com.other.App"
+        ))
+        XCTAssertEqual(SelectedAppProcesses.parentBundleID(
+            "com.google.Chrome.helperAttacker"), "com.google.Chrome.helperAttacker")
+
         XCTAssertEqual(SelectedAppProcesses.parentBundleID(
             "com.google.Chrome.helper.renderer"), "com.google.Chrome")
     }

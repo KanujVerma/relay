@@ -178,21 +178,23 @@ class ReviewGateway:
         items = extract_synthetic_candidates(synthetic_text)
         stamp = _observed(observed_at)
         source_sha = _digest(synthetic_text)
-        # Enforce revision before any staging. No document body is stored.
-        source = self._store._get("source", source_id)
-        self._store._source_usable(source_id)
-        if source["kind"] != "resume" or source["checksum"] != source_sha:
-            raise MissingEvidence("Selected document revision does not match.")
-        cards: list[ReviewCard] = []
-        for item in items:
-            new_id = self._store.stage_resume_candidate(
-                source_id=source_id, claim_key="resume.pending." + source_id +
-                "." + str(item.span_start),
-                claim_text=item.snippet, actor=item.actor_hint,
-                observed_at=stamp, document_sha256=source_sha,
-                span_start=item.span_start, span_end=item.span_end,
-            )
-            cards.append(self.preview(new_id))
+        # Source checks, every insert and every preview share one commit.
+        # A later duplicate or failed preview must leave no hidden candidates.
+        with self._store._transaction():
+            source = self._store._get("source", source_id)
+            self._store._source_usable(source_id)
+            if source["kind"] != "resume" or source["checksum"] != source_sha:
+                raise MissingEvidence("Selected document revision does not match.")
+            cards: list[ReviewCard] = []
+            for item in items:
+                new_id = self._store.stage_resume_candidate(
+                    source_id=source_id, claim_key="resume.pending." + source_id +
+                    "." + str(item.span_start),
+                    claim_text=item.snippet, actor=item.actor_hint,
+                    observed_at=stamp, document_sha256=source_sha,
+                    span_start=item.span_start, span_end=item.span_end,
+                )
+                cards.append(self.preview(new_id))
         return tuple(cards)
 
     def preview(self, fact_id: str) -> ReviewCard:

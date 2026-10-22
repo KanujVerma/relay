@@ -1,6 +1,6 @@
 # Personal Brain, learning memory, and evaluation design
 
-Status: the **Personal Brain Slice 02A-A local SQLite prototype** landed in merged [PR #18](https://github.com/KanujVerma/relay/pull/18), with synthetic-only consent/approval, candidate/verified claims, comprehensive source-dependency redaction and append-only audit events. This is **not** user data ingestion or a production encrypted Mac database. Learning Memory and other entities below remain proposals. Next validation [issue #21](https://github.com/KanujVerma/relay/issues/21). Reviewed 2026-10-22.
+Status: the **Personal Brain Slice 02A-A local SQLite prototype** landed in merged [PR #18](https://github.com/KanujVerma/relay/pull/18), with synthetic-only consent/approval, candidate/verified claims, comprehensive source-dependency redaction and append-only audit events. This is **not** user data ingestion or a production encrypted Mac database. Learning Memory and other entities below remain proposals. PR #26 adds the synthetic v2 candidate-evidence and review contract for [issue #21](https://github.com/KanujVerma/relay/issues/21); real import and native approval remain future work. Reviewed 2026-10-22.
 
 ## Personal knowledge layers
 - Confirmed structured facts: education, actual roles, technologies used, individual contributions and project outcomes. Source, timestamp, verification and uncertainty are mandatory.
@@ -14,7 +14,7 @@ Question themes, clarifications, user-corrected assistant errors, answer verbosi
 
 ## Implemented subset and future draft entities
 
-For the actual SQLite v1 subset and trust boundary, use [PERSONAL_BRAIN_STORAGE.md](PERSONAL_BRAIN_STORAGE.md). The current implemented tables are source, experience (source-linked grouping only), candidate_fact, verified_fact and append-only history_event. A claim does not become verified without a separate explicit user confirmation reference from a future trusted UI. Teammate/team facts cannot be represented as the user's personal implementation. A source revocation invalidates dependent verified records and redacts **all** dependent candidate text/keys, including cross-source facts linked through its experience grouping. The complete story schema below is still a design sketch.
+For the original SQLite subset and trust boundary, use [PERSONAL_BRAIN_STORAGE.md](PERSONAL_BRAIN_STORAGE.md). The implemented tables are source, experience (source-linked grouping only), candidate_fact, verified_fact and append-only history_event; PR #26 adds candidate_evidence in schema v2 for exact source spans, hashes and review revision. A claim does not become verified without a separate explicit user confirmation reference from a future trusted UI. Teammate/team facts cannot be represented as the user's personal implementation. A source revocation invalidates dependent verified records and redacts **all** dependent candidate text/keys, including cross-source facts linked through its experience grouping. The complete story schema below is still a design sketch.
 - source: id, provider, external ID, selected scope, checksum, observed time, consent, revoked time, sensitivity.
 - fact: id, claim, actor/owner of work, source ID, observed time, confidence, confirmed/rejected/superseded, revision.
 - experience: id, project, role, situation, personal action, choices, outcome, user verification time.

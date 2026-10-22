@@ -1,6 +1,6 @@
 # Proposed flows and edge-case contracts
 
-Status: most flows remain design only. Slice 01B-B0 added the offline QA gate; **Slice 01B-B1 (merged PR #16)** integrates that gate into a **synthetic SSE adapter**. Neither is connected to the actual OAuth CLI, native UI, audio capture or a Personal Brain.
+Status: most flows remain design only. Slice 01B-B0 added the offline QA gate; **Slice 01B-B1 (merged PR #16)** integrates that gate into a **synthetic SSE adapter**. Merged PR #25 connects B1 to the OAuth CLI for two synthetic technical smoke questions only. No native UI, audio-to-answer integration or personal-answer grounding is implemented.
 
 ## Personal Brain onboarding
 1. Select current target role and optional job description.
@@ -68,7 +68,7 @@ Implemented in [streaming_qa.py](../relay_spike/streaming_qa.py), with offline-o
 ## Compact interface
 A small visible panel with current question, direct answer, one or two bullet-equivalent talking points, optional technical example and explicit uncertain/unavailable status. No cluttered readiness score. No guarantee a window can be concealed from an entire-display screen share.
 
-## OAuth-backed synthetic QA bridge, Slice 01B-B2 (in review)
+## OAuth-backed synthetic QA bridge, Slice 01B-B2 (merged PR #25, Mac proof pending)
 - The `live-qa` CLI is **dry-run by default**. `--execute` requests exactly one account-catalog-checked Luna or Sol 6.1 inference on one of two explicitly pre-reviewed D02/E09 **technical** EVALS smoke questions using an existing validated ChatGPT-plan OAuth token. Personal, behavioral and interruption fixtures are rejected before inference. No automatic Sol retry or additional billable key path.
 - The shared Responses SSE transport supplies raw byte lines to the B1 adapter. A final output is shown **only** after `response.completed`, completion of the deterministic B0 QA gate, and active-turn publication recheck. The state `final_unverified` explicitly does **not** certify technical correctness, user facts, or practical interview usefulness.
 - A narrow independently reviewed synthetic-only **whole-answer allowlist** can mark absent attribution for complete matches to D02/E09 technical smoke text. All other generated text, including acceptable technical paraphrases and unrecognized third-person professional claims, remains uncertain or suspected personal and is withheld. The work-history regex only raises suspicion and never authorizes display. This is **not** a general trusted classifier or production biography verifier.

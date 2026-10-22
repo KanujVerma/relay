@@ -41,7 +41,7 @@ user-confirmed as context, but only actor=self is usable when preparing
 claims about **what the user personally implemented**. Do not equate the
 existence of a source ID or a teammate's contribution with user experience.
 
-## Schema v1
+## Original schema v1
 
 - source: opaque ID, kind, optional external reference/checksum, observation
   time, consent scope, consent timestamp and revoked timestamp.
@@ -58,7 +58,9 @@ existence of a source ID or a teammate's contribution with user experience.
   events. UPDATE/DELETE triggers make decision history append-only under
   normal SQLite operations.
 
-SQLite user_version=1 migration is transactional/idempotent; future database
+PR #26 adds a transactional v1-to-v2 migration and the candidate_evidence table for reviewed source spans, hashes and revision. Already-confirmed legacy facts remain readable; pending résumé facts must be restaged through the review gateway. See [RESUME_CANDIDATES.md](RESUME_CANDIDATES.md).
+
+The original SQLite user_version=1 migration is transactional/idempotent; future database
 versions fail closed. Every Python connection enables foreign_keys and
 secure_delete. The current single-connection adapter uses BEGIN IMMEDIATE
 transactions for state changes and rollback on conflicts.
@@ -132,9 +134,11 @@ unverified candidate isolation, conflicting facts and atomic correction,
 approval-reference reuse, cross-source experience invalidation, no content
 in the immutable event log, and revocation/redaction.
 
-Next after merged [PR #18](https://github.com/KanujVerma/relay/pull/18):
-[issue #21](https://github.com/KanujVerma/relay/issues/21), a separately
-scoped synthetic résumé candidate/approval-boundary step. Real user source
+[PR #26](https://github.com/KanujVerma/relay/pull/26) implements
+[issue #21](https://github.com/KanujVerma/relay/issues/21), the synthetic
+résumé candidate/approval-boundary step. After its merge,
+[issue #29](https://github.com/KanujVerma/relay/issues/29) is the separately
+scoped synthetic selected-file converter evaluation. Real user source
 imports, trusted approval UI and local data encryption remain future work.
 Do not bundle it with app audio, an interview overlay, API calls or
 continuous-learning personalization.

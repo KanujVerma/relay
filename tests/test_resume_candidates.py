@@ -307,6 +307,59 @@ class ResumeContractTests(unittest.TestCase):
         self.assertEqual(self.brain.db.execute(
             "SELECT COUNT(*) FROM candidate_fact").fetchone()[0], before)
 
+    def test_later_duplicate_rolls_back_entire_restage_batch(self):
+        source, cards = self.select_and_stage()
+        self.gateway.decide(cards[0], decision="reject", capability=self.host_key)
+        tables = ("candidate_fact", "candidate_evidence", "history_event")
+        before = {
+            table: [tuple(row) for row in self.brain.db.execute(
+                "SELECT * FROM " + table + " ORDER BY rowid"
+            )] for table in tables
+        }
+        for _ in range(2):
+            with self.assertRaises(InvalidState):
+                self.gateway.stage(source, SAMPLE, observed_at=WHEN)
+            for table in tables:
+                self.assertEqual([tuple(row) for row in self.brain.db.execute(
+                    "SELECT * FROM " + table + " ORDER BY rowid"
+                )], before[table])
+            self.assertFalse(self.brain.db.in_transaction)
+        for card in cards[1:]:
+            self.assertEqual(self.gateway.preview(card.fact_id), card)
+            self.gateway.decide(card, decision="reject", capability=self.host_key)
+        restaged = self.gateway.stage(source, SAMPLE, observed_at=WHEN)
+        self.assertEqual([card.snippet for card in restaged],
+                         [card.snippet for card in cards])
+        self.assertEqual(self.brain.verified_claims(), ())
+
+    def test_failed_restage_batch_stays_rolled_back_after_reopen(self):
+        with tempfile.TemporaryDirectory() as temp:
+            local_path = Path(temp) / "synthetic-batch.sqlite"
+            with BrainStore(local_path) as store:
+                host = object()
+                gateway = ReviewGateway(store, host_capability=host)
+                source = gateway.select_source(SAMPLE, observed_at=WHEN,
+                                               capability=host)
+                cards = gateway.stage(source, SAMPLE, observed_at=WHEN)
+                gateway.decide(cards[0], decision="reject", capability=host)
+                with self.assertRaises(InvalidState):
+                    gateway.stage(source, SAMPLE, observed_at=WHEN)
+            with BrainStore(local_path) as reopened:
+                self.assertEqual(reopened.db.execute(
+                    "SELECT COUNT(*) FROM candidate_fact"
+                ).fetchone()[0], 5)
+                self.assertEqual(reopened.db.execute(
+                    "SELECT COUNT(*) FROM candidate_evidence"
+                ).fetchone()[0], 4)
+                rejected = reopened.db.execute(
+                    "SELECT claim_text,claim_key FROM candidate_fact WHERE id=?",
+                    (cards[0].fact_id,),
+                ).fetchone()
+                self.assertEqual(tuple(rejected), (None, None))
+                gateway = ReviewGateway(reopened, host_capability=object())
+                self.assertEqual(gateway.preview(cards[1].fact_id), cards[1])
+                self.assertEqual(reopened.verified_claims(), ())
+
     def test_no_file_io_and_reopens_reviewed_snapshot_locally(self):
         with tempfile.TemporaryDirectory() as temp:
             local_path = Path(temp) / "fake-synthetic-only.sqlite"

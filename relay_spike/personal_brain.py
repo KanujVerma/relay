@@ -241,12 +241,19 @@ class BrainStore:
 
     @contextmanager
     def _transaction(self) -> Iterator[None]:
-        self.db.execute("BEGIN IMMEDIATE")
+        # A batch owns the outer write lock; individual ledger operations use
+        # savepoints so they cannot commit part of that batch independently.
+        savepoint = "brain_" + uuid4().hex if self.db.in_transaction else None
+        self.db.execute("SAVEPOINT " + savepoint if savepoint else "BEGIN IMMEDIATE")
         try:
             yield
-            self.db.execute("COMMIT")
+            self.db.execute("RELEASE SAVEPOINT " + savepoint if savepoint else "COMMIT")
         except BaseException:
-            self.db.execute("ROLLBACK")
+            if savepoint:
+                self.db.execute("ROLLBACK TO SAVEPOINT " + savepoint)
+                self.db.execute("RELEASE SAVEPOINT " + savepoint)
+            else:
+                self.db.execute("ROLLBACK")
             raise
 
     def _get(self, table: str, row_id: str) -> sqlite3.Row:

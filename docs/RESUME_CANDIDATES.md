@@ -33,6 +33,8 @@ The source SHA-256 can be susceptible to guessing attacks; on-disk SQLite is **n
 
 ## Tests and next integration
 
+Batch staging uses one outer SQLite write transaction for source checks, every candidate/evidence insert and every review preview. Existing per-candidate ledger writes use savepoints; any later error rolls back the entire batch without altering earlier cards or leaving hidden candidates. Repeated failed restaging and disk reopen have regression coverage.
+
 The synthetic tests cover source offsets, UTF-8/Unicode, first-person vs shared/teammate/unknown ownership, unconfirmed tool experience (Power BI), prompt injection as data, stale/forged review cards, missing or counterfeit host capability, direct-confirmation and legacy résumé bypass attempts, Unicode/case-normalized conflicting keys and explicit supersession, revocation, v1 compatibility, and rollback of corrupt v1 migrations.
 
 Next 02A-B1 should adapt a *user-selected* local file converter (initially evaluate MarkItDown; use Docling if fidelity requires it), preserve page/paragraph offsets, implement the actual native review screen and protect private storage. No automatic promotion, external connectors, audio, mock interviewing or paid inference should enter this step.

@@ -133,6 +133,22 @@ class RefreshTests(LocalAuthCase):
                         auth.active_access_token()
                 self.assertEqual(self.saved()["access_token"], "test-access-original")
 
+    def test_nan_or_infinite_credential_expiry_cannot_bypass_refresh_check(self):
+        for bad in (float("nan"), float("inf"), float("-inf"), -1, 0):
+            with self.subTest(bad=str(bad)):
+                self.save(saved_at=bad)
+                with patch.object(auth, "request_json",
+                                  side_effect=AssertionError("corrupt record made HTTP request")):
+                    with self.assertRaisesRegex(auth.AuthError, "Invalid saved OAuth expiry"):
+                        auth.active_access_token()
+        for bad in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(expires_in=str(bad)):
+                self.save(expires_in=bad)
+                with patch.object(auth, "request_json",
+                                  side_effect=AssertionError("corrupt record made HTTP request")):
+                    with self.assertRaisesRegex(auth.AuthError, "Invalid saved OAuth expiry"):
+                        auth.active_access_token()
+
     def test_no_refresh_if_plan_scope_missing_even_if_expired(self):
         self.save(scopes=["openid", "offline_access"])
         with patch.object(auth, "request_json",

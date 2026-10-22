@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - 'EVALS/**'
+      - 'relay_spike/**'
+      - 'tests/**'
+      - 'requirements-spike.txt'
       - 'docs/**'
       - 'AGENTS.md'
       - 'README.md'
@@ -36,3 +39,5 @@ jobs:
         run: python3 EVALS/validate.py
       - name: Validate documentation and local links
         run: python3 EVALS/verify_docs.py
+      - name: Test OAuth and streaming failure paths (offline only)
+        run: python3 -m unittest discover -s tests -v

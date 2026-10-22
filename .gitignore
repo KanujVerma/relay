@@ -20,3 +20,12 @@ resumes/
 *.pem
 *.key
 .DS_Store
+
+# Local Python spike: no runtime files or credentials
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+spike-oauth.json
+spike-host.json

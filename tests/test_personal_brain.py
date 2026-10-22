@@ -8,7 +8,7 @@ import unittest
 
 from relay_spike.personal_brain import (
     BrainError, BrainStore, FactConflict, InvalidState, MissingEvidence,
-    UserConfirmation,
+    UserConfirmation, SCHEMA,
 )
 
 WHEN = "2026-10-22T09:00:00-05:00"
@@ -43,12 +43,12 @@ class BrainStoreTests(unittest.TestCase):
         )
 
     def test_zero_dependency_sqlite_integrity_and_migration_idempotent(self):
-        self.assertEqual(self.brain.db.execute("PRAGMA user_version").fetchone()[0], 1)
+        self.assertEqual(self.brain.db.execute("PRAGMA user_version").fetchone()[0], 2)
         self.assertEqual(self.brain.db.execute("PRAGMA foreign_keys").fetchone()[0], 1)
         self.assertEqual(self.brain.db.execute("PRAGMA secure_delete").fetchone()[0], 1)
         self.assertIsNone(self.brain.db.execute("PRAGMA foreign_key_check").fetchone())
         self.brain._migrate()
-        self.assertEqual(self.brain.db.execute("PRAGMA user_version").fetchone()[0], 1)
+        self.assertEqual(self.brain.db.execute("PRAGMA user_version").fetchone()[0], 2)
 
     def test_version_reopens_on_disk_and_rejects_future_migration(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -67,6 +67,29 @@ class BrainStoreTests(unittest.TestCase):
                 second.db.execute("PRAGMA user_version=99")
             with self.assertRaises(BrainError):
                 BrainStore(path)
+
+    def test_migrates_existing_v1_disk_database_without_losing_records(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "legacy-synthetic.db"
+            with sqlite3.connect(path) as legacy:
+                legacy.executescript(SCHEMA)
+                legacy.execute("PRAGMA user_version=1")
+                legacy.execute(
+                    "INSERT INTO source (id,kind,observed_at) VALUES (?,?,?)",
+                    ("existing-v1-id", "resume", WHEN),
+                )
+            with BrainStore(path) as migrated:
+                self.assertEqual(migrated.db.execute(
+                    "PRAGMA user_version").fetchone()[0], 2)
+                self.assertEqual(migrated.db.execute(
+                    "SELECT id FROM source WHERE id=?",
+                    ("existing-v1-id",)).fetchone()[0], "existing-v1-id")
+                self.assertIsNotNone(migrated.db.execute(
+                    "SELECT name FROM sqlite_master WHERE name='candidate_evidence'"
+                ).fetchone())
+                migrated._migrate()
+                self.assertEqual(migrated.db.execute(
+                    "PRAGMA user_version").fetchone()[0], 2)
 
     def test_source_registration_requires_separate_consent(self):
         sid = self.brain.register_source(

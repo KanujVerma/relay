@@ -195,6 +195,25 @@ class TurnAcceptance(unittest.TestCase):
         self.assertIn("Previous accepted question (context", follow.snapshot.prompt)
         self.assertIn("equal salaries", follow.snapshot.prompt)
 
+    def test_new_independent_question_resets_old_segment_dependencies(self):
+        old = self.machine.ingest(remote(
+            "old", "Explain a SQL join.", start_ms=0, end_ms=200,
+        ))
+        newer = self.machine.ingest(remote(
+            "new", "Explain database normalization.",
+            start_ms=300, end_ms=550,
+        ))
+        self.assertEqual(newer.state, "ready")
+        self.assertEqual(newer.snapshot.dependency_segment_ids, ("new",))
+        self.assertNotIn("old", newer.snapshot.dependency_segment_ids)
+        self.assertFalse(self.turns.is_current(old.token))
+        stale_retraction = self.machine.ingest(remote(
+            "old", "", status="retracted", revision=2,
+            intent="unknown", start_ms=0, end_ms=650,
+        ))
+        self.assertEqual(stale_retraction.reason, "superseded_segment_retraction")
+        self.assertEqual(self.machine.current().token, newer.token)
+
     def test_new_question_supersedes_old_without_conflating_context(self):
         old = self.machine.ingest(remote(
             "old", "Explain index selectivity.", end_ms=300,

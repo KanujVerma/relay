@@ -21,6 +21,10 @@ def main(argv=None) -> int:
     infer = commands.add_parser("infer", help="Stream exactly one synthetic question.")
     infer.add_argument("--model", help="Model slug from models command; default first visible.")
     infer.add_argument(
+        "--role", choices=["general", "analytics", "epic"], default="general",
+        help="Verified context role: general by default, or choose analytics/epic."
+    )
+    infer.add_argument(
         "--question", default="In SQL, what is the difference between WHERE and HAVING?",
         help="Synthetic question only. No personal or confidential details in Slice 01A.",
     )
@@ -109,9 +113,9 @@ def main(argv=None) -> int:
             raise StreamError("This feasibility test limits questions to 1000 characters.")
         print(f"Model: {model}")
         print("Streaming answer: ", end="", flush=True)
-        # Default direct 'infer' response is brief rather than the baseline essay.
+        # Direct 'infer' uses general concise instructions unless role is explicit.
         result = stream_answer(token, model, args.question,
-                               instructions=instructions_for("analytics"),
+                               instructions=instructions_for(args.role),
                                on_delta=lambda s: print(s, end="", flush=True))
         print()
         print("Verified stream completed (timings measured locally).")

@@ -353,7 +353,11 @@ class QuestionTurnMachine:
                          event.segment_id != self._active.current_segment_id)
                     and dependency_prior is not None
                     and dependency_prior.status == "final"
-                    and event.revision > dependency_prior.revision):
+                    and (
+                        event.revision > dependency_prior.revision or
+                        (event.revision == dependency_prior.revision and
+                         _fingerprint(event) != dependency_prior.fingerprint)
+                    )):
                 if pending is not None:
                     self._invalidated_pending_id = pending[0]
                 self.turns.cancel()

@@ -10,7 +10,7 @@ from tests.test_session_host import start,speech,end,final
 
 def card():
     return json.dumps(dict(lead='State the supplied constraints before choosing an approach.',points=[],detail=None,
-        assumptions=['Only supplied task context is known.'],coverage=['current_request'],personal_fact_ids=[]))
+        assumptions=['Task context may be incomplete.'],coverage=['current_request'],personal_fact_ids=[]))
 
 def selected(native):
     return json.dumps(dict(schemaVersion=1,kind='selected_text_context',

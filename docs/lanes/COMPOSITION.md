@@ -1,10 +1,10 @@
 # Context and controls composition lane
 
-Issue [#72](https://github.com/KanujVerma/relay/issues/72). Branch `feature/context-controls-composition-2026-10-23`, isolated checkout `work/relay-build-composition`. Initial answer dependency `cd5286a50700b8040f9e9b03b65c8f960e98fb1c`. The controller explicitly owns global HANDOFF, contracts, status and CI; this lane changes none of those. Main merges remain separately authorized.
+Issue [#72](https://github.com/KanujVerma/relay/issues/72). Branch `feature/context-controls-composition-2026-10-23`, isolated checkout `work/relay-build-composition`. Initial answer dependency `cd5286a50700b8040f9e9b03b65c8f960e98fb1c`. The controller explicitly owns global HANDOFF, contracts, status and CI; this lane does not author those files; controller-only changes enter through declared merge ancestry. Main merges remain separately authorized.
 
 ## Dependencies and actual reuse
 
-Reviewed screen `e3fcfbe3d7f6caa87e2ba3d95f0cb012fc1781ca` and corrected controls `2fc2db5c767d8ef892d030487bd7a281f418e366` are imported by explicit ancestry. Frozen answer `2e06c6d03e7606532c9cf16c961fd4841d327160` is imported, including personal `eb98e41` and its process-exit receipt correction `7ace412`. Native `a26181ee068feb4ff1e0f3b965479df7fb07a797` and controller CI `5a5c82909ae388c1687eb2f2aac4cac496e18e2b` are declared ancestors. Answer round-two correction `f6a1dbd` is the next controller-approved candidate import; final acceptance requires its independent scoped review.
+Reviewed screen `e3fcfbe3d7f6caa87e2ba3d95f0cb012fc1781ca` and corrected controls `2fc2db5c767d8ef892d030487bd7a281f418e366` are imported by explicit ancestry. Frozen answer `2e06c6d03e7606532c9cf16c961fd4841d327160` is imported, including personal `eb98e41` and its process-exit receipt correction `7ace412`. Native `a26181ee068feb4ff1e0f3b965479df7fb07a797` and controller CI `5a5c82909ae388c1687eb2f2aac4cac496e18e2b` are declared ancestors. Final answer correction `b33292f12dd8148fe41518acf514703a9d01d49f` and controller composition CI `8bf587bd8ebfba6fc08c71e4139f8fb51391357b` are now imported. Final acceptance requires independent scoped answer/composition review.
 
 Actual invoked existing components: strict `panel_wire` JSON/framing checks, existing `ContextSnippet`, and `SupplementalScreenProvider` exact screen schema/admission. New Swift ordering/publication modules consume `RelayNativeSession.NativeSessionEvent`, `PresentationLease`, and `SessionPresentationAuthority`. The app now invokes `ScreenContextModel`, `ScreenContextCoordinator`, `SelectedTextService`, `ControlsController`, `KeyboardShortcutsRegistrar`, `OwnPanelControls`, existing profile preparation/ports and the actual native capture/ASR owner. Screen, controls and profile library cores are unchanged. Only the two explicitly delegated native seams described below change native library code.
 
@@ -47,10 +47,34 @@ Pause/end synchronously call real native admission retirement, cancel optional r
 
 Spontaneous current-session native source loss/stopping/stopped enters the same actual End barrier and clears running state. A replacement native UUID or different forwarded session rejects old stop controls before state changes. The actual model's synthetic recognizer-failure fixture exercises this path; the initial regression kept SESSION ACTIVE until the focused correction.
 
-Verification at this candidate: **493 Python tests passed, 23 optional skips** (21 document-converter integrations and two HTTPX transport checks). The panel package passed **29 tests** (16 transport/reducer, 2 actual model/helper application tests and 11 legacy panel tests), then the source-fault correction passed **3 actual model/helper tests**, including original pause/resume/manual/end and stale old-session stop rejection. The composition package passed **11 tests**, including actual reviewed OCR/selection services with synthetic ports, selected-text re-observation and irrevocable observation retirement. The narrow native capture retirement passed **6 lifecycle tests**, including repeated retire/stop and preparation-in-flight cases. App product compilation passed. A final joined rerun follows the approved answer round-two import.
+Verification at this candidate: **493 Python tests run, 470 passed, 23 optional skips** (21 document-converter integrations and two HTTPX transport checks). The panel package passed **29 tests** (16 transport/reducer, 2 actual model/helper application tests and 11 legacy panel tests), then the source-fault correction passed **3 actual model/helper tests**, including original pause/resume/manual/end and stale old-session stop rejection. The composition package passed **11 tests**, including actual reviewed OCR/selection services with synthetic ports, selected-text re-observation and irrevocable observation retirement. The narrow native capture retirement passed **6 lifecycle tests**, including repeated retire/stop and preparation-in-flight cases. App product compilation passed. A final joined rerun follows the approved answer round-two import.
 
 The actual Python subprocess test traverses strict selected-context staging, automatic generation with host-owned use metadata, separate manual Help, source/order preservation, stopped-session quiescence and continued profile readiness in one helper. Malformed/premature/replayed quiescence controls fail closed. Original global native event counters and request leases are never rewritten; only explicit manual issuance creates its own newer lease/UUID under the native source lock.
 
 Default tests used only synthetic sources/frames/OS ports and fixture answer transport. No real screen, AX selection, global binding, private import, Keychain access, speech/model load, account inference, image probe or image upload occurred. Images remain off. Live editor OCR/selection quality, OS permission revocation, actual keyboard delivery and window behavior, real audio/ASR, account availability, response quality and latency remain manual acceptance. Selected text retains the reviewed five-second age gate and OCR the ten-second gate; observation age itself is not proof of unchanged content. Cancellation suppresses local admission and joins owned tasks; it does not certify cancellation of upstream compute.
 
-Next action: import approved answer round-two candidate, rerun affected joined suites/build, publish the immutable text/control head and request independent composition review including both delegated native seams. Controller/main integration and optional verified image ports are separate.
+Next action: independently review the frozen text/control candidate including both delegated native seams, then let the controller assemble accepted source. Main integration and optional verified image ports remain separate.
+
+
+## Final joined verification for review
+
+The final imported answer baseline is `b33292f`. All exact accepted screen, controls, native and personal heads are ancestors. The controller CI merge encountered add/add conflicts because older answer branches had copied peer checkpoints. Resolution retained the newer approved personal exit-receipt sources/tests/docs and the two delegated native seams/tests, while adopting controller globals/CI. `git diff b33292f HEAD -- spikes/macos-profile` is empty; `git diff e3fcfbe HEAD -- spikes/macos-context` is empty. This lane adds no profile/screen/controls core modifications.
+
+| Check | Observed result |
+| --- | --- |
+| Python full discovery | 501 total, 478 passed, 23 optional skips: 21 converter integrations and 2 optional HTTPX tests |
+| Native session | 32 passed: 9 capture/adapter and 23 core/writer/manual |
+| Native profile | 17 passed |
+| Screen context | 28 passed with normal local Vision service access |
+| Controls | 18 passed |
+| Composition | 11 passed |
+| Panel/application | 31 passed: 17 transport/reducer, 3 actual model/helper and 11 legacy panel |
+| Total native tests | 137 passed, zero failures/skips |
+| App product | Built successfully, packaged in ignored `.build/Relay.app`, ad hoc signature verified and Info.plist lint passed |
+| Git | Diff whitespace check passed; no peer checkout changed |
+
+The restricted screen test run passed 26 tests but OS Vision returned `nilError` for its two synthetic-image OCR tests. The unchanged suite passed all 28 with normal local OS service access. No real screen was captured. Sharing one temporary SwiftPM scratch directory between packages caused a dependency artifact to be pruned when the controls-only package ran; the already pinned public artifact cache was restored before the composition/panel reruns. These were local environment/setup failures, not hidden passing claims. The final full Python run required changing the synthetic assumption “Only supplied task context is known.” to “Task context may be incomplete.” to respect the newly reviewed conservative attribution policy; no policy was weakened.
+
+Upstream recheck at the frozen KeyboardShortcuts pin verified `Package.swift` tools 6.2/macOS 10.15, registration only with active handlers, per-name handler removal/unregistration, and upstream persistence/registration tests. Those upstream tests mutate standard UserDefaults and register real keys, so they were inspected, not executed. Relay's injected registration/selection tests were executed. No upstream file was copied or patched.
+
+Current accepted capture-library behavior ends the capture session if any source becomes inactive, including microphone loss. This composition correctly follows the actual stop through its admission/join barrier; it does not claim native remote capture continues through a microphone driver failure. The Python host's isolated microphone-gap policy remains unchanged. No real latency, OCR/ASR accuracy, provider/account availability or live-interview acceptance is claimed.

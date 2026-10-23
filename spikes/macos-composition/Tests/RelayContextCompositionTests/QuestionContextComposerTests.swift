@@ -65,4 +65,29 @@ private actor TextSource:ScreenTextRecognizer {
         #expect(!(await composer.validateForPublication(binding)))
         #expect(!composer.ownsCurrent(binding))
     }
+    @Test func automaticOCRSurvivesOldRetirementCallbackButLaterSourceChangeRetiresIt() async throws {
+        let authority=SessionPresentationAuthority();let binding=PanelRequestBinding(lease:try authority.start(),requestID:UUID(),eventSequence:4)
+        let app=ApplicationIdentity(bundleID:"com.example.editor",processID:42,launchDate:Date())
+        let selection=SelectedTextService(provider:SelectionSource(app),frontmostApplication:{app},currentRequest:{nil})
+        let screen=ScreenContextCoordinator(provider:ImageSource(),recognizer:TextSource())
+        screen.enable();screen.select(ScreenSource(windowID:1,bundleID:app.bundleID,processID:42,label:"Synthetic editor"))
+        let composer=QuestionContextComposer(authority:authority,screen:screen,selection:selection)
+        var liveRetirements=0
+        // Same guard and synchronous retirement seam as the app's
+        // ScreenContextModel.onInvalidation -> contextSourceChanged callback.
+        screen.onInvalidation={ [weak composer] _ in
+            guard let composer,composer.binding != nil else{return}
+            liveRetirements+=1;composer.retire()
+        }
+        let frames=await composer.capture(for:binding,readSelectedText:false)
+        #expect(frames.count==1);#expect(composer.binding==binding)
+        #expect(composer.contextUse?.provenance=="local_ocr")
+        #expect(composer.ownsCurrent(binding));#expect(liveRetirements==0)
+        #expect(await composer.validateForPublication(binding))
+        screen.select(ScreenSource(windowID:2,bundleID:app.bundleID,processID:42,label:"Changed source"))
+        #expect(liveRetirements==1);#expect(composer.binding==nil)
+        #expect(!composer.ownsCurrent(binding))
+        #expect(!(await composer.validateForPublication(binding)))
+    }
+
 }

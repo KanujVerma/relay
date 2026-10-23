@@ -56,7 +56,7 @@ Default tests used only synthetic sources/frames/OS ports and fixture answer tra
 Next action: independently review the frozen text/control candidate including both delegated native seams, then let the controller assemble accepted source. Main integration and optional verified image ports remain separate.
 
 
-## Final joined verification for review
+## Original 86d69e6 joined verification for review
 
 The final imported answer baseline is `b33292f`. All exact accepted screen, controls, native and personal heads are ancestors. The controller CI merge encountered add/add conflicts because older answer branches had copied peer checkpoints. Resolution retained the newer approved personal exit-receipt sources/tests/docs and the two delegated native seams/tests, while adopting controller globals/CI. `git diff b33292f HEAD -- spikes/macos-profile` is empty; `git diff e3fcfbe HEAD -- spikes/macos-context` is empty. This lane adds no profile/screen/controls core modifications.
 
@@ -78,3 +78,16 @@ The restricted screen test run passed 26 tests but OS Vision returned `nilError`
 Upstream recheck at the frozen KeyboardShortcuts pin verified `Package.swift` tools 6.2/macOS 10.15, registration only with active handlers, per-name handler removal/unregistration, and upstream persistence/registration tests. Those upstream tests mutate standard UserDefaults and register real keys, so they were inspected, not executed. Relay's injected registration/selection tests were executed. No upstream file was copied or patched.
 
 Current accepted capture-library behavior ends the capture session if any source becomes inactive, including microphone loss. This composition correctly follows the actual stop through its admission/join barrier; it does not claim native remote capture continues through a microphone driver failure. The Python host's isolated microphone-gap policy remains unchanged. No real latency, OCR/ASR accuracy, provider/account availability or live-interview acceptance is claimed.
+
+
+## Composition review correction R1
+
+Independent immutable review of `86d69e627c86ec17073c8bd57a9a2deb68c8356a` required two finding families to be corrected. This delta changes only `QuestionContextComposer`, `HelperTransport`, their focused tests and this evidence. Accepted screen/control/profile/native library cores and the visual route remain unchanged. The correction is a candidate for scoped re-review, not an accepted merge.
+
+- The normal OCR setup established the new composer binding before coordinator supersession synchronously retired the previous screen request. The real app callback then retired the new binding. Capture now completes that expected old-state retirement before installing the new binding, with unchanged original native lease checks. The selected-text path retains its separate request binding. No `.retired` notification is ignored. The new synthetic callback-connected regression failed six assertions on the frozen source, now captures one OCR frame and validates it, then proves a later source change retires the same binding and blocks publication. No real window or AX read is involved.
+- Quiescence responses now validate the entire schema and stored session/epoch before removing continuation ownership. The wrong-session actual-child regression reproduced `SWIFT TASK CONTINUATION MISUSE` plus an unresolved waiter on the original head. Wrong-session, wrong-epoch and closed-child cases now promptly return an error and reap the child. The adjacent profile response requires an object payload and finishes all fallible serialization before removing its waiter; null, scalar-string and array payloads reject without an orphan or Foundation top-level-fragment crash.
+- A new actual `SessionApplicationModel` test drives End against three synthetic inherited-pipe children returning wrong-session, wrong-epoch or EOF at the quiescence boundary. All three complete the actual app teardown barrier and leave capture/display admission closed. Existing successful pause/resume, manual Help, source-fault and stale-session tests remain passing.
+
+Fresh delta verification used the previously documented temporary SwiftPM cache/build arguments (`--disable-sandbox --skip-update`, `CLANG_MODULE_CACHE_PATH` and `SWIFTPM_MODULECACHE_OVERRIDE`): composition package **12 passed**; complete panel/application package **37 passed** (22 transport/reducer, 4 actual model/helper and 11 legacy panel), zero test failures. Full Python discovery: **501 total, 478 passed, 23 optional skips**. The app product rebuilt successfully and the refreshed ignored app bundle's ad hoc signature verified. Diff whitespace checks passed. Other unchanged native package counts above remain the frozen-baseline evidence, rather than claimed fresh reruns for this small delta.
+
+The source-frozen correction awaits independent scoped re-review before any image adapter layer. No real source, permission prompt, global binding, private profile, Keychain, account, model request or image upload was exercised.

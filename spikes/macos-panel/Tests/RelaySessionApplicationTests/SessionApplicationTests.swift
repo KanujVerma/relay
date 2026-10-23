@@ -58,4 +58,39 @@ import RelayContextComposition
         await model.stop()
     }
 
+    func testEndCompletesAfterMalformedOrClosedQuiescenceChild() async throws {
+        for mode in ["wrong_session","wrong_epoch","closed"] {
+            let directory=FileManager.default.temporaryDirectory.appendingPathComponent("relay-control-response-"+UUID().uuidString,isDirectory:true)
+            try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+            defer { try? FileManager.default.removeItem(at:directory) }
+            let launcher=directory.appendingPathComponent("synthetic-helper")
+            let script="""
+            #!/usr/bin/env python3
+            import json,struct,sys,uuid
+            mode='\(mode)'
+            while True:
+                header=sys.stdin.buffer.read(4)
+                if not header:break
+                request=json.loads(sys.stdin.buffer.read(struct.unpack('>I',header)[0]))
+                if request.get('kind')!='session_quiescence_request':continue
+                if mode=='closed':break
+                reply={**request,'kind':'session_quiescence_response','quiesced':True}
+                if mode=='wrong_session':reply['captureSessionID']=str(uuid.uuid4())
+                else:reply['sessionEpoch']+=1
+                body=json.dumps(reply,separators=(',',':')).encode()
+                sys.stdout.buffer.write(struct.pack('>I',len(body))+body)
+                sys.stdout.buffer.flush()
+            """
+            try Data(script.utf8).write(to:launcher)
+            try FileManager.default.setAttributes([.posixPermissions:0o700],ofItemAtPath:launcher.path)
+            let model=SessionApplicationModel(arguments:["relay","--fixture-suite","coding","--repository",root.path,"--python",launcher.path])
+            await model.start();try await waitUntil{model.snapshot.status=="Thinking"}
+            let ended=expectation(description:"actual app End barrier resolves after \(mode)")
+            Task { @MainActor in await model.stop();ended.fulfill() }
+            await fulfillment(of:[ended],timeout:3)
+            XCTAssertFalse(model.running);XCTAssertFalse(model.stopping);XCTAssertFalse(model.canResume)
+            XCTAssertNil(model.snapshot.card)
+        }
+    }
+
 }

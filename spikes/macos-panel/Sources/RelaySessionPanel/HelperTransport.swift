@@ -159,18 +159,26 @@ public final class HelperTransport: @unchecked Sendable {
                     if case .object(let fields)=node,case .string("profile_response")?=fields["kind"] {
                         let fields=try node.object(["schemaVersion","kind","requestID","payload"])
                         guard try fields["schemaVersion"]!.uint()==1,let id=UUID(uuidString:try fields["requestID"]!.string()) else { throw PanelBridgeError.malformed }
+                        // Keep the waiter registered until every fallible payload
+                        // check/encoding completes, so fail()/stop() can reject it.
+                        guard case .object?=fields["payload"],
+                              let decoded=try JSONSerialization.jsonObject(with:frame) as? [String:Any],
+                              let payload=decoded["payload"] as? [String:Any] else { throw PanelBridgeError.malformed }
+                        let response=try JSONSerialization.data(withJSONObject:payload)
                         let continuation=lock.withLock { profileRequests.removeValue(forKey:id) }
                         guard let continuation else { throw PanelBridgeError.malformed }
-                        let decoded=try JSONSerialization.jsonObject(with:frame) as! [String:Any]
-                        continuation.resume(returning:try JSONSerialization.data(withJSONObject:decoded["payload"]!))
+                        continuation.resume(returning:response)
                     } else if case .object(let fields)=node,case .string("session_quiescence_response")?=fields["kind"] {
                         let fields=try node.object(["schemaVersion","kind","requestID","captureSessionID","sessionEpoch","quiesced"])
                         guard try fields["schemaVersion"]!.uint()==1,try fields["quiesced"]!.boolean(),
                               let id=UUID(uuidString:try fields["requestID"]!.string()),let session=UUID(uuidString:try fields["captureSessionID"]!.string()) else { throw PanelBridgeError.malformed }
                         let epoch=try fields["sessionEpoch"]!.uint()
-                        let pending=lock.withLock { quiescenceRequests.removeValue(forKey:id) }
-                        guard let pending,pending.0==session,pending.1==epoch else { throw PanelBridgeError.malformed }
-                        pending.2.resume()
+                        let continuation=try lock.withLock {
+                            guard let pending=quiescenceRequests[id],pending.0==session,pending.1==epoch else { throw PanelBridgeError.malformed }
+                            quiescenceRequests.removeValue(forKey:id)
+                            return pending.2
+                        }
+                        continuation.resume()
                     } else { _=try SessionAnswerDecision(data:frame);try onFrame(frame) }
                 }
                 if decoder.hasPartial { if partialSince==nil { partialSince=DispatchTime.now().uptimeNanoseconds } } else { partialSince=nil }

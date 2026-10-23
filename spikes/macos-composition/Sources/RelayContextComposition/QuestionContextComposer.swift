@@ -32,9 +32,10 @@ public struct TaskContextUse: Sendable, Equatable {
         selection.invalidate();screen.retireCurrentRequest()
     }
     public func capture(for request:PanelRequestBinding,readSelectedText:Bool) async -> [Data] {
-        retire();binding=request
-        guard current(request),!Task.isCancelled else { return [] }
+        retire()
+        guard authority.snapshot()==request.lease,!Task.isCancelled else { return [] }
         if readSelectedText,selection.isEnabled {
+            binding=request
             do {
                 let selected=try await selection.read(request:selectionRequest(request))
                 guard !Task.isCancelled,current(request),selection.validateCurrent(selected) else { return [] }
@@ -43,10 +44,14 @@ public struct TaskContextUse: Sendable, Equatable {
                 contextUse=TaskContextUse(provenance:selected.provenance,source:"Selected text: "+selected.application.bundleID,capturedUptimeNanoseconds:selected.capturedUptimeNanoseconds)
                 return [frame]
             } catch { if Task.isCancelled || !current(request) { return [] } }
+            binding=nil
         }
-        guard screen.isEnabled,!Task.isCancelled,current(request) else { return [] }
+        guard screen.isEnabled,!Task.isCancelled,authority.snapshot()==request.lease else { return [] }
         let screenRequest=screenRequest(request)
-        guard screen.supersede(with:screenRequest) else { return [] }
+        // supersede synchronously reports retirement of the previous screen
+        // request. Install this binding only after that callback has completed.
+        guard screen.supersede(with:screenRequest),authority.snapshot()==request.lease,!Task.isCancelled else { return [] }
+        binding=request
         let outcome=await screen.capture(for:screenRequest)
         guard !Task.isCancelled,current(request),case .captured(let observed)=outcome,screen.owns(observed,for:screenRequest) else { return [] }
         do {

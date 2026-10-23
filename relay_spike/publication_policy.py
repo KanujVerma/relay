@@ -102,6 +102,35 @@ class PolicyInput:
             raise TypeError("Case hint must be a string or absent.")
 
 
+# A decision object is also a public metadata envelope. Never allow a
+# model-supplied "reason" to become user-visible or enter logs/repr.
+_REASONS_BY_STATE: dict[str, frozenset[str]] = {
+    "reviewed_reference": frozenset(("reviewed_full_question",)),
+    "model_suggestion_unverified": frozenset(("independent_review_required",)),
+    "needs_revision": frozenset((
+        "verified_personal_attribution_missing",
+        "question_context_unresolved",
+        "category_not_reviewed",
+        "additional_constraints_unreviewed",
+        "candidate_size_or_empty",
+    )),
+    "unavailable": frozenset((
+        "permission_not_confirmed",
+        "untrusted_or_partial_source",
+        "question_not_final",
+        "superseded_turn",
+        "unsupported_question_text",
+        "incomplete_model_stream",
+        "reviewed_fixture_changed",
+        "no_complete_reviewed_reference",
+    )),
+}
+# Existing contract currently contains 13 original fixtures per role.
+_REQUIRED_EVALS = frozenset(
+    f"{role}{i:02d}" for role in ("E", "D") for i in range(1, 14)
+)
+
+
 @dataclass(frozen=True)
 class PublicationDecision:
     state: PublicationState
@@ -112,6 +141,9 @@ class PublicationDecision:
     first_useful_verified_ms: None = None
 
     def __post_init__(self) -> None:
+        if (type(self.reason_code) is not str
+                or self.reason_code not in _REASONS_BY_STATE.get(self.state, ())):
+            raise ValueError("Decision reason must be a local, state-specific code.")
         if self.state == "reviewed_reference":
             # The decision holds only independently reviewed local copy, not
             # candidate model text, arbitrary claims, or source pointers.
@@ -267,6 +299,7 @@ def evaluate_evaluation_rows(rows: list[dict]) -> dict:
         for name in ("development", "evaluation")
     }
     seen: set[str] = set()
+    baseline_seen: set[str] = set()
     for row in rows:
         if not isinstance(row, dict) or set(row) != {
             "id", "partition", "family", "input", "expected_state",
@@ -291,6 +324,13 @@ def evaluate_evaluation_rows(rows: list[dict]) -> dict:
                 or not row["annotation"].strip()):
             raise ValueError("Malformed or duplicated publication case.")
         seen.add(idx)
+        if idx.startswith("BASE-"):
+            expected_id = idx.removeprefix("BASE-")
+            if (expected_id not in _REQUIRED_EVALS
+                    or not isinstance(row["input"], dict)
+                    or row["input"] != {"question_ref": expected_id}):
+                raise ValueError("The frozen baseline must reference its own EVALS question.")
+            baseline_seen.add(expected_id)
         request = _fixture_request(row)
         turns = ActiveTurns()
         token = turns.activate("offline:"+idx, 1)
@@ -308,7 +348,14 @@ def evaluate_evaluation_rows(rows: list[dict]) -> dict:
         bucket["n"] += 1
         bucket[outcome.state if outcome.state != "reviewed_reference"
                else "reviewed_reference_published"] += 1
-        bucket["unsafe_published"] += int(outcome.publishes and not row["safe_to_publish"])
+        bucket["unsafe_published"] += int(
+            outcome.publishes and (
+                not row["safe_to_publish"]
+                or row["technical_correctness"] != "correct"
+                or row["coverage_label"] != "complete"
+                or not row["annotated_useful"]
+            )
+        )
         bucket["benign_withheld"] += int(
             row["safe_to_publish"] and not outcome.publishes
         )
@@ -321,6 +368,8 @@ def evaluate_evaluation_rows(rows: list[dict]) -> dict:
         bucket["coverage_complete"] += int(row["coverage_label"] == "complete")
         bucket["coverage_partial"] += int(row["coverage_label"] == "partial")
 
+    if baseline_seen != _REQUIRED_EVALS:
+        raise ValueError("All 26 canonical EVALS baselines must be present once.")
     if not all(bucket["n"] for bucket in partitions.values()):
         raise ValueError("Both development and evaluation partitions required.")
     counts = {

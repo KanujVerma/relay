@@ -104,7 +104,13 @@ public struct PanelState: Sendable {
     public mutating func apply(_ update: PanelUpdate) -> Bool {
         switch update {
         case let .begin(turn, question):
-            guard !isStopped, turn.generation > highestGeneration,
+            // Even while stopped, retire an observed generation. Replaying a
+            // pre-resume event must never reauthorize the old turn afterward.
+            if isStopped {
+                highestGeneration = max(highestGeneration, turn.generation)
+                return false
+            }
+            guard turn.generation > highestGeneration,
                   let cleanQuestion = BoundedText.clean(question, maxBytes: 500)
             else { return false }
             highestGeneration = turn.generation

@@ -1,5 +1,6 @@
 import Foundation
 import RelayNativeSession
+import RelayContextComposition
 
 public struct SessionPanelSnapshot: Sendable {
     public init() {}
@@ -12,7 +13,7 @@ public struct SessionPanelSnapshot: Sendable {
     public private(set) var snapshot=SessionPanelSnapshot()
     private let authority:SessionPresentationAuthority
     private var session:(UUID,UInt64)?
-    private var bound:NativeSessionEvent?;private var identity:(PythonTurnIdentity,String)?
+    private var bound:PanelRequestBinding?;private var identity:(PythonTurnIdentity,String)?
     private var terminal=false;private var pending=false
     private var deadline:UInt64=0
     public var onChange: (() -> Void)?
@@ -21,17 +22,7 @@ public struct SessionPanelSnapshot: Sendable {
         if event.sourceCode==1 { return }
         switch event.kind {
         case .eou:
-            guard event.requestID != nil else { return }
-            _=authority.withCurrentLease(event.lease) {
-                session=(event.captureSessionID,event.sessionEpoch)
-                bound=event;identity=nil;terminal=false;pending=false
-                deadline=DispatchTime.now().uptimeNanoseconds+15_000_000_000
-                snapshot.question=nil;snapshot.card=nil;snapshot.status="Thinking";snapshot.replacement &+= 1;onChange?()
-            }
-            Task { [weak self] in
-                try? await Task.sleep(for:.seconds(15))
-                self?.expire(requestID:event.requestID!)
-            }
+            if let request=PanelRequestBinding(event) { bind(request) }
         case .speechStarted,.sessionStarted:
             _=authority.withCurrentLease(event.lease) {
                 session=(event.captureSessionID,event.sessionEpoch);clear(status:"Listening")
@@ -40,6 +31,18 @@ public struct SessionPanelSnapshot: Sendable {
             guard let session,session.0==event.captureSessionID,session.1==event.sessionEpoch else { return }
             clear(status:"Stopped")
         case .speechEnded: break
+        }
+    }
+    /// An issued manual binding follows the same reducer and actual lease gate.
+    public func bind(_ request:PanelRequestBinding) {
+        _=authority.withCurrentLease(request.lease) {
+            session=(request.lease.captureSessionID,request.lease.sessionEpoch)
+            bound=request;identity=nil;terminal=false;pending=false
+            deadline=DispatchTime.now().uptimeNanoseconds+15_000_000_000
+            snapshot.question=nil;snapshot.card=nil;snapshot.status="Thinking";snapshot.replacement &+= 1;onChange?()
+        }
+        Task { [weak self] in
+            try? await Task.sleep(for:.seconds(15));self?.expire(requestID:request.requestID)
         }
     }
     public func clear(status:String="Stopped") {
@@ -51,7 +54,7 @@ public struct SessionPanelSnapshot: Sendable {
     }
     @discardableResult public func accept(_ data:Data) throws -> Bool {
         let d=try SessionAnswerDecision(data:data)
-        guard let b=bound,!terminal,d.sessionID==b.captureSessionID,d.epoch==b.sessionEpoch,d.generation==b.presentationGeneration,d.requestID==b.requestID,d.eventSequence==b.eventSequence else { return false }
+        guard let b=bound,!terminal,d.sessionID==b.lease.captureSessionID,d.epoch==b.lease.sessionEpoch,d.generation==b.lease.presentationGeneration,d.requestID==b.requestID,d.eventSequence==b.eventSequence else { return false }
         if DispatchTime.now().uptimeNanoseconds>=deadline { expire(requestID:d.requestID);return false }
         if let identity,identity.0 != d.token || identity.1 != d.displayID { throw PanelBridgeError.malformed }
         if d.disposition=="pending",pending { return false }
@@ -68,7 +71,7 @@ public struct SessionPanelSnapshot: Sendable {
                 case "task_context_overflow":snapshot.status="Summarize the current problem and requirements"
                 default:snapshot.status="Add confirmed background to answer this question"
                 }
-            case "abstain":snapshot.status=["no_question","blank_question"].contains(d.reason) ? "Listening":d.reason=="inference_disabled" ? "AI requests are off" : "No reliable answer available"
+            case "abstain":snapshot.status=["no_question","blank_question"].contains(d.reason) ? "Listening":d.reason=="manual_context_unavailable" ? "Ask a question first" : d.reason=="inference_disabled" ? "AI requests are off" : "No reliable answer available"
             default:snapshot.status="Answer unavailable"
             }
             snapshot.replacement &+= 1;onChange?()

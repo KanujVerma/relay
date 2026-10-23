@@ -1,0 +1,30 @@
+{
+  "originHash" : "aa2da7bdd869eed329da832713ee28fa9e64705737e2ccb54bd4efd8aec323dc",
+  "pins" : [
+    {
+      "identity" : "fluidaudio",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/FluidInference/FluidAudio.git",
+      "state" : {
+        "revision" : "c79c4106b954f81205113c3343e5a7e59a1089b5"
+      }
+    },
+    {
+      "identity" : "keyboardshortcuts",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sindresorhus/KeyboardShortcuts",
+      "state" : {
+        "revision" : "772133d9dbe800fdac0473226822994c5c162c58"
+      }
+    },
+    {
+      "identity" : "tpcircularbuffer",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/michaeltyson/TPCircularBuffer.git",
+      "state" : {
+        "revision" : "cc520397504bb72bc6df79ff03eb72988a6dc50d"
+      }
+    }
+  ],
+  "version" : 3
+}

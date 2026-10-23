@@ -104,9 +104,15 @@ protocol SessionCaptureDriver: Sendable {
     /// The first operations execute on MainActor before the first await. Pause
     /// is composed by the panel as stop plus a fresh explicit Start, not a timer
     /// toggle. No ASR final is flushed from truncated stop audio.
+    /// The app's synchronous pause/end entry point. Retire the actual source
+    /// admission once, before scheduling or awaiting hardware/model teardown.
+    public func retireAdmission(reason:SessionReason = .userStop) {
+        guard phase != .idle,phase != .stopping else { return }
+        phase = .stopping;controller.beginStop(reason:reason)
+    }
     public func stop(reason: SessionReason = .userStop) async {
         guard phase != .idle else { return }
-        if phase != .stopping { phase = .stopping; controller.beginStop(reason: reason) }
+        retireAdmission(reason:reason)
         if startInProgress {
             // The outstanding start retains ownership and must return before
             // producer stop or restart. Its catch path owns eventual shutdown.

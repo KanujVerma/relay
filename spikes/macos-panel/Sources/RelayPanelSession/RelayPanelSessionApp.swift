@@ -16,6 +16,8 @@ import RelayScreenContext
 
 @MainActor private struct SessionView: View {
     @ObservedObject var model:SessionApplicationModel
+    @ObservedObject private var visual:VisualInputSetupState
+    init(model:SessionApplicationModel){self.model=model;visual=model.visual}
     @State private var settings=false
     @State private var preparing=false
     @State private var setup=true
@@ -26,12 +28,12 @@ import RelayScreenContext
         VStack(alignment:.leading,spacing:16) {
             HStack {
                 Text("Relay").font(.title2.bold());Spacer()
-                Text(model.fixture ? "OFFLINE FIXTURE":model.paused ? "PAUSED":model.running ? "SESSION ACTIVE":"READY").font(.caption.bold()).foregroundStyle(.secondary)
+                Text(model.fixture ? "OFFLINE FIXTURE":visual.isBusy ? "VISUAL INPUT CHECK":model.paused ? "PAUSED":model.running ? "SESSION ACTIVE":"READY").font(.caption.bold()).foregroundStyle(.secondary)
             }
             if model.fixture { Text("Synthetic audio and injected answers. No microphone or AI request.").font(.caption).foregroundStyle(.secondary) }
             if !model.running && !model.fixture {
                 Toggle("Use configured ChatGPT plan for AI suggestions",isOn:Binding(get:{model.oauth},set:{enabled in Task { await model.setAIEnabled(enabled) }})).disabled(!model.canChangeAIMode)
-                Text("Uses the existing Relay sign-in. Account setup is not available in this window yet. AI requests start only during a session; local reference cards remain available with AI off.").font(.caption).foregroundStyle(.secondary)
+                Text("Uses the existing Relay sign-in. Account setup is not available in this window yet. AI suggestions run during a session; the optional visual-input test makes one explicit request while idle. Local reference cards remain available with AI off.").font(.caption).foregroundStyle(.secondary)
                 DisclosureGroup("Session setup",isExpanded:$setup) {
                     VStack(alignment:.leading,spacing:10) {
                         Picker("Interview app",selection:$model.selectedBundleID) {
@@ -74,8 +76,8 @@ import RelayScreenContext
                     Button("Pause") { model.performWindowAction(.pause) }.disabled(model.stopping)
                     Button("End") { model.performWindowAction(.endSession) }
                 } else {
-                    Button(model.paused ? "Resume":"Start session") { Task { await model.start() } }.buttonStyle(.borderedProminent).disabled(model.stopping)
-                    if model.paused { Button("End") { model.performWindowAction(.endSession) } }
+                    Button(model.paused ? "Resume":"Start session") { Task { await model.start() } }.buttonStyle(.borderedProminent).disabled(!model.canStartSession)
+                    if model.paused || visual.isBusy { Button("End") { model.performWindowAction(.endSession) } }
                 }
                 Button("Help") { model.performWindowAction(.requestHelp) }.disabled(!model.running || model.stopping)
                 Button("Copy") { model.performWindowAction(.copyAnswer) }.disabled(model.snapshot.card == nil)
@@ -83,7 +85,7 @@ import RelayScreenContext
                 Button("Settings") { settings=true }
             }
             HStack {
-                Button("Prepare background") { preparing=true }.disabled(model.fixture || model.stopping)
+                Button("Prepare background") { preparing=true }.disabled(model.fixture || model.stopping || visual.isBusy)
                 if model.stopping { Text("Waiting for the previous session to finish").font(.caption).foregroundStyle(.secondary) }
             }
             if model.paused { Text("Resume starts a fresh conversation. Saved background and explicit context settings stay available.").font(.caption).foregroundStyle(.secondary) }

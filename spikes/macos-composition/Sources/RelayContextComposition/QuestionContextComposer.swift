@@ -8,8 +8,10 @@ public struct TaskContextUse: Sendable, Equatable {
     public let provenance: String
     public let source: String
     public let capturedUptimeNanoseconds: UInt64
-    public init(provenance:String,source:String,capturedUptimeNanoseconds:UInt64) {
+    public let imageDigest:String?
+    public init(provenance:String,source:String,capturedUptimeNanoseconds:UInt64,imageDigest:String?=nil) {
         self.provenance=provenance;self.source=source;self.capturedUptimeNanoseconds=capturedUptimeNanoseconds
+        self.imageDigest=imageDigest
     }
 }
 
@@ -24,10 +26,14 @@ public struct TaskContextUse: Sendable, Equatable {
     public private(set) var contextUse:TaskContextUse?
     private var observation:Observation?
     private var reobservedSelection:SelectedTextSnapshot?
+    private var imageTransfer:ScreenImageTransfer?
+    private var imageFlight:UUID?
+    private var offeredImageDigest:String?
     public init(authority:SessionPresentationAuthority,screen:ScreenContextCoordinator,selection:SelectedTextService) {
         self.authority=authority;self.screen=screen;self.selection=selection
     }
     public func retire() {
+        retireImageOffer()
         binding=nil;contextUse=nil;observation=nil;reobservedSelection=nil
         selection.invalidate();screen.retireCurrentRequest()
     }
@@ -67,15 +73,31 @@ public struct TaskContextUse: Sendable, Equatable {
             return [frame]
         } catch { return [] }
     }
+    /// Shared app/forwarder composition: a selected-text or text-only capture
+    /// returns its one staged frame. An image path writes OCR once, then pulls
+    /// image frames under backpressure before the caller sends the original EOU.
+    public func captureForForwarding(for request:PanelRequestBinding,readSelectedText:Bool,
+                                     imageWriter:(@MainActor (Data) async throws ->Void)?) async ->[Data] {
+        let frames=await capture(for:request,readSelectedText:readSelectedText)
+        guard !Task.isCancelled else{return []}
+        guard frames.count==1,contextUse?.provenance=="local_ocr",let imageWriter else{return frames}
+        do {
+            try await imageWriter(frames[0])
+            _=await offerImage(for:request,write:imageWriter)
+        }catch{} // Only actual staged OCR can survive an optional transfer failure.
+        return []
+    }
     /// Bounded by the caller's terminal gate. A second read does not replace the
     /// original prompt capture's source/time; it supplies current matching proof.
-    public func validateForPublication(_ request:PanelRequestBinding) async -> Bool {
+    public func validateForPublication(_ request:PanelRequestBinding,requiringImageIdentity:Bool=false) async -> Bool {
         guard current(request),let observation else { return false }
         switch observation {
         case .screen(let observed):
-            let valid=await screen.validateCurrent(observed,for:screenRequest(request),budgetNanoseconds:500_000_000)
-            return !Task.isCancelled && valid && ownsCurrent(request)
+            guard !requiringImageIdentity || offeredImageDigest==observed.imageDigest else{return false}
+            let valid=await screen.validateCurrent(observed,for:screenRequest(request),budgetNanoseconds:500_000_000,requiringImageIdentity:requiringImageIdentity)
+            return !Task.isCancelled && valid && ownsCurrent(request) && (!requiringImageIdentity || offeredImageDigest==observed.imageDigest)
         case .selection(let original):
+            guard !requiringImageIdentity else{return false}
             guard selection.validateCurrent(reobservedSelection ?? original) else { return false }
             do {
                 let checked=try await selection.read(request:selectionRequest(request))
@@ -93,6 +115,36 @@ public struct TaskContextUse: Sendable, Equatable {
         case .screen(let observed):return screen.owns(observed,for:screenRequest(request))
         case .selection(let original):return selection.validateCurrent(reobservedSelection ?? original)
         }
+    }
+    /// Produce one lazy frame only after the preceding frame's actual write.
+    /// Local offering is not upload authorization; the helper owns that permit.
+    public func offerImage(for request:PanelRequestBinding,write:@escaping @MainActor (Data) async throws ->Void) async ->Bool {
+        guard current(request),case .screen(let observed)=observation,ownsCurrent(request),imageFlight==nil else{return false}
+        let id=UUID()
+        do {
+            let transfer=try screen.makeImageTransfer(for:observed,imageContextEnabled:true)
+            imageTransfer=transfer;imageFlight=id;offeredImageDigest=nil
+            var complete=false
+            defer{if !complete{transfer.cancel()};if imageFlight==id{imageTransfer=nil;imageFlight=nil}}
+            while let frame=try transfer.nextFrame() {
+                try Task.checkCancellation()
+                guard imageFlight==id,ownsCurrent(request) else{throw CancellationError()}
+                try await write(frame)
+                try Task.checkCancellation()
+                guard imageFlight==id,ownsCurrent(request) else{throw CancellationError()}
+                if transfer.isComplete{offeredImageDigest=observed.imageDigest;complete=true;return true}
+            }
+        }catch{}
+        return false
+    }
+    /// Disable image input without destroying still-valid OCR text evidence.
+    public func retireImageOffer(){imageTransfer?.cancel();imageTransfer=nil;imageFlight=nil;offeredImageDigest=nil}
+    public func ownsContext(_ use:TaskContextUse,for request:PanelRequestBinding)->Bool {
+        guard ownsCurrent(request),let original=contextUse,original.provenance==use.provenance,
+              original.source==use.source,original.capturedUptimeNanoseconds==use.capturedUptimeNanoseconds else{return false}
+        guard let digest=use.imageDigest else{return true}
+        guard use.provenance=="local_ocr",case .screen(let observed)=observation else{return false}
+        return offeredImageDigest==digest && observed.imageDigest==digest
     }
     private func current(_ request:PanelRequestBinding)->Bool { binding==request && authority.snapshot()==request.lease }
     private func screenRequest(_ r:PanelRequestBinding)->ScreenRequest {

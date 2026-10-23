@@ -84,6 +84,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     private let pythonArguments:[String]
     private let authority=SessionPresentationAuthority()
     let screen=ScreenContextModel()
+    let visual=VisualInputSetupState()
     private var hasSelectedText=false
     lazy var selectedText:SelectedTextService = {
         hasSelectedText=true
@@ -103,6 +104,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     private var acceptedQuestion:String?
     private var terminalObserved=false
     private var taskContextUsed=false
+    private var imageContextUsed=false
     private var manualRequestToShow:UUID?
     private var lastForwardedSequence:UInt64=0
     private var startTask:Task<Void,Never>?
@@ -171,6 +173,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
             // source events cannot cross into a replacement helper lifecycle.
             if fixture { native.beginStop() } else { capture.retireAdmission(reason:.transportClosed) }
             retireOptionalWork();authority.stop();helperIdentity=UUID();helperFailures.activate(helperIdentity)
+            visual.retireForHelperChange()
             forwardedSessionID=nil;helper=nil;running=false;paused=false
             panel.clear(status:"Profile unavailable");error="Profile could not be locked. Its helper was stopped. Reopen background to recover."
             old.stop()
@@ -192,6 +195,8 @@ private actor FixtureRecognizer: ActivityRecognizer {
         root=URL(fileURLWithPath:Self.argument("--repository",arguments) ?? FileManager.default.currentDirectoryPath)
         asrFolder=Self.argument("--asr-models",arguments) ?? ""
         vadFolder=Self.argument("--vad-model",arguments) ?? ""
+        visual.onRetireImages={ [weak self] in self?.retireVisualImages() }
+        visual.onTransportFailure={ [weak self] in self?.failSession() }
         screen.onInvalidation={ [weak self] _ in self?.contextSourceChanged() }
         focusObserver=NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.didActivateApplicationNotification,object:nil,queue:.main) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -210,6 +215,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     func ensureHelper() throws -> HelperTransport {
         guard !stopping,profileBinding?.retired != true else { throw PanelBridgeError.closed }
         if let helper { return helper }
+        visual.retireForHelperChange()
         let identity=UUID();helperIdentity=identity;helperFailures.activate(identity)
         let nativeAuthority=authority;let failures=helperFailures;let delivery=answers
         let sourceController=fixture ? native:capture.controller
@@ -260,13 +266,25 @@ private actor FixtureRecognizer: ActivityRecognizer {
         },capture:{ [weak self] ingress in
             guard let self,let binding=ingress.binding else { return [] }
             self.bind(binding)
-            return await self.contextComposer.capture(for:binding,readSelectedText:{if case .manual=ingress{return true};return false}())
+            let deadline=DispatchTime.now().uptimeNanoseconds+1_500_000_000
+            var writer:(@MainActor (Data) async throws ->Void)?
+            if let generation=self.visual.offerGeneration,let helper=self.helper {
+                let helperID=self.helperIdentity
+                writer={ [weak self] data in
+                    try await helper.sendJSONAwaitingWrite(data,deadline:deadline,isCurrent:{ [weak self] in
+                        guard let self else{return false}
+                        return self.helperIdentity==helperID && self.helper === helper && self.currentBinding==binding
+                            && self.visual.ownsOfferGeneration(generation) && self.contextComposer.ownsCurrent(binding)
+                    })
+                }
+            }
+            return await self.contextComposer.captureForForwarding(for:binding,readSelectedText:{if case .manual=ingress{return true};return false}(),imageWriter:writer)
         },send:{ [weak self] ingress,frames in try self?.send(ingress,context:frames) },onFailure:{ [weak self] in self?.failSession() })
         forwarder=created;return created
     }
     private func bind(_ request:PanelRequestBinding) {
         guard authority.snapshot()==request.lease,currentBinding != request else { return }
-        currentBinding=request;terminalObserved=false;taskContextUsed=false
+        currentBinding=request;terminalObserved=false;taskContextUsed=false;imageContextUsed=false
         publication.bind(request);panel.bind(request)
     }
     private func send(_ ingress:SessionIngress,context:[Data]) throws {
@@ -293,13 +311,13 @@ private actor FixtureRecognizer: ActivityRecognizer {
         }
         if decision.disposition != "pending" { terminalObserved=true }
         if decision.disposition=="answer",let use=decision.taskContext {
-            guard hasContextComposer,contextComposer.contextUse==use else { retireDependentRequest(binding);return }
-            taskContextUsed=true
-            publication.publish(binding,validate:{ [weak self] in guard let self else{return false};return await self.contextComposer.validateForPublication(binding) },owns:{ [weak self] in
-                guard let self else{return false};return self.contextComposer.contextUse==use && self.contextComposer.ownsCurrent(binding)
+            guard hasContextComposer,contextComposer.ownsContext(use,for:binding),use.imageDigest==nil || visual.mayOfferImages else { retireDependentRequest(binding);return }
+            taskContextUsed=true;imageContextUsed=use.imageDigest != nil
+            publication.publish(binding,validate:{ [weak self] in guard let self else{return false};return await self.contextComposer.validateForPublication(binding,requiringImageIdentity:use.imageDigest != nil) },owns:{ [weak self] in
+                guard let self else{return false};return self.contextComposer.ownsContext(use,for:binding) && (use.imageDigest==nil || self.visual.mayOfferImages)
             },commit:{ [weak self] in
                 guard let self else{return}
-                do { if try self.panel.accept(data) { self.acceptedQuestion=decision.question;self.contextStatus="Used "+use.source+(use.provenance=="local_ocr" ? " · local OCR":" · selected text");self.revealManualAnswer(decision.requestID) } }
+                do { if try self.panel.accept(data) { self.acceptedQuestion=decision.question;self.contextStatus="Used "+use.source+(use.imageDigest != nil ? " · image and local OCR":use.provenance=="local_ocr" ? " · local OCR":" · selected text");self.revealManualAnswer(decision.requestID) } }
                 catch { self.failSession() }
             },rejected:{ [weak self] in self?.retireDependentRequest(binding) })
         } else {
@@ -319,7 +337,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
         retireRequest(status:"Context changed. Ask again.")
     }
     private func retireOptionalWork() {
-        currentBinding=nil;acceptedQuestion=nil;terminalObserved=true;taskContextUsed=false;manualRequestToShow=nil
+        currentBinding=nil;acceptedQuestion=nil;terminalObserved=true;taskContextUsed=false;imageContextUsed=false;manualRequestToShow=nil
         publication.retire();if hasContextComposer { contextComposer.retire() };if hasSelectedText { selectedText.invalidate() }
         forwarder?.cancelOptionalWork()
     }
@@ -334,7 +352,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
         do { try helper?.sendJSON(JSONEncoder().encode(frame)) } catch { failSession() }
     }
     func start() async {
-        guard !running,!starting,!stopping,teardown==nil else { return }
+        guard canStartSession else { return }
         starting=true;let identity=UUID();startIdentity=identity
         let task=Task { await self.startOwned() };startTask=task
         await task.value
@@ -368,9 +386,11 @@ private actor FixtureRecognizer: ActivityRecognizer {
         }
     }
     var currentSessionID:UUID? { authority.snapshot()?.captureSessionID ?? forwardedSessionID }
-    var canResume:Bool { paused && !running && !starting && !stopping && teardown==nil && (fixture || capture.phase == .idle) }
+    var canStartSession:Bool { !running && !starting && !stopping && teardown==nil && !visual.isBusy && visual.status != .busy && (fixture || capture.phase == .idle) }
+    var canResume:Bool { paused && canStartSession }
     func beginRetirement(end:Bool) {
         endRequested = endRequested || end
+        disableVisualInput() // The helper also revokes its receipt on native stop.
         if end { paused=false }
         guard teardown==nil else { return }
         let sessionID=forwardedSessionID;let oldHelper=helper
@@ -387,6 +407,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
                 while self.capture.phase != .idle { try? await Task.sleep(for:.milliseconds(10)) }
             }
             await self.events.drain()
+            await self.visual.waitForQuiescence()
             do {
                 if let sessionID,let oldHelper { try await oldHelper.requestSessionQuiescence(sessionID:sessionID,epoch:1) }
             } catch {
@@ -411,6 +432,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     func failSession() {
         // Keep the same actual owner join/reap barrier as End. A failed source
         // or transport cannot be replaced merely because its output is hidden.
+        visual.retireForHelperChange()
         helperIdentity=UUID();helperFailures.activate(helperIdentity)
         helper?.stop()
         beginRetirement(end:true)
@@ -446,7 +468,21 @@ private actor FixtureRecognizer: ActivityRecognizer {
         if hasSelectedText { selectedText.revoke() }
         selectedTextBundleID=bundleID
     }
-    var canChangeAIMode:Bool { !fixture && !running && !starting && !stopping && profileStorage?.busy != true }
+    private func visualSender(_ transport:HelperTransport)->VisualInputControlSender {
+        {action,update in try await transport.requestVisualInput(action,onUpdate:update)}
+    }
+    var canTestVisualInput:Bool { !fixture && oauth && canStartSession && profileStorage?.busy != true }
+    func beginVisualVerification() {
+        guard canTestVisualInput else{return}
+        do{visual.beginVerification(using:visualSender(try ensureHelper()))}catch{failSession()}
+    }
+    func disableVisualInput(){visual.disable(using:helper.map(visualSender))}
+    private func retireVisualImages() {
+        guard hasContextComposer else{return}
+        contextComposer.retireImageOffer()
+        if imageContextUsed,let binding=currentBinding{retireDependentRequest(binding)}
+    }
+    var canChangeAIMode:Bool { !fixture && canStartSession && profileStorage?.busy != true }
     func setAIEnabled(_ enabled:Bool) async {
         guard canChangeAIMode,enabled != oauth else { return }
         error=nil

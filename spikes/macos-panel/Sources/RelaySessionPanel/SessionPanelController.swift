@@ -62,7 +62,12 @@ public struct SessionPanelSnapshot: Sendable {
             switch d.disposition {
             case "answer":snapshot.status="Talking points"
             case "pending":snapshot.status="Thinking"
-            case "clarify":snapshot.status=d.reason.hasPrefix("task_context_") ? "Clarify the current problem and requirements":"Add confirmed background to answer this question"
+            case "clarify":
+                switch d.reason {
+                case "task_context_unresolved":snapshot.status="Clarify the updated task constraint"
+                case "task_context_overflow":snapshot.status="Summarize the current problem and requirements"
+                default:snapshot.status="Add confirmed background to answer this question"
+                }
             case "abstain":snapshot.status=["no_question","blank_question"].contains(d.reason) ? "Listening":d.reason=="inference_disabled" ? "AI requests are off" : "No reliable answer available"
             default:snapshot.status="Answer unavailable"
             }

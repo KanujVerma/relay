@@ -14,6 +14,7 @@ import re
 from threading import Lock
 from typing import Literal
 
+from .correction_grammar import CORRECTION_PREFIX as _CORRECTION
 from .question_turns import (
     MIN_QUESTION_CONFIDENCE,
     MAX_EVENT_CHARS,
@@ -39,10 +40,6 @@ _DIRECT_QUESTION = re.compile(
     r"is|are|was|were|have you|has|should|would|"
     r"tell me|explain|describe|compare|write|show|"
     r"walk me through|implement|calculate|outline|give me)\b", re.I
-)
-_CORRECTION = re.compile(
-    r"^(?:no\b|actually\b|instead\b|sorry[, ]|i meant\b|"
-    r"make that\b|rather\b|let me rephrase\b)[\s,:-]*", re.I
 )
 _FOLLOWUP = re.compile(
     r"^(?:and\s+what\s+about|what\s+about|and\s+how\s+about|"

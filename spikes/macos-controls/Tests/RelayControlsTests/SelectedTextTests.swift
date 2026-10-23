@@ -109,6 +109,42 @@ import Testing
         environment.provider.trusted = true
         #expect(!environment.service.validateCurrent(snapshot))
     }
+
+    @Test func cancelledCallerCannotPublishSuccessfulLateSelection() async throws {
+        let environment = SelectionEnvironment()
+        try environment.enable()
+        environment.provider.waitForRelease = true
+        let caller = Task { try await environment.service.read(request: environment.request) }
+        await environment.provider.waitUntilStarted()
+        caller.cancel()
+        environment.provider.release?()
+        switch await caller.result {
+        case .success(let snapshot):
+            #expect(!environment.service.validateCurrent(snapshot))
+            Issue.record("A cancelled caller must not receive a selection snapshot")
+        case .failure(let error):
+            #expect(error as? SelectionError == .stale)
+        }
+        #expect(environment.provider.cancelled)
+        #expect(!environment.service.isReading)
+        // All source/request fences remained current; a fresh caller can read.
+        environment.provider.waitForRelease = false
+        let current = try await environment.service.read(request: environment.request)
+        #expect(environment.service.validateCurrent(current))
+    }
+
+    @Test func preCancelledReadDoesNotReadOrRetireCurrentSnapshot() async throws {
+        let environment = SelectionEnvironment()
+        try environment.enable()
+        let current = try await environment.service.read(request: environment.request)
+        let caller = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await environment.service.read(request: environment.request)
+        }
+        await #expect(throws: SelectionError.stale) { try await caller.value }
+        #expect(environment.provider.reads == 1)
+        #expect(environment.service.validateCurrent(current))
+    }
 }
 
 @MainActor final class SelectionEnvironment {

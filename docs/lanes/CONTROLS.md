@@ -2,7 +2,7 @@
 
 Issue #65. Branch `feature/app-controls-2026-10-23`, frozen foundation `a8f8359354f44e11be39e22a55422b2cef9f6c91`.
 
-Date: 2026-10-23. Verified code head: `14660e7a2a086058466bd073d24c282ad14d93c8`. [Draft PR #70](https://github.com/KanujVerma/relay/pull/70) targets the frozen foundation. This lane is ready for independent controller review and assembly.
+Date: 2026-10-23. Original delivery code head: `14660e7a2a086058466bd073d24c282ad14d93c8`; reviewed delivery head: `006b7bdc75ac6376e9711c3733a8094fa25f9b02`. [Draft PR #70](https://github.com/KanujVerma/relay/pull/70) targets the frozen foundation. The scoped cancellation correction below awaits re-review before assembly.
 
 Toolchain minimum: the actual pinned upstream KeyboardShortcuts 3.1.0 `Package.swift` declares **Swift tools 6.2**, macOS 10.15 and no external dependencies. RelayControls requires tools 6.2/macOS 15. Swift 6.1 cannot resolve this manifest; hosted native checks must select a toolchain providing Swift 6.2 or newer. Local verification used Apple Swift 6.4 with the macOS 27 SDK and a macOS 15 deployment target.
 
@@ -31,6 +31,16 @@ The host issues the native request before reading, validates immediately before 
 Pending interactive acceptance: real keyboard delivery/menu conflicts and recorder layout, AX grant/denial/revocation/editor support, window behavior across real displays, and the assembled app's actual pause/resume/end effects. Upstream tests were inspected, not run: they deliberately register keys and alter standard UserDefaults. They are not part of Relay's synthetic default suite.
 
 Next action: controller reviews/integrates the draft lane PR and connects these ports to the actual session/presentation lease owner. Do not merge to main without owner approval. The root owns the global HANDOFF and shared contracts; this lane changed neither.
+
+## Scoped review correction: caller cancellation
+
+Independent review of `006b7bd` found one P2: canceling a caller canceled the provider task, but a provider returning successfully could still cause the canceled caller to receive a valid snapshot. The existing invalidation test masked this because it independently retired observation identity.
+
+The correction checks caller cancellation before starting work and immediately after awaiting the provider. Canceled reads map to the existing `SelectionError.stale`; deferred cleanup retires only that read's matching observation. A pre-canceled invocation does not start a provider read or retire another current snapshot. No public type, method signature, snapshot field or host integration contract changed.
+
+Two focused regressions failed against `006b7bd`, then passed after the correction: direct caller cancellation with a successful late provider and otherwise unchanged source/request fences; and a pre-canceled call that must preserve a current snapshot. `swift test --package-path spikes/macos-controls` passed **18 tests in 3 suites** after the fix. `git diff --check` passed. No AX calls/prompts, real global registrations, private selection, capture or model calls ran.
+
+This correction is limited to `SelectedTextService.swift`, its existing test file and this lane handoff. Next action: re-review only the delta from `006b7bd` to the correction commit, then provide that approved immutable head to the app-composition lane. The root owns the frozen delta report outside Git in the coordination workspace.
 
 ## In progress and at risk
 

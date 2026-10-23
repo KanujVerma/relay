@@ -140,6 +140,7 @@ public enum SelectionError: Error, Equatable, LocalizedError, Sendable {
     }
 
     private func readCurrent(request: SelectionRequestIdentity) async throws -> SelectedTextSnapshot {
+        try Task.checkCancellation()
         guard isEnabled else { throw SelectionError.disabled }
         guard !isReading else { throw SelectionError.busy }
         guard provider.isTrusted(prompt: false) else { invalidate(); throw SelectionError.permissionRequired }
@@ -152,12 +153,17 @@ public enum SelectionError: Error, Equatable, LocalizedError, Sendable {
         let identity = UUID()
         observationID = identity
         isReading = true
-        defer { isReading = false; readTask = nil }
+        defer {
+            if Task.isCancelled, observationID == identity { observationID = nil }
+            isReading = false
+            readTask = nil
+        }
         let task = Task { try await provider.selectedText(from: application) }
         readTask = task
         let observation = try await withTaskCancellationHandler(operation: {
             try await task.value
         }, onCancel: { task.cancel() })
+        try Task.checkCancellation()
         guard isEnabled, generation == consentGeneration, observationID == identity,
               provider.isTrusted(prompt: false), frontmostApplication() == application,
               currentRequest() == request, observation.application == application else { throw SelectionError.stale }

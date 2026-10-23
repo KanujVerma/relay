@@ -96,6 +96,56 @@ actor SuspendedFinishEou: LocalEouRecognizer {
     func reset() async {}
 }
 
+/// Suspends only an explicitly armed decoder reset.
+actor SuspendedResetEou: LocalEouRecognizer {
+    private var suspendNextReset = false
+    private var resetsToSkip = 0
+    private var pending: CheckedContinuation<Void, Never>?
+    private var resetObserver: CheckedContinuation<Void, Never>?
+    private let reachesEou: Bool
+    private let throwOnAccept: Bool
+    private let throwOnFinish: Bool
+
+    init(reachesEou: Bool = true, throwOnAccept: Bool = false, throwOnFinish: Bool = false) {
+        self.reachesEou = reachesEou
+        self.throwOnAccept = throwOnAccept
+        self.throwOnFinish = throwOnFinish
+    }
+    func accept(_ samples: [Float]) async throws -> Bool {
+        if throwOnAccept { throw NSError(domain: "fixture", code: 12) }
+        return reachesEou
+    }
+    func finish() async throws -> String {
+        if throwOnFinish { throw NSError(domain: "fixture", code: 13) }
+        return "prior finalized question"
+    }
+    func armReset(skipping: Int = 0) {
+        suspendNextReset = true
+        resetsToSkip = skipping
+    }
+    func waitForReset() async {
+        guard pending == nil else { return }
+        await withCheckedContinuation { resetObserver = $0 }
+    }
+    func release() {
+        pending?.resume()
+        pending = nil
+    }
+    func reset() async {
+        guard suspendNextReset else { return }
+        if resetsToSkip > 0 {
+            resetsToSkip -= 1
+            return
+        }
+        suspendNextReset = false
+        await withCheckedContinuation {
+            pending = $0
+            resetObserver?.resume()
+            resetObserver = nil
+        }
+    }
+}
+
 final class LocalASRWorkerTests: XCTestCase {
     /// Construct the actual owned capture packets using the merged SPSC ring.
     /// This exercises source/sequence/ownership without exposing an internal
@@ -459,6 +509,93 @@ final class LocalASRWorkerTests: XCTestCase {
         XCTAssertTrue(stale.isEmpty)
         let finishes = await backend.finishCount
         XCTAssertEqual(finishes, 0)
+    }
+
+    func testStopDuringTransitionResetEmitsOneNontextInvalidation() async throws {
+        for transition in ["generation", "sequence", "sampleRate"] {
+            let backend = SuspendedResetEou()
+            let ring = try OwnedPCMQueue(source: .remoteAudio)
+            let worker = PCMTranscriptWorker(
+                source: .remoteAudio, authorizedCapture: true, backend: backend
+            )
+            _ = await worker.ingest(try packet(ring))
+            _ = await worker.ingest(try packet(ring))
+            let prior = await worker.ingest(try packet(ring))
+            XCTAssertEqual(prior.map(\.status), [.final], transition)
+            if transition == "sequence" {
+                _ = try packet(ring) // A dropped source callback creates a gap.
+            }
+            let nextGeneration: UInt64 = transition == "generation" ? 2 : 1
+            let next = try packet(
+                ring, sampleRate: transition == "sampleRate" ? 24_000 : 16_000,
+                generation: nextGeneration
+            )
+            await backend.armReset()
+            let inFlight = Task { await worker.ingest(next) }
+            await backend.waitForReset()
+            let stopped = await worker.finishAtStop()
+            XCTAssertEqual(stopped?.status, .unavailable, transition)
+            XCTAssertEqual(stopped?.source, .remoteAudio, transition)
+            XCTAssertEqual(stopped?.streamGeneration, nextGeneration, transition)
+            XCTAssertNil(stopped?.text, transition)
+            // Reset discarded the previous generation's source timestamps.
+            XCTAssertNil(stopped?.startHostTime, transition)
+            XCTAssertNil(stopped?.endHostTime, transition)
+            let repeated = await worker.finishAtStop()
+            XCTAssertNil(repeated, transition)
+            await backend.release()
+            let stale = await inFlight.value
+            XCTAssertTrue(stale.isEmpty, transition)
+            let afterReset = await worker.finishAtStop()
+            XCTAssertNil(afterReset, transition)
+        }
+    }
+
+    func testStopDuringPendingFailureResetEmitsOnlyOneTerminal() async throws {
+        for failure in ["utteranceLimit", "accept", "finish", "conversion", "conversionAfterTransition"] {
+            let backend = SuspendedResetEou(
+                reachesEou: failure != "utteranceLimit",
+                throwOnAccept: failure == "accept",
+                throwOnFinish: failure == "finish"
+            )
+            let ring = try OwnedPCMQueue(source: .remoteAudio)
+            let worker = PCMTranscriptWorker(
+                source: .remoteAudio, authorizedCapture: true, backend: backend
+            )
+            // 156 * 2048 / 16000 = 19.968 seconds, just below the cap.
+            let primingPackets = failure == "utteranceLimit" ? 156 : 2
+            for _ in 0..<primingPackets {
+                let output = await worker.ingest(try packet(ring, generation: 7))
+                XCTAssertTrue(output.isEmpty, failure)
+            }
+            let transitions = failure == "conversionAfterTransition"
+            let failingGeneration: UInt64 = transitions ? 8 : 7
+            let failing = try packet(
+                ring, generation: failingGeneration,
+                value: failure.hasPrefix("conversion") ? .nan : 0.125
+            )
+            // Let the generation transition reset complete, then suspend the
+            // conversion failure's reset within that same ingest operation.
+            await backend.armReset(skipping: transitions ? 1 : 0)
+            let inFlight = Task { await worker.ingest(failing) }
+            await backend.waitForReset()
+            let stopped = await worker.finishAtStop()
+            let repeated = await worker.finishAtStop()
+            let duringReset = await worker.ingest(try packet(ring, generation: 9))
+            XCTAssertNil(repeated, failure)
+            XCTAssertTrue(duringReset.isEmpty, failure)
+            await backend.release()
+            let original = await inFlight.value
+            let all = original + [stopped, repeated].compactMap { $0 }
+            XCTAssertEqual(all.count, 1, failure)
+            XCTAssertEqual(all.map(\.status), [.unavailable], failure)
+            XCTAssertTrue(all.allSatisfy { $0.source == .remoteAudio }, failure)
+            XCTAssertTrue(all.allSatisfy { $0.streamGeneration == failingGeneration }, failure)
+            XCTAssertTrue(all.allSatisfy { $0.segmentID == 0 && $0.revision == 1 }, failure)
+            XCTAssertTrue(all.allSatisfy { $0.text == nil }, failure)
+            let afterReset = await worker.finishAtStop()
+            XCTAssertNil(afterReset, failure)
+        }
     }
 
     func testCancellationWhileBackendAwaitingNeverPublishesStaleText() async throws {

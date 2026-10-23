@@ -44,6 +44,12 @@ Implemented in [streaming_qa.py](../relay_spike/streaming_qa.py), with offline-o
 6. The provisional development `ModelPolicy` selects Luna by default and permits Sol explicitly; QA can recommend Sol for human-triggered review but **never invokes** a second model. No automatic API usage occurs.
 7. No production first-useful-answer metric or general correctness claim exists yet. `first_scannable_candidate_ms` is a weak display-format proxy; `first_useful_verified_ms` remains null. The native UI, validated attribution classifier and real-audio end-to-end timing are separate later slices.
 
+## Offline transcript/question turn coordinator, Slice 03B-A
+- [question_turns.py](../relay_spike/question_turns.py) reuses the **same** ActiveTurns instance as SSE/QA. Only complete remote-source events labeled tentative question/correction/follow-up may become routable TurnTokens; mic/unknown, statement/unknown intent and partial transcripts never trigger inference. A channel label is **not speaker diarization**.
+- Corrections, partial interruptions and follow-ups invalidate the old turn; corrected text remains verbatim authoritative with earlier words explicitly labeled superseded/context-only. Source text is never blindly used as an application directive.
+- Duplicate segment/revision fingerprints, late finalizations of old partials, revisions of superseded segments, old stream generations, overlapping remote question timestamps, unclassified remote speech, retractions and discontinuities are bounded/fail-closed. Unknown semantics and remote speaker identity are not silently inferred. An explicit stop blocks all generations until the native host explicitly resumes; a Python resume call is not proof of OS recording permission.
+- Verbatim multi-part splitting is only a heuristic suggestion. E11/D12 and E04/D07 synthetic tests check cancellation, corrected SQL metrics/year and source-span parts. This does **not** constitute a natural-language question classifier, a real FluidAudio adapter or an actual end-to-end interview session. See [docs/QUESTION_TURNS.md](QUESTION_TURNS.md).
+
 ## Required edge cases
 - Overlapping speech, microphone echo, incorrect speaker separation: state uncertainty.
 - Partial utterance interrupted and restated: cancel stale question/answer.

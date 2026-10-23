@@ -74,6 +74,10 @@ public actor PCMTranscriptWorker {
     // Swift actors can accept new calls while CoreML finish()/reset() awaits.
     // Those later packets must never be appended to the ending utterance.
     private var processingInProgress = false
+    // A transition reset clears generation before it creates a terminal.
+    // Keep that identity only across this reset; failure/limit resets
+    // already own a terminal that the original operation will return.
+    private var transitionGeneration: UInt64?
     private var processingInterrupted = false
 
     /// 'authorizedCapture' must come from a real host consent event in the
@@ -140,7 +144,9 @@ public actor PCMTranscriptWorker {
             // Invalidate incomplete prior audio, but reuse this valid first
             // packet of the new segment instead of discarding it as well.
             let priorEpoch = invalidationEpoch
+            transitionGeneration = frame.streamGeneration
             await reset()
+            transitionGeneration = nil
             guard !cancelled, !processingInterrupted,
                   invalidationEpoch == priorEpoch &+ 1 else {
                 // reset() is async; a concurrent stop/turn correction could
@@ -224,7 +230,7 @@ public actor PCMTranscriptWorker {
             let firstInterruption = !processingInterrupted
             processingInterrupted = true
             guard firstInterruption, authorized, !cancelled,
-                  let generation else { return nil }
+                  let generation = generation ?? transitionGeneration else { return nil }
             return event(.unavailable, generation: generation)
         }
         guard authorized, !cancelled, !resetInProgress,

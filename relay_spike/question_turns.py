@@ -233,6 +233,15 @@ class QuestionTurnMachine:
         # hundreds of non-question statements. Otherwise a higher-revision
         # partial could lose its final status and escape reopening quarantine.
         protected = set(self._reopened)
+        # Pending/abandoned text partials have no trustworthy final source
+        # order yet. Keep their ORIGINAL start metadata even after >128 other
+        # segments so a timestamp-revised old partial cannot re-enter as a
+        # newly accepted question. Capacity remains bounded; if the entire
+        # ledger becomes protected, existing overflow logic blocks routing.
+        protected.update(
+            sid for sid, seen in self._seen.items()
+            if seen.status == "partial"
+        )
         if self._active is not None:
             protected.update(self._active.dependency_segment_ids)
         if self._leading_partial is not None:
@@ -298,6 +307,13 @@ class QuestionTurnMachine:
                 self._blocked_generation = event.stream_generation
                 return TurnDecision("cancelled", "asr_discontinuity")
 
+            # Once a finalized segment was reopened, all subsequent
+            # partials for that same ID remain quarantined. Letting a later
+            # partial re-enter the normal leader path could cancel an
+            # unrelated newer question while its old final is not trusted.
+            if (event.status == "partial"
+                    and event.segment_id in self._reopened):
+                return TurnDecision("ignored", "reopened_segment_quarantined")
             # An unfinished correction whose original support was retracted
             # cannot be promoted by a later final of that pending segment.
             if self._invalidated_pending_id == event.segment_id:

@@ -144,16 +144,15 @@ extension ScreenContextCoordinatorTests {
         for _ in 0..<20 { await Task.yield() }
         XCTAssertNil(coordinator.snapshot)
     }
-    func testFinalValidationRecapturesAndRejectsChangedPixels() async throws {
+    func testFinalValidationIgnoresPixelOnlyChangeAndPreservesCaptureIdentity() async throws {
         let frames = FakeFrames(); let coordinator = configured(frames)
         guard case .captured(let original) = await coordinator.capture(for: requestA) else { return XCTFail() }
         let unchanged = await coordinator.validateCurrent(original, for: requestA)
         XCTAssertTrue(unchanged)
         frames.color = 1
         let changed = await coordinator.validateCurrent(original, for: requestA)
-        XCTAssertFalse(changed)
-        XCTAssertNil(coordinator.snapshot)
-        XCTAssertNil(coordinator.preview)
+        XCTAssertTrue(changed)
+        XCTAssertEqual(coordinator.snapshot, original)
     }
     func testDeniedOrClosedSourceNeverFallsBack() async {
         for failure in [ScreenFailure.denied, .closed] {
@@ -174,5 +173,52 @@ extension ScreenContextCoordinatorTests {
 struct LargeOCR: ScreenTextRecognizer {
     func recognize(_ image: CGImage) async throws -> [OCRLine] {
         [OCRLine(text: String(repeating: "x", count: 8193), bounds: .zero, confidence: 1)]
+    }
+}
+
+
+extension ScreenContextCoordinatorTests {
+    func testFinalValidationRejectsChangedOCRWithinSameWindow() async {
+        let recognizer = MutableOCR()
+        let coordinator = configured(recognizer: recognizer)
+        guard case .captured(let original) = await coordinator.capture(for: requestA) else { return XCTFail() }
+        recognizer.change()
+        let current = await coordinator.validateCurrent(original, for: requestA)
+        XCTAssertFalse(current)
+        XCTAssertNil(coordinator.snapshot)
+    }
+}
+final class MutableOCR: ScreenTextRecognizer, @unchecked Sendable {
+    private let lock = NSLock()
+    private var changed = false
+    func change() { lock.withLock { changed = true } }
+    func recognize(_ image: CGImage) async throws -> [OCRLine] {
+        let text = lock.withLock { changed ? "return sorted(items)" : "return len(items)" }
+        return [OCRLine(text: text, bounds: CGRect(x: 0.1, y: 0.2, width: 0.6, height: 0.1), confidence: 0.9)]
+    }
+}
+
+extension ScreenContextCoordinatorTests {
+    func testCallerCancellationRetiresAndKeepsFlightUntilQuiescent() async {
+        let frames = FakeFrames(); frames.holds = true
+        let coordinator = configured(frames)
+        let pending = Task { await coordinator.capture(for: requestA) }
+        await waitForCapture(frames)
+        pending.cancel()
+        let outcome = await pending.value
+        XCTAssertEqual(outcome, .unavailable(.retired))
+        XCTAssertTrue(coordinator.isBusy)
+        frames.release()
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertFalse(coordinator.isBusy)
+        XCTAssertNil(coordinator.snapshot)
+    }
+    func testSourceClosureClearsExistingObservation() async {
+        let coordinator = configured()
+        _ = await coordinator.capture(for: requestA)
+        coordinator.sourceUnavailable(.closed)
+        XCTAssertNil(coordinator.snapshot)
+        let outcome = await coordinator.capture(for: requestA)
+        XCTAssertEqual(outcome, .unavailable(.noSelection))
     }
 }

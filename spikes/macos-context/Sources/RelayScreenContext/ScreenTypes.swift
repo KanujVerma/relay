@@ -56,7 +56,10 @@ public struct ScreenSnapshot: Sendable, Equatable {
     public let selectionRevision: UInt64
     public let permissionRevision: UInt64
     public let capturedUptimeNanoseconds: UInt64
+    /// Canonical recognized text and quantized line placement, not visual semantics.
     public let contentDigest: String
+    /// Original pixel artifact identity. Never replaces content/source authority.
+    public let imageDigest: String
     public let lines: [OCRLine]
     public var text: String { lines.map(\.text).joined(separator: "\n") }
 }

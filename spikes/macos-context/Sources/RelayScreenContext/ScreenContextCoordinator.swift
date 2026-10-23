@@ -111,19 +111,20 @@ import CryptoKit
                         let frame = try await provider.capture(source: source)
                         try Task.checkCancellation()
                         guard let self, self.fresh(frame.capturedUptimeNanoseconds) else { throw ScreenFailure.retired }
-                        let digest = try Self.digest(frame.image)
+                        let imageDigest = try Self.digest(frame.image)
+                        let lines = try await recognizer.recognize(frame.image)
+                        try Task.checkCancellation()
+                        try Self.validate(lines)
+                        let digest = Self.contentDigest(lines)
                         let result: ScreenSnapshot
                         if let original {
                             guard digest == original.contentDigest else { throw ScreenFailure.retired }
                             result = original
                         } else {
-                            let lines = try await recognizer.recognize(frame.image)
-                            try Task.checkCancellation()
-                            try Self.validate(lines)
                             result = ScreenSnapshot(id: UUID(), request: request, source: source,
                                                     selectionRevision: selection, permissionRevision: permission,
                                                     capturedUptimeNanoseconds: frame.capturedUptimeNanoseconds,
-                                                    contentDigest: digest, lines: lines)
+                                                    contentDigest: digest, imageDigest: imageDigest, lines: lines)
                         }
                         image = frame.image
                         outcome = .captured(result)
@@ -186,6 +187,18 @@ import CryptoKit
             bytes += line.text.utf8.count + (bytes == 0 ? 0 : 1)
             guard bytes <= 8192 else { throw ScreenFailure.oversized }
         }
+    }
+
+    static func contentDigest(_ lines: [OCRLine]) -> String {
+        // Confidence changes do not change the observation. Quantize normalized bounds to 1/1000.
+        var hash = SHA256()
+        hash.update(data: Data("relay-ocr-v1\n".utf8))
+        for line in lines {
+            let box = [line.bounds.minX, line.bounds.minY, line.bounds.width, line.bounds.height]
+                .map { String(Int(($0 * 1000).rounded())) }.joined(separator: ",")
+            hash.update(data: Data("\(line.text.utf8.count):\(line.text):\(box)\n".utf8))
+        }
+        return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     static func digest(_ image: CGImage) throws -> String {

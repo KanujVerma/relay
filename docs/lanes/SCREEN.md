@@ -11,3 +11,7 @@ Current source uses pixel digest revalidation; controller requested OCR text/lay
 Next: implement the compiled system picker/screenshot and Vision adapters, then freeze the strict supplemental fixture with controller and answer lane. See `docs/plans/2026-10-23-screen-context.md` and `spikes/macos-context/THIRD_PARTY_NOTICES.md`.
 
 Test command in this sandbox redirects SwiftPM/Clang caches to `/private/tmp/relay-screen-*`, with `swift test --disable-sandbox --package-path spikes/macos-context`. The initial ordinary SwiftPM invocation failed because its global module cache was unwritable; the redirected build/test passed.
+
+## Second verified checkpoint
+
+The actual public Apple system single-window picker/screenshot adapter and SwiftUI enable/selection/source/preview view now compile. Eighteen Swift tests pass, including synthetic local Vision code/problem and diagram-label recognition. Real picker selection/capture was not exercised. Request lifecycle cancellation remains quiescence-aware. Canonical OCR/layout `contentDigest` and separate pixel `imageDigest` now preserve observed text validity without pixel-only starvation; final recheck does not re-stamp capture time or promise live-at-paint invariance. Optional image transfer/provider work is ongoing under the controller's approved conditional image capability scope.

@@ -206,6 +206,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
         root=URL(fileURLWithPath:Self.argument("--repository",arguments) ?? FileManager.default.currentDirectoryPath)
         asrFolder=Self.argument("--asr-models",arguments) ?? ""
         vadFolder=Self.argument("--vad-model",arguments) ?? ""
+        modelLicensesAcknowledged=arguments.contains("--acknowledge-local-model-licenses")
         visual.onRetireImages={ [weak self] in self?.retireVisualImages() }
         visual.onTransportFailure={ [weak self] in self?.failSession() }
         screen.onInvalidation={ [weak self] _ in self?.contextSourceChanged() }
@@ -219,6 +220,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     isolated deinit {
         startTask?.cancel()
+        speechSetup.cancel()
         if let focusObserver { NSWorkspace.shared.notificationCenter.removeObserver(focusObserver) }
         if let windowObserver { NotificationCenter.default.removeObserver(windowObserver) }
         if let helper { helper.stop();Task.detached { await helper.shutdownAndWait() } }
@@ -386,31 +388,59 @@ private actor FixtureRecognizer: ActivityRecognizer {
     func start() async {
         guard canStartSession else { return }
         starting=true;let identity=UUID();startIdentity=identity
-        let task=Task { await self.startOwned() };startTask=task
+        let task=Task { await self.startOwned(identity:identity) };startTask=task
         await task.value
         if startIdentity==identity { startTask=nil }
     }
     func cancelPreparation(){
-        speechSetup.cancel();startTask?.cancel()
-        if starting{beginRetirement(end:false)}
+        guard starting || speechSetup.snapshot.isBusy else{return}
+        beginRetirement(end:false)
+        paused=false;panel.clear(status:"Preparation cancelled")
     }
     func retryPreparation()async{await start()}
-    private func startOwned() async {
-        defer { starting=false }
+    private func ownsStart(_ identity:UUID)->Bool{startIdentity==identity && !Task.isCancelled && !stopping}
+    private func startOwned(identity:UUID) async {
+        defer { if startIdentity==identity { starting=false } }
         guard !running,!stopping else { return };error=nil
+        var captureAttempted=false
         do {
             if !fixture && capture.phase != .idle { error="Waiting for capture to finish stopping.";return }
-            _=try ensureHelper()
-            if fixture { try startFixture();return }
-            guard authorizedConversation,modelLicensesAcknowledged,!asrFolder.isEmpty,!vadFolder.isEmpty else {
-                error="Choose local speech models and confirm this is a permitted conversation before starting.";return
+            if fixture { _=try ensureHelper();try startFixture();return }
+            guard authorizedConversation else {
+                error="Confirm this is a permitted conversation before starting.";return
             }
-            let configuration=NativeCaptureConfiguration(microphoneEnabled:microphoneEnabled,selectedBundleID:selectedBundleID.isEmpty ? nil:selectedBundleID,asrModelRoot:URL(fileURLWithPath:asrFolder),vadCompiledModel:URL(fileURLWithPath:vadFolder),authorizedConversation:authorizedConversation,localModelLicensesAcknowledged:modelLicensesAcknowledged)
+            let microphone=microphoneEnabled,bundle=selectedBundleID
+            guard (microphone || !bundle.isEmpty),(bundle.isEmpty || SelectedAppProcesses.isValidBundleID(bundle)) else {
+                error="Choose microphone audio or a meeting app before starting.";return
+            }
+            let configuration:NativeCaptureConfiguration
+            if !asrFolder.isEmpty || !vadFolder.isEmpty {
+                guard !asrFolder.isEmpty,!vadFolder.isEmpty,modelLicensesAcknowledged else{throw SpeechSetupError.advancedOverrideInvalid}
+                configuration=NativeCaptureConfiguration(microphoneEnabled:microphone,selectedBundleID:bundle.isEmpty ? nil:bundle,asrModelRoot:URL(fileURLWithPath:asrFolder),vadCompiledModel:URL(fileURLWithPath:vadFolder),authorizedConversation:true,localModelLicensesAcknowledged:modelLicensesAcknowledged)
+            }else{
+                let assets=try await speechSetup.prepare()
+                guard ownsStart(identity) else{throw CancellationError()}
+                configuration=NativeCaptureConfiguration(microphoneEnabled:microphone,selectedBundleID:bundle.isEmpty ? nil:bundle,preparedSpeechAssets:assets,authorizedConversation:authorizedConversation)
+            }
+            guard ownsStart(identity) else{throw CancellationError()}
+            guard authorizedConversation,microphoneEnabled==microphone,selectedBundleID==bundle else{
+                error="Audio choices changed during preparation. Check them and start again.";return
+            }
             try configuration.validateLocalModels()
+            _=try ensureHelper();captureAttempted=true
             try await capture.start(configuration:configuration)
+            guard ownsStart(identity) else{throw CancellationError()}
             running=capture.phase == .running;paused=false
-        } catch is CancellationError { panel.clear(status:"Stopped") }
-        catch { failSession() }
+        } catch is CancellationError { if ownsStart(identity){panel.clear(status:"Stopped")} }
+        catch {
+            guard ownsStart(identity) else{return}
+            if captureAttempted || fixture {
+                failSession()
+                self.error="Audio could not start. Check microphone and meeting-app access, then start again."
+            }else{
+                self.error=(error as? SpeechSetupError)?.localizedDescription ?? SpeechSetupError.advancedOverrideInvalid.localizedDescription
+            }
+        }
     }
     private func startFixture() throws {
         let question=fixtureSuite=="coding" ? "Write a Python function that returns the first item or None for an empty list." : fixtureSuite=="case" ? "Case study: design a feature for nurse handoffs. What user needs would you clarify first?":"What is the difference between WHERE and HAVING?"
@@ -424,14 +454,15 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     func ingestFixturePacket(_ packet:SessionAudioPacket){guard fixture else{return};native.ingest(packet)}
     var currentSessionID:UUID? { authority.snapshot()?.captureSessionID ?? forwardedSessionID }
-    var canStartSession:Bool { !running && !starting && !stopping && teardown==nil && !visual.isBusy && visual.status != .busy && (fixture || capture.phase == .idle) }
+    var canStartSession:Bool { !running && !starting && !stopping && teardown==nil && !speechSetup.snapshot.isBusy && !visual.isBusy && visual.status != .busy && (fixture || capture.phase == .idle) }
     var canResume:Bool { paused && canStartSession }
     func beginRetirement(end:Bool) {
         endRequested = endRequested || end
         if end { paused=false }
+        startIdentity=UUID();speechSetup.cancel()
         guard teardown==nil else { disableVisualInput();return }
         let sessionID=forwardedSessionID;let oldHelper=helper
-        startTask?.cancel()
+        let oldStart=startTask;oldStart?.cancel()
         // Real source/ASR admission and native paint retire before any await.
         if fixture { native.beginStop() } else { capture.retireAdmission(reason:.userStop) }
         authority.stop();running=false;paused = !end;stopping=true
@@ -440,6 +471,8 @@ private actor FixtureRecognizer: ActivityRecognizer {
         retireRequest(status:end ? "Stopped":"Paused · recent conversation will reset on resume")
         teardown=Task { [weak self] in
             guard let self else{return}
+            await self.speechSetup.waitForQuiescence()
+            await oldStart?.value
             if self.fixture { await self.native.waitForQuiescence();self.native.finishStop(quiesced:true) }
             else {
                 await self.capture.stop(reason:.userStop)
@@ -464,7 +497,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
                 self.forwarder?.retire();self.forwarder=nil
                 self.endRequested=false;self.paused=false
             }
-            self.stopping=false;self.teardown=nil
+            self.startTask=nil;self.starting=false;self.stopping=false;self.teardown=nil
         }
     }
     func stop() async { beginRetirement(end:true);await teardown?.value }

@@ -11,6 +11,16 @@ private actor SpeechPreparationProbe {
     }
     func release(_ assets:PreparedSpeechAssets){continuation?.resume(returning:assets);continuation=nil}
 }
+private actor SpeechProgressProbe {
+    private var update:(@Sendable(SpeechSetupProgress)->Void)?
+    private var completion:CheckedContinuation<PreparedSpeechAssets,Never>?
+    var entered:Bool{completion != nil}
+    func prepare(_ update:@escaping @Sendable(SpeechSetupProgress)->Void)async->PreparedSpeechAssets{
+        self.update=update;return await withCheckedContinuation{completion=$0}
+    }
+    func report(_ progress:SpeechSetupProgress){update?(progress)}
+    func release(_ assets:PreparedSpeechAssets){completion?.resume(returning:assets);completion=nil}
+}
 
 @MainActor final class SpeechSetupTests:XCTestCase {
     private func waitUntil(_ predicate:()async->Bool)async throws{
@@ -59,5 +69,30 @@ private actor SpeechPreparationProbe {
         }
         XCTAssertThrowsError(try SpeechAssetManifest(id:"synthetic-v1",artifacts:[SpeechAssetArtifact(repository:item.repository,revision:"main",remotePath:item.remotePath,localPath:"safe/file",byteCount:1,sha256:item.sha256)]))
         XCTAssertThrowsError(try SpeechAssetManifest(id:"synthetic-v1",artifacts:[SpeechAssetArtifact(repository:item.repository,revision:item.revision,remotePath:item.remotePath,localPath:"safe/file",byteCount:1,sha256:"bad")]))
+    }
+    func testDelayedProgressCannotRegressValidationOrOverwriteCancelledIntent()async throws{
+        let probe=SpeechProgressProbe(),setup=SpeechSetupCoordinator(prepare:{await probe.prepare($0)})
+        let task=Task{try await setup.prepare()}
+        try await waitUntil{await probe.entered}
+        await probe.report(SpeechSetupProgress(.validating,completedBytes:15,totalBytes:15,sequence:2))
+        try await waitUntil{setup.snapshot.stage == .validating}
+        await probe.report(SpeechSetupProgress(.downloading,completedBytes:3,totalBytes:15,sequence:1))
+        for _ in 0..<5{await Task.yield()}
+        XCTAssertEqual(setup.snapshot.stage,.validating);XCTAssertEqual(setup.snapshot.completedBytes,15)
+        setup.cancel()
+        await probe.report(SpeechSetupProgress(.downloading,completedBytes:12,totalBytes:15,sequence:3))
+        await probe.release(assets)
+        do{_=try await task.value;XCTFail("cancelled progress authorized assets")}catch{}
+        XCTAssertEqual(setup.snapshot.stage,.cancelled)
+    }
+    func testManagedCapturePolicyNeverPretendsToBeUserAcknowledgmentOrRecordingConsent()throws{
+        let prepared=assets
+        let valid=NativeCaptureConfiguration(microphoneEnabled:true,selectedBundleID:nil,preparedSpeechAssets:prepared,authorizedConversation:true)
+        try valid.validate()
+        XCTAssertEqual(valid.asrModelRoot,prepared.asrModelRoot);XCTAssertEqual(valid.vadCompiledModel,prepared.vadCompiledModel)
+        XCTAssertFalse(valid.localModelLicensesAcknowledged,"managed dependency review is not a user attestation")
+        XCTAssertThrowsError(try NativeCaptureConfiguration(microphoneEnabled:true,selectedBundleID:nil,preparedSpeechAssets:prepared,authorizedConversation:false).validate())
+        XCTAssertThrowsError(try NativeCaptureConfiguration(microphoneEnabled:false,selectedBundleID:nil,preparedSpeechAssets:prepared,authorizedConversation:true).validate())
+        XCTAssertThrowsError(try NativeCaptureConfiguration(microphoneEnabled:true,selectedBundleID:nil,asrModelRoot:prepared.asrModelRoot,vadCompiledModel:prepared.vadCompiledModel,authorizedConversation:true,localModelLicensesAcknowledged:false).validate())
     }
 }

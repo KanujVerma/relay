@@ -97,6 +97,7 @@ _ATTRIBUTION = re.compile(
 _CONTRIBUTION_ASSERTION = re.compile(
     r"\b(?!(?:a|an|the|to|not|how|what|why|when|where|which|are|is|was|were|be|been|being|get|gets|have|has)\b)"
     r"[A-Za-z][A-Za-z'’-]*\s+(?:built|worked|implemented|developed|designed|created|deployed|led|managed|contributed|owned|wrote|made|builds|leads|manages|implements|develops|owns|holds)\b"
+    r"|\b(?:built|written|implemented|designed|developed|managed|led)\s+by\s+(?!(?:a|an|the)\b)(?!\w+ing\b)[^\W\d_][\w'’-]*\b"
     r"|\bworks (?:at|for)\b|\bis responsible for\b",re.I
 )
 _HISTORY_REQUEST = re.compile(rf"(?i:\b(?:did|does|has|had|was|were)\s+){_INDIVIDUAL_SUBJECT}\s+(?i:{_HISTORY_ACTION}|do|work|build|lead|make|write|implement|design|develop|manage|contribute)\b")

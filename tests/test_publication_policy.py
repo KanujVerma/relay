@@ -92,6 +92,7 @@ class PublicationPolicyTests(unittest.TestCase):
         self.assertEqual(outcome.state, "reviewed_reference")
         self.assertEqual(outcome.displayed_text, ref.answer)
         self.assertEqual(outcome.reviewed_reference_id, ref.reference_id)
+        self.assertEqual(outcome.reviewed_source_ref, ref.source_ref)
         self.assertEqual(outcome.reason_code, "reviewed_full_question")
         self.assertIsNone(outcome.first_useful_verified_ms)
 
@@ -170,6 +171,7 @@ class PublicationPolicyTests(unittest.TestCase):
         self.assertEqual(candidate.state, "model_suggestion_unverified")
         self.assertIsNone(candidate.displayed_text)
         self.assertIsNone(candidate.reviewed_reference_id)
+        self.assertIsNone(candidate.reviewed_source_ref)
 
     def test_e09_reference_is_insufficient_for_write_code_request(self):
         case = load_cases(("E09",))[0]
@@ -235,6 +237,13 @@ class PublicationPolicyTests(unittest.TestCase):
             PublicationDecision("reviewed_reference", "Model says I built SQL.", "D02-sql-where-having-v1", "reviewed")
         with self.assertRaises(ValueError):
             PublicationDecision("model_suggestion_unverified", "Unsafe text", None, "review")
+        with self.assertRaises(ValueError):
+            PublicationDecision("reviewed_reference", _REFERENCES[0].answer,
+                                _REFERENCES[0].reference_id, "reviewed",
+                                reviewed_source_ref="unsourced")
+        with self.assertRaises(ValueError):
+            PublicationDecision("needs_revision", None, None, "not_trusted",
+                                reviewed_source_ref="unsafe-user-supplied-source")
         with self.assertRaises(ValueError):
             PublicationDecision("unavailable", None, None, "none", first_useful_verified_ms=123)
 

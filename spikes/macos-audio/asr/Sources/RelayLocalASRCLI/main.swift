@@ -89,6 +89,12 @@ struct RelayLocalASRCLI {
               "generation=\(event.streamGeneration) " +
               "segment_id=\(event.segmentID) " +
               "finalized_uptime_ns=\(event.finalizedUptimeNanoseconds)")
+        if event.isBlankEOUTerminal {
+            // Blank EOU is NOT silence. Report a content-free terminal marker,
+            // even when transcript display is explicitly opted in.
+            print("terminal=blank_final final_text_length=0 confidence=unavailable")
+            return
+        }
         if event.status == .final, let text = event.text {
             print("final_text_length=\(text.count) confidence=unavailable")
             if textOptIn {

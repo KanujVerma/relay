@@ -1,6 +1,6 @@
 # Parallel delivery plan
 
-Status 2026-10-23: approved goals, proposed implementation. No new native/session, expanded reviewed-answer or open-ended-answer feature code has been built in this planning effort. [HANDOFF](../HANDOFF.md) owns actual repository status.
+Status 2026-10-23: owner-approved implementation is underway. [BUILD_STATUS](BUILD_STATUS.md) records published lane heads and remaining gates; [BUILD_CONTRACT](BUILD_CONTRACT.md) is the frozen shared implementation contract. [HANDOFF](../HANDOFF.md) owns actual repository status.
 
 ## Approved target
 
@@ -8,7 +8,7 @@ One automatic permitted interview companion: listen throughout the conversation,
 
 ## Three worker slots and ownership
 
-The current environment supports three simultaneous workers plus the controller. Rotate a slot for fixes or independent review rather than creating a fourth concurrent writer. Each lane is one issue/branch/isolated checkout and reviewable PR. Implementation starts only after its concrete design is agreed.
+The current environment supports three simultaneous workers plus the controller. Rotate a slot for fixes or independent review rather than creating a fourth concurrent writer. Each lane is one issue/branch/isolated checkout and reviewable PR. The owner approved the three core features and directed implementation. Runtime changes still require verification and independent review.
 
 | Lane | Runnable end-to-end outcome | Exclusive write scope |
 | --- | --- | --- |
@@ -19,11 +19,11 @@ The current environment supports three simultaneous workers plus the controller.
 | Reviewed reference expansion, rotated slot | Reusable tested SQL/coding examples improve speed/quality inside the same engine | Catalog content and independent executable/labeled evaluation after a core lane frees capacity |
 | Controller | Joined integration and source-of-truth state | Shared schema/golden fixtures, manifest wiring, HANDOFF/ADRs/roadmap and review coordination |
 
-This is the controller's revised recommendation after the owner clarified the full conversational goal. It changes the earlier steady-state split that assigned two slots to separate answer paths while postponing personal context. Both answer paths remain in scope and use the same engine; separate user-visible modes or a fixed question bank are not the product. The earlier dedicated-reference-worker preference can be satisfied by rotating that work into the next free slot rather than displacing the personal-context foundation.
+The owner approved this revised core assignment after clarifying the full conversational goal. It changes the earlier steady-state split that assigned two slots to separate answer paths while postponing personal context. Both answer paths remain in scope and use the same engine; separate user-visible modes or a fixed question bank are not the product. The earlier dedicated-reference-worker preference can be satisfied by rotating that work into the next free slot rather than displacing the personal-context foundation.
 
 Three workers can build against agreed synthetic interfaces in parallel. Real private imports and capture remain gated by their explicit native permission, storage and source-approval implementation; the product requirement does not authorize loading private data into the current synthetic store. A finished worker becomes an independent reviewer. No simultaneous writers to the same shared source file.
 
-## Proposed architecture for discussion
+## Accepted implementation direction
 
 Keep native permission/capture/transcription/window ownership in Swift. Reuse Relay's existing Python question state, OAuth and QA through one local child helper, with bounded framed messages on inherited pipes. No new server or full application framework is needed for this transport. Compare any proposed dependency with the existing implementation before adding it.
 
@@ -69,3 +69,7 @@ Deferred breadth: bulk/new connectors, automatic biography promotion, a complete
 ## Evidence and continuation
 
 Use [UPSTREAM_REUSE](research/UPSTREAM_REUSE.md) for research evidence and [SLICES](SLICES.md) for the broader roadmap. Each slice must record exact base/head, scoped files, commands/results/skips, independent findings, implementation status and one next action. Keep a single canonical contract per shared interface; link to it instead of copying incompatible definitions into every lane document.
+
+## Additional owner requests
+
+The live flow must also support coding with an engineer (clarify, explain an approach, solve, discuss improvements) and feature case studies (users, requirements, behavior, trade-offs). Optional selected screen context is issue #64; shortcuts/app controls are issue #65; separate REA investigation is issue #66. [Cluely research](research/CLUELY_LESSONS.md) records evidence and limits. These additions use separate workers as the three available runtime slots free; current slot limits are an orchestration constraint, not a product architecture choice.

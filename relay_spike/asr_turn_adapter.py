@@ -309,6 +309,17 @@ class SyntheticEOUBridge:
                 event.stream_generation,
                 self._retired_generation if self._retired_generation is not None else -1,
             )
+            earlier_blank = self._blank_finals.get(
+                (event.stream_generation, event.segment_id)
+            )
+            if (event.stage == "final" and earlier_blank is not None
+                    and (bool(event.text.strip()) or
+                         (event.revision, event.start_ms, event.end_ms)
+                         != earlier_blank)):
+                # Quarantine blocks routing, but does not turn contradictory
+                # terminal evidence into an ordinary ignored replay. Keep the
+                # review signal without restarting or retaining turn context.
+                return result("needs_review", "final_conflicts_with_blank_eou")
             return result("ignored", "stopped_until_explicit_resume")
         if (self._retired_generation is not None
                 and event.stream_generation <= self._retired_generation):

@@ -990,8 +990,27 @@ class EOUAdapterTests(unittest.TestCase):
             context=AUTHORIZED,
         )
         self.assertEqual(later_revision.disposition, "needs_review")
+        self.assertEqual(later_revision.reason, "final_conflicts_with_blank_eou")
         self.assertIsNone(later_revision.token)
         self.assertIsNone(self.machine.current())
+        self.assertTrue(self.machine._stopped)
+        self.assertIsNone(self.machine._interrupted)
+        self.assertIsNone(self.machine._leading_partial)
+        blocked = self.bridge.ingest(final(
+            "independent", "Explain a hash table.", generation=2,
+            start_ms=600, end_ms=800,
+        ), context=AUTHORIZED)
+        self.assertEqual(blocked.disposition, "ignored")
+        self.assertEqual(blocked.reason, "stopped_until_explicit_resume")
+        self.bridge.resume_after_host_authorization(AUTHORIZED)
+        replay = self.bridge.ingest(replace(blank, stream_generation=2),
+                                    context=AUTHORIZED)
+        self.assertEqual(replay.reason, "generation_retired_after_stop")
+        fresh = self.bridge.ingest(final(
+            "fresh", "Explain a hash table.", generation=3,
+            start_ms=900, end_ms=1100,
+        ), context=AUTHORIZED)
+        self.assertEqual(fresh.disposition, "ready")
 
     def test_blank_final_does_not_transfer_unrecognized_correction_context(self):
         original = self.bridge.ingest(final(

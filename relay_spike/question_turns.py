@@ -210,6 +210,16 @@ class QuestionTurnMachine:
                 return None
             return self._active
 
+    def begin_explicit_request(self, request_id: str) -> TurnToken | None:
+        """Issue a user token without fabricating a transcript or audio watermark."""
+        if not isinstance(request_id,str) or not request_id.strip() or len(request_id)>64:
+            raise ValueError('Invalid explicit request identity.')
+        with self._lock:
+            if self._stopped:return None
+            self._active=None;self._interrupted=None;self._leading_partial=None
+            self._invalidated_pending_id=None;self._reopened.clear();self._onset_spans.clear()
+            return self.turns.activate('user-request:'+request_id,1)
+
     def cancel(self) -> None:
         """Explicit user stop/permission loss. Only explicit resume can reopen."""
         with self._lock:

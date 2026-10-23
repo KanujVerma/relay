@@ -30,3 +30,5 @@ Current accepted heads, hosted checks and remaining integration gates live in [B
 
 - [Native UI own-delta review](review-cluely-ui-a100cd9.md): owna100cd9 slice accepted, conditional on its automatic-speech dependency correction/re-review. Root10 independent actual/presentation action tests pass. Real visible UI acceptance remains open on the locked Mac.
 - [Automatic speech original review](review-automatic-fbceb0c.md): one P2 obsolete-waiter cancellation can cancel a new prepare operation. Exact-source10/10 reproduction and positive control are preserved beside the report. All21 public asset hashes independently revalidated without download/model load. The [narrow correction re-review](review-automatic-5aa65cb-rereview.md) accepts5aa65cb: original unchanged probe and positive control remain checking10/10 each, six affected coordinator tests pass. The correction is assembled asafa1ac3; originalfbceb0c alone remains unaccepted.
+
+- [Runtime Model hook review](review-product-runtime-hook-4d557a8.md): exact4d557a8 accepted, source-only independent review. Root26 affected native +3Python entry tests pass; full frozen/bundled runtime acceptance is separate.

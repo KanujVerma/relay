@@ -31,6 +31,16 @@ private actor RetirementOCR:ScreenTextRecognizer {
 @MainActor final class StagedVisualRetirementTests:XCTestCase {
     private enum Action:CaseIterable{case complete,onset,source,pause,end,disableThenOnset,closedTransport}
     private var root:URL{URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()}
+    private func python()throws->String {
+        let environment=ProcessInfo.processInfo.environment
+        let paths:[String]
+        if let explicit=environment["RELAY_TEST_PYTHON"],!explicit.isEmpty{paths=[explicit]}
+        else{paths=(environment["PATH"] ?? "").split(separator:":").map{URL(fileURLWithPath:String($0)).appendingPathComponent("python3").path}}
+        guard let selected=paths.first(where:{$0.hasPrefix("/") && FileManager.default.isExecutableFile(atPath:$0)})
+        else{throw NSError(domain:"RelayVisualTestEnvironment",code:1,userInfo:[NSLocalizedDescriptionKey:"Set RELAY_TEST_PYTHON or put Python 3 on PATH."])}
+        return selected
+    }
+    private func shellQuote(_ value:String)->String{"'"+value.replacingOccurrences(of:"'",with:"'\\''")+"'"}
     private func waitUntil(_ predicate:()->Bool)async throws {
         for _ in 0..<2000{if predicate(){return};try await Task.sleep(for:.milliseconds(2))}
         throw NSError(domain:"Synthetic visual callback timed out",code:1)
@@ -54,13 +64,10 @@ private actor RetirementOCR:ScreenTextRecognizer {
         defer{try? FileManager.default.removeItem(at:directory)}
         let log=directory.appendingPathComponent("post-types.jsonl"),launcher=directory.appendingPathComponent("synthetic-helper")
         let fixture=root.appendingPathComponent("tests/support/visual_backend_helper.py")
-        let localInterpreter="/private/tmp/relay-answers-venv/bin/python"
-        let interpreter=FileManager.default.isExecutableFile(atPath:localInterpreter) ? localInterpreter:"/usr/bin/env python3"
+        let interpreter=try python()
         let script="""
-        #!\(interpreter)
-        import runpy,sys
-        sys.argv=['\(fixture.path)','--synthetic-visual-test','--log','\(log.path)']+sys.argv[1:]
-        runpy.run_path('\(fixture.path)',run_name='__main__')
+        #!/bin/sh
+        exec \(shellQuote(interpreter)) \(shellQuote(fixture.path)) --synthetic-visual-test --log \(shellQuote(log.path)) "$@"
         """
         try Data(script.utf8).write(to:launcher);try FileManager.default.setAttributes([.posixPermissions:0o700],ofItemAtPath:launcher.path)
         let screen=ScreenContextCoordinator(provider:RetirementPixels(),recognizer:RetirementOCR())

@@ -90,6 +90,11 @@ final class SourcePipeline: @unchecked Sendable {
                   [16_000, 24_000, 44_100, 48_000].contains(packet.originalSampleRate) else {
                 reason = .captureError; active = false; return false
             }
+            if previous == nil, packet.sequence != 1 {
+                // Every explicit session owns fresh capture rings. A higher
+                // first sequence proves initial PCM was lost before admission.
+                reason = .sequenceGap; active = false; return false
+            }
             if let prior = previous {
                 if packet.streamGeneration < prior.streamGeneration { return false }
                 if packet.streamGeneration != prior.streamGeneration || packet.originalSampleRate != prior.originalSampleRate {

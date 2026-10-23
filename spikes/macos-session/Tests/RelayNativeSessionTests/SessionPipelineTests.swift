@@ -289,3 +289,30 @@ extension SessionPipelineTests {
         XCTAssertTrue(cancellation.failed)
     }
 }
+
+extension SessionPipelineTests {
+    func testFirstSourcePacketCannotHideAnInitialSequenceGap() throws {
+        let probe = EventProbe()
+        let observing = NativeSessionController(onEvent: probe.append)
+        try observing.start(selectedBundleID: "com.example.meeting", microphoneEnabled: false,
+            components: [2: SourceComponents(vad: ScriptVad([:]), recognizer: RecordingRecognizer())])
+        let prior = observing.authority.snapshot()
+        observing.ingest(packet(sequence: 3))
+        XCTAssertEqual(probe.events.last?.kind, .discontinuity)
+        XCTAssertEqual(probe.events.last?.payload["reasonCode"], .string("sequence_gap"))
+        XCTAssertNotEqual(observing.authority.snapshot(), prior)
+        observing.stop()
+    }
+    func testSourceRateChangeRetiresProvenanceBeforeVAD() throws {
+        let probe = EventProbe()
+        let observing = NativeSessionController(onEvent: probe.append)
+        try observing.start(selectedBundleID: "com.example.meeting", microphoneEnabled: false,
+            components: [2: SourceComponents(vad: ScriptVad([:]), recognizer: RecordingRecognizer())])
+        observing.ingest(packet(sequence: 1))
+        observing.ingest(SessionAudioPacket(source: .remoteAudio, streamGeneration: 1, sequence: 2,
+            hostTime: mach_absolute_time(), samples: Array(repeating: 0.1, count: 512), originalSampleRate: 48_000))
+        XCTAssertEqual(probe.events.last?.kind, .discontinuity)
+        XCTAssertEqual(probe.events.last?.payload["reasonCode"], .string("device_changed"))
+        observing.stop()
+    }
+}

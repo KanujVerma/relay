@@ -97,8 +97,9 @@ struct SpeechSetupProgress:Sendable {
             }
             owned=Operation(id:id,task:task);operation=owned
         }
+        let cancellationID=owned.id
         do {
-            let assets=try await withTaskCancellationHandler{try await owned.task.value}onCancel:{Task{@MainActor [weak self] in self?.cancel()}}
+            let assets=try await withTaskCancellationHandler{try await owned.task.value}onCancel:{Task{@MainActor [weak self] in self?.cancel(operationID:cancellationID)}}
             guard generation==owned.id,!owned.task.isCancelled,!Task.isCancelled else{throw CancellationError()}
             if operation?.id==owned.id {
                 operation=nil
@@ -120,7 +121,10 @@ struct SpeechSetupProgress:Sendable {
         }
     }
     public func cancel(){
-        guard let operation else{return}
+        guard let operation else{return};cancel(operationID:operation.id)
+    }
+    private func cancel(operationID:UUID){
+        guard let operation,operation.id==operationID else{return}
         generation=UUID();operation.task.cancel()
         snapshot=SpeechSetupSnapshot(stage:.cancelled,userMessage:"Finishing cancelled speech preparation…",recovery:.retry,isBusy:true)
     }

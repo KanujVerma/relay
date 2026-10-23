@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import XCTest
 @testable import RelaySessionCapture
 
@@ -94,5 +95,37 @@ private actor SpeechProgressProbe {
         XCTAssertThrowsError(try NativeCaptureConfiguration(microphoneEnabled:true,selectedBundleID:nil,preparedSpeechAssets:prepared,authorizedConversation:false).validate())
         XCTAssertThrowsError(try NativeCaptureConfiguration(microphoneEnabled:false,selectedBundleID:nil,preparedSpeechAssets:prepared,authorizedConversation:true).validate())
         XCTAssertThrowsError(try NativeCaptureConfiguration(microphoneEnabled:true,selectedBundleID:nil,asrModelRoot:prepared.asrModelRoot,vadCompiledModel:prepared.vadCompiledModel,authorizedConversation:true,localModelLicensesAcknowledged:false).validate())
+    }
+    func testCancelledObsoleteCoalescedWaiterCannotCancelReplacementPreparation()async throws{
+        for _ in 0..<3 {
+            let probe=SpeechPreparationProbe(),setup=SpeechSetupCoordinator(prepare:{_ in await probe.prepare()})
+            var oldWaiter:Task<PreparedSpeechAssets,any Error>?
+            var replacement:Task<PreparedSpeechAssets,any Error>?
+            var launched=false
+            let observer=setup.$snapshot.sink{snapshot in
+                if snapshot.stage == .ready && !launched {
+                    launched=true
+                    replacement=Task(priority:.high){try await setup.prepare()}
+                    oldWaiter?.cancel()
+                }
+            }
+            let first=Task(priority:.high){try await setup.prepare()}
+            oldWaiter=Task(priority:.background){try await setup.prepare()}
+            try await waitUntil{await probe.calls==1}
+            for _ in 0..<10{await Task.yield()}
+            await probe.release(assets);_=await first.result
+            try await waitUntil{await probe.calls==2}
+            for _ in 0..<20{await Task.yield()}
+            XCTAssertEqual(setup.snapshot.stage,.checking,"an obsolete waiter's delayed cancellation retired the new operation")
+            XCTAssertTrue(setup.snapshot.isBusy)
+            await probe.release(assets)
+            switch await replacement?.result {
+            case .success(let result):XCTAssertEqual(result,assets)
+            default:XCTFail("replacement must complete after cancellation of only the obsolete waiter")
+            }
+            _=await oldWaiter?.result;await setup.waitForQuiescence()
+            XCTAssertEqual(setup.snapshot.stage,.ready);XCTAssertFalse(setup.snapshot.isBusy)
+            observer.cancel()
+        }
     }
 }

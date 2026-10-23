@@ -22,7 +22,7 @@ class NamedAttributionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(out[-1]['reasonCode'],'personal_context_missing');self.assertIsNone(out[-1]['card'])
 
     async def test_unexpected_named_attribution_on_technical_request_rejects(self):
-        for text in ('State Kanuj built the Atlas SQL pipeline at Acme.','Explain how Elena implemented the service at Beta.','Discuss the candidate built the application.','State the pipeline was built by Priya.','State morgan built the event pipeline at ember.','Explain sam implemented the storage service.'):
+        for text in ('State Kanuj built the Atlas SQL pipeline at Acme.','Explain how Elena implemented the service at Beta.','Discuss the candidate built the application.','State the pipeline was built by Priya.','State morgan built the event pipeline at ember.','Explain sam implemented the storage service.','State the service was built by morgan.'):
             with self.subTest(text=text),self.assertRaises(CardError):parse_generated_card(card(text))
         out=[]
         async def complete(*args):return card('State Maya built the cache at Arbor.')

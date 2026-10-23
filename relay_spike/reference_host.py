@@ -89,6 +89,9 @@ class ReferencePermission:
         self._turns = turns
         self._lock = Lock()
         self._allowed = False
+        # Only ONE issued card may be rendered for the current session.
+        # Identity, not merely a matching canonical string, is required.
+        self._issued: ReferenceCard | None = None
 
     @property
     def turns(self) -> ActiveTurns:
@@ -97,6 +100,8 @@ class ReferencePermission:
     def grant(self) -> None:
         """Trusted host marks the local session authorized; no implicit auth."""
         with self._lock:
+            if not self._allowed:
+                self._issued = None
             self._allowed = True
 
     def authorized(self) -> bool:
@@ -113,16 +118,37 @@ class ReferencePermission:
             raise TypeError("on_clear callback must be callable.")
         with self._lock:
             self._allowed = False
+            self._issued = None
             self._turns.cancel()
             if on_clear is not None:
                 on_clear()
 
     def _commit_if_current(self, token: TurnToken,
+                           issued_card: ReferenceCard,
                            action: Callable[[], None]) -> bool:
         with self._lock:
             if not self._allowed:
                 return False
-            return self._turns._publish_if_current(token, action)
+
+            def issue() -> None:
+                previous = self._issued
+                self._issued = issued_card
+                try:
+                    action()
+                except BaseException:
+                    self._issued = previous
+                    raise
+
+            return self._turns._publish_if_current(token, issue)
+
+    def _paint_if_current(self, card: ReferenceCard,
+                          action: Callable[[], None]) -> bool:
+        with self._lock:
+            # A caller cannot mint a card for an unrelated question or
+            # manufacture a dataclass instance with a forged current token.
+            if not self._allowed or self._issued is not card:
+                return False
+            return self._turns._publish_if_current(card.token, action)
 
 
 @dataclass(frozen=True)
@@ -206,7 +232,7 @@ def publish_reference(request: PolicyInput, *, turns: ActiveTurns,
         source_ref=decision.reviewed_source_ref,
     )
 
-    if not consent._commit_if_current(token, lambda: on_present(card)):
+    if not consent._commit_if_current(token, card, lambda: on_present(card)):
         reason = "permission_not_confirmed" if not consent.authorized() else "superseded_turn"
         return ReferenceRoute("suppressed", reason)
     return ReferenceRoute("reviewed_reference", "reviewed_full_question", card)
@@ -226,4 +252,12 @@ def render_queued_card(card: ReferenceCard, *, turns: ActiveTurns,
         raise TypeError("Queued rendering needs the exact shared host session.")
     if not callable(on_paint):
         raise TypeError("A synchronous on_paint callback is required.")
-    return consent._commit_if_current(card.token, lambda: on_paint(card))
+    if (type(card) is not ReferenceCard
+            or card.label != "reviewed_reference"
+            or not any(
+                card.text == ref.answer
+                and card.reference_id == ref.reference_id
+                and card.source_ref == ref.source_ref for ref in _REFERENCES
+            )):
+        return False
+    return consent._paint_if_current(card, lambda: on_paint(card))

@@ -1170,6 +1170,43 @@ class TurnSafety(unittest.TestCase):
                             for item in self.machine._seen.values()))
         self.assertIsNone(self.machine.current())
 
+    def test_unbounded_remote_counter_rejected_before_hash_and_cancels_answer(self):
+        # Python accepts arbitrarily large ints, but native wire metadata is
+        # UInt64. JSON fingerprinting can throw on 10K-digit values unless
+        # validation rejects them before serialization.
+        enormous = 1 << 20_000
+        for field in ("stream_generation", "revision", "start_ms", "end_ms"):
+            with self.subTest(field=field):
+                machine = QuestionTurnMachine()
+                accepted = machine.ingest(remote(
+                    "A", "Explain SQL JOIN grain.", start_ms=0, end_ms=250,
+                ))
+                self.assertEqual(accepted.state, "ready")
+                malformed = replace(remote(
+                    "B", "No, use distinct orders.",
+                    status="partial", intent="correction",
+                    start_ms=300, end_ms=450,
+                ), **{field: enormous})
+                with self.assertRaises(InvalidTranscript) as error:
+                    machine.ingest(malformed)
+                self.assertEqual(str(error.exception),
+                                 "Invalid revision or timing.")
+                self.assertFalse(machine.turns.is_current(accepted.token))
+                self.assertIsNone(machine.current())
+
+    def test_invalid_microphone_counter_does_not_cancel_remote_question(self):
+        accepted = self.machine.ingest(remote(
+            "A", "Explain binary search.", start_ms=0, end_ms=200,
+        ))
+        self.assertEqual(accepted.state, "ready")
+        with self.assertRaises(InvalidTranscript):
+            self.machine.ingest(replace(
+                remote("mic", "Noise", source="microphone"),
+                revision=1 << 20_000,
+            ))
+        self.assertTrue(self.machine.turns.is_current(accepted.token))
+        self.assertEqual(self.machine.current().token, accepted.token)
+
     def test_invalid_metadata_fails_without_leaking_private_text(self):
         valid = remote("q", "Private synthetic transcript.", end_ms=100)
         cases = [

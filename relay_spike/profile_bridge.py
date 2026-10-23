@@ -36,6 +36,7 @@ _FIELDS = {
     "decide": ("fact_id", "fingerprint", "decision", "actor", "claim_key", "replaces_fact_id"),
     "approve_job": ("source_id", "fingerprint"), "revoke": ("source_id",),
     "current_claim": ("claim_key",),
+    "memories": ("after", "limit"),
 }
 
 
@@ -94,6 +95,36 @@ class ProfileBridge:
         if len(data) != transfer["size"] or sha256(data).hexdigest() != transfer["sha256"]:
             raise BrainError("Profile transfer is incomplete or corrupt.")
         return data, transfer
+
+    def _memory_page(self, message: dict) -> dict:
+        after, limit = message.get("after"), message.get("limit")
+        if (type(limit) is not int or not 1 <= limit <= 8 or
+                (after is not None and
+                 (not isinstance(after, str) or re.fullmatch(r"[A-Za-z0-9_.:-]{1,64}", after) is None))):
+            raise BrainError("Invalid memory page.")
+        # This is a read view of the existing authority filter. It cannot
+        # confirm a candidate, issue a context bundle or retire one.
+        active = sorted(self._prep.store.verified_claims(), key=lambda fact: fact.fact_id)
+        remaining = [fact for fact in active if after is None or fact.fact_id > after]
+        page = {"ok": True, "memories": [], "total_count": len(active), "next_after": None}
+        for index, fact in enumerate(remaining):
+            source = self._prep.store.db.execute(
+                "SELECT label FROM profile_source WHERE source_id=?", (fact.source_id,)
+            ).fetchone()
+            row = {"fact_id": fact.fact_id, "claim_key": fact.claim_key,
+                   "claim_text": fact.claim_text, "actor": fact.actor,
+                   "source_id": fact.source_id,
+                   "source_label": source[0][:64] if source and source[0] else "Saved source"}
+            trial = {**page, "memories": [*page["memories"], row],
+                     "next_after": fact.fact_id if index + 1 < len(remaining) else None}
+            if len(json.dumps(trial, ensure_ascii=False, allow_nan=False).encode()) > 14 * 1024:
+                if not page["memories"]:
+                    raise BrainError("Memory cannot fit a bounded page.")
+                break
+            page = trial
+            if len(page["memories"]) == limit:
+                break
+        return page
 
     def handle(self, message: dict) -> dict:
         if not isinstance(message, dict) or not isinstance(message.get("command"), str):
@@ -201,6 +232,8 @@ class ProfileBridge:
             if len(matches) > 1:
                 raise BrainError("Existing claim has unresolved collisions.")
             return {"ok": True, "fact": matches[0] if matches else None}
+        if command == "memories":
+            return self._memory_page(message)
         if command == "snapshot_begin":
             self._snapshot = export_memory_snapshot(self._prep.store)
             return {"ok": True, "size": len(self._snapshot), "sha256": sha256(self._snapshot).hexdigest()}

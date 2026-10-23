@@ -13,6 +13,7 @@ public final class NativeSessionController: @unchecked Sendable {
     private var retiredSources: [SourcePipeline] = []
     private var sessionID: UUID?
     private var sequence: UInt64 = 0
+    private var currentRequestID: UUID?
     private var segmentCounters: [UInt32: UInt64] = [:]
     private var stoppingLease: PresentationLease?
     private var stopReason: SessionReason = .userStop
@@ -76,9 +77,46 @@ public final class NativeSessionController: @unchecked Sendable {
             let issued = NativeManualHelpRequest(lease: lease, requestID: UUID(),
                 anchorEventSequence: sequence, emittedUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
                 question: question)
+            currentRequestID=issued.requestID
             do { try enqueue(issued) }
             catch { transportFailed(); throw NativeSessionError.transportClosed }
             return issued
+        }
+    }
+    /// Capture the actual native anchor and enqueue under the same source lock.
+    public func issueUserQuestion(expectedLease:PresentationLease,intent:UserQuestionIntent,
+                                  question:String?,baseRequestID:UUID?,
+                                  enqueue:@Sendable(NativeUserQuestionRequest)throws->Void)throws->NativeUserQuestionRequest {
+        try lock.withLock {
+            guard sessionID==expectedLease.captureSessionID,sequence>0,authority.snapshot()==expectedLease else{throw NativeSessionError.notAuthorized}
+            switch intent {
+            case .ask:
+                guard let question,!question.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,
+                      question.utf8.count<=500,!question.unicodeScalars.contains(where:{
+                          switch $0.properties.generalCategory{case .control,.format,.lineSeparator,.paragraphSeparator:true;default:false}
+                      }) else{throw NativeSessionError.notAuthorized}
+            case .helpCurrent:
+                guard question==nil,let baseRequestID,baseRequestID==currentRequestID else{throw NativeSessionError.notAuthorized}
+            }
+            guard let lease=authority.invalidate() else{transportFailed();throw NativeSessionError.notAuthorized}
+            let request=NativeUserQuestionRequest(lease:lease,requestID:UUID(),anchorEventSequence:sequence,
+                emittedUptimeNanoseconds:DispatchTime.now().uptimeNanoseconds,intent:intent,question:question,baseRequestID:baseRequestID)
+            currentRequestID=request.requestID
+            do{try enqueue(request)}catch{transportFailed();throw NativeSessionError.transportClosed}
+            return request
+        }
+    }
+    public func issueAnswerCancellation(expectedLease:PresentationLease,targetRequestID:UUID,
+                                        enqueue:@Sendable(NativeAnswerCancelRequest)throws->Void)throws->NativeAnswerCancelRequest {
+        try lock.withLock {
+            guard sessionID==expectedLease.captureSessionID,sequence>0,authority.snapshot()==expectedLease,
+                  currentRequestID==targetRequestID else{throw NativeSessionError.notAuthorized}
+            guard let lease=authority.invalidate() else{transportFailed();throw NativeSessionError.notAuthorized}
+            let request=NativeAnswerCancelRequest(lease:lease,requestID:UUID(),anchorEventSequence:sequence,
+                emittedUptimeNanoseconds:DispatchTime.now().uptimeNanoseconds,targetRequestID:targetRequestID,targetLease:expectedLease)
+            currentRequestID=nil
+            do{try enqueue(request)}catch{transportFailed();throw NativeSessionError.transportClosed}
+            return request
         }
     }
     public func isSourceActive(_ source: PCMSource) -> Bool {
@@ -137,6 +175,7 @@ public final class NativeSessionController: @unchecked Sendable {
             // User mic replies update conversation context while the remote
             // talking points stay visible. Only remote onset retires that lease.
             guard let lease = source == 2 ? authority.invalidate() : authority.snapshot() else { return nil }
+            if source==2{currentRequestID=nil}
             emit(kind: .speechStarted, lease: lease, source: source, generation: generation, payload: [
                 "activityID": .uint(activity), "startHostTime": .uint(ticks),
                 "detectedUptimeNanoseconds": .uint(DispatchTime.now().uptimeNanoseconds), "timebase": clock.wire])
@@ -182,11 +221,13 @@ public final class NativeSessionController: @unchecked Sendable {
                 "finalizedUptimeNanoseconds": .uint(finalized),
                 "receivedUptimeNanoseconds": .uint(DispatchTime.now().uptimeNanoseconds),
                 "text": .string(text), "confidence": .null, "timebase": activity.clock.wire]
+            let requestID=source == 2 ? UUID():nil
+            if source==2,authority.snapshot()==activity.lease{currentRequestID=requestID}
             emit(kind: .eou, lease: activity.lease, source: source, generation: activity.generation,
                  payload: ["event": .object(inner), "activityID": .uint(activity.id),
                     "firstInputSequence": .uint(activity.firstSequence), "lastInputSequence": .uint(activity.lastSequence),
                     "activityClosed": .bool(true), "lastSpeechInputSequence": .uint(activity.lastSequence)],
-                 requestID: source == 2 ? UUID() : nil)
+                 requestID: requestID)
         }
     }
     private func sourceUnavailable(session: UUID, source: UInt32, generation: UInt64, reason: SessionReason) {
@@ -211,6 +252,7 @@ public final class NativeSessionController: @unchecked Sendable {
         } catch { transportFailed() }
     }
     private func retireSources() {
+        currentRequestID=nil
         let retiring = Array(sources.values)
         sources.removeAll()
         retiring.forEach { $0.stop() }

@@ -10,6 +10,10 @@ Strict user-question, deny-only retirement and cancellation decoding; explicit t
 
 Nine new tests passed after a missing-module red run. Affected semantic/helper/reference checks:128 tests passed,1.523s, with pre-existing synthetic SQLite ResourceWarnings. Includes an actual no-network helper child receiving typed input before any remote final. The child EOF test establishes admission/pending output, not completed model streaming. Completed mocked OAuth, native ordering and app-hook proof remain in progress and are not claimed here.
 
+## Native issuance checkpoint
+
+Private native UserQuestion/AnswerCancel values now issue under the same controller lock, with a fresh actual lease/UUID and original native sequence anchor. Cancel targets the controller's actual issued request and carries original-target retirement data. Existing ManualHelp behavior remains unchanged. The new API first failed compilation because NativeUserQuestionRequest was absent; after implementation,6 targeted native UserQuestion/ManualHelp tests passed,0.009s after14.40s build, using an isolated copy-on-write baseline build cache with offline dependency resolution. No audio/model/permission action occurred. Forwarder/receipt/adapter integration is still in progress.
+
 ## Intended reuse
 
 Actual runtime reuse is existing NativeSessionController/ordered ingress, ActiveTurns, ConversationContext correction grammar, SessionHost one-worker/newest-pending routing, Personal Brain authority, reference/card QA, HTTPX0.28.1/SSEDecoder/ResponseAssembler and verified image ports. No model/framework/dependency added.

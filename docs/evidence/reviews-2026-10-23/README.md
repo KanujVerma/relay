@@ -10,5 +10,5 @@ These are controller-published copies of the immutable local review reports. Wor
 
 Current accepted heads, hosted checks and remaining integration gates live in [BUILD_STATUS](../../BUILD_STATUS.md). A report's test totals are attributed to the reviewer or builder as stated; they do not establish live account, permissions, capture or product acceptance.
 
-- [App composition first review](review-composition-86d69e6-report.md):86d69e6 changes required; corrected e45549a is under scoped re-review.
+- [App composition first review](review-composition-86d69e6-report.md):86d69e6 changes required; [scoped correction re-review](review-composition-e45549a-rereview.md) accepted e45549a.
 - [Visual service](review-visual-ad9f587-report.md):ad9f587 accepted within its exact six-file service scope; app/helper consumers and real account acceptance remain separate.

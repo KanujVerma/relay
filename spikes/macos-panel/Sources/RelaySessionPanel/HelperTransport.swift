@@ -34,6 +34,7 @@ public final class HelperTransport: @unchecked Sendable {
     private let lock=NSLock();private var process:Process?;private var input:FileHandle?;private var output:FileHandle?;private var errors:FileHandle?
     private var source:DispatchSourceRead?;private var stderrSource:DispatchSourceRead?;private var timer:DispatchSourceTimer?
     private var profileRequests:[UUID:CheckedContinuation<Data,any Error>]=[:]
+    private var quiescenceRequests:[UUID:(UUID,UInt64,CheckedContinuation<Void,any Error>)]=[:]
     private var queuedFrames=0;private var queuedBytes=0;private var failed=false
     private let exitReceipt=OwnedChildExit()
     private let decoder=AnswerFrameDecoder();private var partialSince:UInt64?
@@ -94,6 +95,30 @@ public final class HelperTransport: @unchecked Sendable {
             }
         }
     }
+    /// Resume needs actual old model ownership to return; a timeout retires the
+    /// transport and cannot masquerade as an acknowledgment.
+    public func requestSessionQuiescence(sessionID:UUID,epoch:UInt64) async throws {
+        let id=UUID()
+        let envelope=try JSONEncoder().encode(WireValue.object([
+            "schemaVersion":.uint(1),"kind":.string("session_quiescence_request"),
+            "requestID":.string(id.uuidString.lowercased()),"captureSessionID":.string(sessionID.uuidString.lowercased()),"sessionEpoch":.uint(epoch)]))
+        try await withCheckedThrowingContinuation { continuation in
+            let admitted=lock.withLock {
+                guard !failed,quiescenceRequests.isEmpty else { return false }
+                quiescenceRequests[id]=(sessionID,epoch,continuation);return true
+            }
+            guard admitted else { continuation.resume(throwing:PanelBridgeError.closed);return }
+            do { try sendJSON(envelope) } catch {
+                let pending=lock.withLock { quiescenceRequests.removeValue(forKey:id) }
+                pending?.2.resume(throwing:PanelBridgeError.closed);return
+            }
+            io.asyncAfter(deadline:.now() + .seconds(15)) { [weak self] in
+                guard let self else { return }
+                let pending=self.lock.withLock { self.quiescenceRequests.removeValue(forKey:id) }
+                if let pending { pending.2.resume(throwing:PanelBridgeError.timedOut);self.fail() }
+            }
+        }
+    }
     private func enqueue(_ frame:Data) throws {
         try lock.withLock {
             guard !failed,input != nil else { throw PanelBridgeError.closed }
@@ -134,10 +159,26 @@ public final class HelperTransport: @unchecked Sendable {
                     if case .object(let fields)=node,case .string("profile_response")?=fields["kind"] {
                         let fields=try node.object(["schemaVersion","kind","requestID","payload"])
                         guard try fields["schemaVersion"]!.uint()==1,let id=UUID(uuidString:try fields["requestID"]!.string()) else { throw PanelBridgeError.malformed }
+                        // Keep the waiter registered until every fallible payload
+                        // check/encoding completes, so fail()/stop() can reject it.
+                        guard case .object?=fields["payload"],
+                              let decoded=try JSONSerialization.jsonObject(with:frame) as? [String:Any],
+                              let payload=decoded["payload"] as? [String:Any] else { throw PanelBridgeError.malformed }
+                        let response=try JSONSerialization.data(withJSONObject:payload)
                         let continuation=lock.withLock { profileRequests.removeValue(forKey:id) }
                         guard let continuation else { throw PanelBridgeError.malformed }
-                        let decoded=try JSONSerialization.jsonObject(with:frame) as! [String:Any]
-                        continuation.resume(returning:try JSONSerialization.data(withJSONObject:decoded["payload"]!))
+                        continuation.resume(returning:response)
+                    } else if case .object(let fields)=node,case .string("session_quiescence_response")?=fields["kind"] {
+                        let fields=try node.object(["schemaVersion","kind","requestID","captureSessionID","sessionEpoch","quiesced"])
+                        guard try fields["schemaVersion"]!.uint()==1,try fields["quiesced"]!.boolean(),
+                              let id=UUID(uuidString:try fields["requestID"]!.string()),let session=UUID(uuidString:try fields["captureSessionID"]!.string()) else { throw PanelBridgeError.malformed }
+                        let epoch=try fields["sessionEpoch"]!.uint()
+                        let continuation=try lock.withLock {
+                            guard let pending=quiescenceRequests[id],pending.0==session,pending.1==epoch else { throw PanelBridgeError.malformed }
+                            quiescenceRequests.removeValue(forKey:id)
+                            return pending.2
+                        }
+                        continuation.resume()
                     } else { _=try SessionAnswerDecision(data:frame);try onFrame(frame) }
                 }
                 if decoder.hasPartial { if partialSince==nil { partialSince=DispatchTime.now().uptimeNanoseconds } } else { partialSince=nil }
@@ -167,6 +208,8 @@ public final class HelperTransport: @unchecked Sendable {
     public func stop() {
         let (child,pending)=lock.withLock {
             failed=true;let pending=Array(profileRequests.values);profileRequests.removeAll()
+            let sessions=Array(quiescenceRequests.values);quiescenceRequests.removeAll()
+            sessions.forEach { $0.2.resume(throwing:PanelBridgeError.closed) }
             return (process,pending)
         }
         pending.forEach { $0.resume(throwing:PanelBridgeError.closed) }

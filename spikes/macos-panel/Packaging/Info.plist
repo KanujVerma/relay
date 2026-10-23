@@ -8,7 +8,7 @@
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
-<key>LSMinimumSystemVersion</key><string>14.2</string>
+<key>LSMinimumSystemVersion</key><string>15.2</string>
 <key>NSPrincipalClass</key><string>NSApplication</string>
 <key>NSMicrophoneUsageDescription</key><string>Relay listens to your microphone replies during a permitted interview session so its talking points follow the conversation. Capture continues until you stop the session.</string>
 <key>NSAudioCaptureUsageDescription</key><string>Relay listens to the interview app you select during a permitted session to recognize questions and provide talking points. Capture continues until you stop the session.</string>

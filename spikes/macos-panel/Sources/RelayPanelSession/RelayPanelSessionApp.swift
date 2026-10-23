@@ -3,6 +3,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 import RelayProfile
 import RelaySessionPanel
+import RelayControls
+import RelayScreenContext
 
 @main struct RelayPanelSessionApp: App {
     @StateObject private var model=SessionApplicationModel()
@@ -14,7 +16,7 @@ import RelaySessionPanel
 
 @MainActor private struct SessionView: View {
     @ObservedObject var model:SessionApplicationModel
-    @State private var expanded=false
+    @State private var settings=false
     @State private var preparing=false
     @State private var setup=true
     @State private var selectingASR=false
@@ -24,10 +26,12 @@ import RelaySessionPanel
         VStack(alignment:.leading,spacing:16) {
             HStack {
                 Text("Relay").font(.title2.bold());Spacer()
-                Text(model.fixture ? "OFFLINE FIXTURE":model.running ? "SESSION ACTIVE":"READY").font(.caption.bold()).foregroundStyle(.secondary)
+                Text(model.fixture ? "OFFLINE FIXTURE":model.paused ? "PAUSED":model.running ? "SESSION ACTIVE":"READY").font(.caption.bold()).foregroundStyle(.secondary)
             }
             if model.fixture { Text("Synthetic audio and injected answers. No microphone or AI request.").font(.caption).foregroundStyle(.secondary) }
             if !model.running && !model.fixture {
+                Toggle("Use configured ChatGPT plan for AI suggestions",isOn:Binding(get:{model.oauth},set:{enabled in Task { await model.setAIEnabled(enabled) }})).disabled(!model.canChangeAIMode)
+                Text("Uses the existing Relay sign-in. Account setup is not available in this window yet. AI requests start only during a session; local reference cards remain available with AI off.").font(.caption).foregroundStyle(.secondary)
                 DisclosureGroup("Session setup",isExpanded:$setup) {
                     VStack(alignment:.leading,spacing:10) {
                         Picker("Interview app",selection:$model.selectedBundleID) {
@@ -52,26 +56,42 @@ import RelaySessionPanel
                         Text(card.lead).font(.body).textSelection(.enabled)
                         ForEach(Array(card.points.enumerated()),id:\.offset) { _,point in Text("• "+point).font(.callout).textSelection(.enabled) }
                         if let detail=card.detail {
-                            DisclosureGroup(detail.kind=="code" ? "Code and detail":"More detail",isExpanded:$expanded) {
+                            DisclosureGroup(detail.kind=="code" ? "Code and detail":"More detail",isExpanded:$model.expanded) {
                                 ScrollView(.horizontal) {
                                     Text(detail.text).font(.system(.callout,design:detail.kind=="code" ? .monospaced:.default)).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading).padding(.top,8)
                                 }
                             }
                         }
                     } else if model.running { Text("Talking points appear automatically as the discussion develops.").foregroundStyle(.secondary) }
+                    if !model.contextStatus.isEmpty { Text(model.contextStatus).font(.caption).foregroundStyle(.secondary) }
                     if let error=model.error { Text(error).foregroundStyle(.secondary).font(.callout) }
                 }.frame(maxWidth:.infinity,alignment:.leading)
+                    .background(SessionWindowAttachment { window,scroll in model.attachWindow(window,scrollView:scroll) })
             }
             Divider()
             HStack {
-                Button((model.running || model.starting) ? "Stop":"Start session") { Task { if model.running || model.starting { await model.stop() } else { await model.start() } } }.buttonStyle(.borderedProminent)
-                Button("Prepare background") { preparing=true }.disabled(model.fixture)
+                if model.running || model.starting {
+                    Button("Pause") { model.performWindowAction(.pause) }.disabled(model.stopping)
+                    Button("End") { model.performWindowAction(.endSession) }
+                } else {
+                    Button(model.paused ? "Resume":"Start session") { Task { await model.start() } }.buttonStyle(.borderedProminent).disabled(model.stopping)
+                    if model.paused { Button("End") { model.performWindowAction(.endSession) } }
+                }
+                Button("Help") { model.performWindowAction(.requestHelp) }.disabled(!model.running || model.stopping)
+                Button("Copy") { model.performWindowAction(.copyAnswer) }.disabled(model.snapshot.card == nil)
                 Spacer()
+                Button("Settings") { settings=true }
             }
+            HStack {
+                Button("Prepare background") { preparing=true }.disabled(model.fixture || model.stopping)
+                if model.stopping { Text("Waiting for the previous session to finish").font(.caption).foregroundStyle(.secondary) }
+            }
+            if model.paused { Text("Resume starts a fresh conversation. Saved background and explicit context settings stay available.").font(.caption).foregroundStyle(.secondary) }
+
         }.padding(22).frame(minWidth:480,minHeight:430)
-        .onChange(of:model.snapshot.replacement) { _,_ in expanded=false }
+        .onChange(of:model.snapshot.replacement) { _,_ in model.expanded=false }
         .task { if model.fixture { await model.start() } }
-        .onDisappear { Task { await model.stop() } }
+        .sheet(isPresented:$settings) { SessionSettingsView(model:model).frame(minWidth:650,minHeight:650).toolbar { Button("Done") { settings=false } } }
         .sheet(isPresented:$preparing) { ProfilePreparationView(controller:model.profile,role:model.role).frame(minWidth:620,minHeight:650).padding().toolbar { Button("Done") { preparing=false } } }
         .fileImporter(isPresented:$selectingASR,allowedContentTypes:[.folder]) { if case .success(let url)=$0 { model.asrFolder=url.path } }
         .fileImporter(isPresented:$selectingVAD,allowedContentTypes:[.folder]) { if case .success(let url)=$0 { model.vadFolder=url.path } }

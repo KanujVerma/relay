@@ -78,7 +78,12 @@ class ProfileBridge:
                 "AND s.revoked_at IS NULL AND j.text IS NOT NULL ORDER BY j.rowid LIMIT 1"
             ).fetchone()
             job = dict(row) if row else None
-        return {"ok": True, "ready": self._ready, "card": asdict(cards[0]) if cards else None,
+        card = asdict(cards[0]) if cards else None
+        if card is not None:
+            locator = self._prep.store.db.execute("SELECT locator FROM profile_locator WHERE fact_id=?",
+                                                   (card["fact_id"],)).fetchone()
+            card["locator"] = locator[0] if locator else None
+        return {"ok": True, "ready": self._ready, "card": card,
                 "pending_count": len(cards), "job": job}
 
     def _finish_transfer(self, kind: str) -> tuple[bytes, dict]:

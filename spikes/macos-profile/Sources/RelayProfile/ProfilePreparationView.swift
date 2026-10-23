@@ -3,7 +3,8 @@ import UniformTypeIdentifiers
 
 @MainActor public struct ProfilePreparationView: View {
     @ObservedObject private var controller: ProfileController
-    @State private var role = "developer"
+    @State private var role: String
+    private let boundRole: Bool
     @State private var purpose = "resume"
     @State private var label = "Selected résumé"
     @State private var project = ""
@@ -13,7 +14,11 @@ import UniformTypeIdentifiers
     @State private var topic = ""
     @State private var replaceExisting = false
 
-    public init(controller: ProfileController) { self.controller = controller }
+    public init(controller: ProfileController, role: String? = nil) {
+        self.controller = controller
+        _role = State(initialValue: role ?? "developer")
+        boundRole = role != nil
+    }
 
     private var claimKey: String {
         topic.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
@@ -37,6 +42,7 @@ import UniformTypeIdentifiers
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
                                 TextField("Interview role", text: $role)
+                                    .disabled(boundRole)
                                 Picker("Source", selection: $purpose) {
                                     Text("Résumé").tag("resume")
                                     Text("Project notes").tag("project")
@@ -68,7 +74,9 @@ import UniformTypeIdentifiers
                         GroupBox("Review a source-backed fact (\(controller.pendingCount) remaining)") {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text(card.snippet).textSelection(.enabled).font(.body)
-                                Text("Original source characters \(card.spanStart) to \(card.spanEnd), revision \(card.reviewRevision). Source fingerprint \(card.sourceSHA256.prefix(12)).")
+                                Text("\(card.locator ?? "Selected source"), characters \(card.spanStart) to \(card.spanEnd), revision \(card.reviewRevision). Source fingerprint \(card.sourceSHA256.prefix(12)).")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                Text("Source ownership hint: \(card.actorHint). Confirm the ownership below.")
                                     .font(.caption).foregroundStyle(.secondary)
                                 Picker("Whose contribution is described?", selection: $actor) {
                                     Text("Choose ownership").tag("unknown")

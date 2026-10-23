@@ -30,6 +30,7 @@ class ProfileBridgeTests(unittest.TestCase):
 
     def test_selected_review_and_revocation_use_the_same_provider(self):
         card = self.select()
+        self.assertEqual(card["locator"], "text:line:1")
         self.assertEqual(self.bridge.retrieve("Atlas SQL?", "developer").facts, ())
         self.bridge.handle({"command": "decide", "fact_id": card["fact_id"],
                             "fingerprint": card["card_fingerprint"], "decision": "approve",

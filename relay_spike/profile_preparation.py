@@ -134,8 +134,9 @@ class ProfilePreparation:
             text = conversion.text
         if not text.strip() or len(text) > MAX_SELECTED_CHARS or "\x00" in text:
             raise BrainError("Selected text is empty, invalid or too large.")
-        if purpose == "job" and len(text) > MAX_JOB_CHARS:
-            raise BrainError("Select a job excerpt of at most 4000 characters.")
+        if purpose == "job" and (len(text) > MAX_JOB_CHARS or len(text.encode()) > 10_000 or
+                any(ord(char) < 32 and char not in "\n\r\t" for char in text)):
+            raise BrainError("Select a bounded plain-text job excerpt.")
         with self.store._transaction():
             if purpose == "job" or conversion is None:
                 source_id = self.gateway.select_source(text, observed_at=stamp,

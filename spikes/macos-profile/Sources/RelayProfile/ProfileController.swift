@@ -65,6 +65,7 @@ public struct ProfileExistingFact: Decodable, Sendable {
     private let onInvalidate: @MainActor () -> Void
     private var lifecycle = UUID()
     private var memoryCursor: String?
+    private var closing: Task<ProfileCloseOutcome, Never>?
     public var canLoadMoreMemories: Bool { opened && !busy && memoryCursor != nil }
 
     public init(client: ProfileClient, vault: ProfileVault,
@@ -111,7 +112,16 @@ public struct ProfileExistingFact: Decodable, Sendable {
             : message + " Profile unavailable. The helper was stopped; a fresh helper is required."
     }
     public func openProfile() async {
-        guard !busy, !opened else { return }
+        _ = await open(createIfMissing: true)
+    }
+    /// Session restoration reads only an existing encrypted vault. It never
+    /// creates a key, backend profile or snapshot when no vault is present.
+    public func openExistingProfile() async -> ProfileOpenOutcome {
+        await open(createIfMissing: false)
+    }
+    private func open(createIfMissing: Bool) async -> ProfileOpenOutcome {
+        guard !busy else { return .unavailable }
+        if opened { return .opened }
         let operation = UUID()
         lifecycle = operation
         busy = true; errorStatus = nil; closeOutcome = nil
@@ -120,25 +130,32 @@ public struct ProfileExistingFact: Decodable, Sendable {
             let state: [String: Any]
             if try vault.exists() {
                 state = try await client.load(vault.load())
-                guard lifecycle == operation else { return }
+                guard lifecycle == operation else { return .stale }
             } else {
+                guard createIfMissing else {
+                    errorStatus = "No saved context was found. Open My Context to add it."
+                    return .missing
+                }
                 state = try await client.command(["command": "new"])
-                guard lifecycle == operation else { return }
+                guard lifecycle == operation else { return .stale }
                 let snapshot = try await client.snapshot()
-                guard lifecycle == operation else { return }
+                guard lifecycle == operation else { return .stale }
                 try vault.save(snapshot, createKey: true)
             }
             let newSources = try await readSources()
-            guard lifecycle == operation else { return }
+            guard lifecycle == operation else { return .stale }
             let newMemories = try await readMemories()
-            guard lifecycle == operation else { return }
+            guard lifecycle == operation else { return .stale }
             try apply(state)
             sources = newSources
             applyMemories(newMemories)
             opened = true
+            return .opened
         } catch {
+            guard lifecycle == operation else { return .stale }
             await lockAfterFailure(operation: operation,
                                    message: "Profile could not be opened. Existing data and keys were kept.")
+            return lifecycle == operation ? .unavailable : .stale
         }
     }
     private func mutate(_ action: @MainActor () async throws -> [String: Any]) async {
@@ -238,16 +255,29 @@ public struct ProfileExistingFact: Decodable, Sendable {
     public func revoke(_ source: ProfileSourceSummary) async {
         await mutate { try await self.client.command(["command": "revoke", "source_id": source.sourceID]) }
     }
-    public func close() async {
+    /// Retires visible/lifecycle authority synchronously. Repeated callers join
+    /// the same actual client lock/emergency receipt until it completes.
+    public func beginClose() -> Task<ProfileCloseOutcome, Never> {
+        if let closing { return closing }
         let operation = UUID()
         lifecycle = operation
         busy = true
+        let task = Task { @MainActor in
+            let outcome = await self.client.close()
+            if self.lifecycle == operation {
+                self.closeOutcome = outcome
+                self.busy = false
+                self.closing = nil
+                self.errorStatus = outcome == .locked ? nil : "Profile unavailable. The helper was stopped; a fresh helper is required."
+            }
+            return outcome
+        }
+        // Reserve the owner before callbacks can synchronously join it. The
+        // MainActor task cannot perform client IO until this method returns.
+        closing = task
         onInvalidate()
         clearVisibleState()
-        let outcome = await client.close()
-        guard lifecycle == operation else { return }
-        closeOutcome = outcome
-        busy = false
-        errorStatus = outcome == .locked ? nil : "Profile unavailable. The helper was stopped; a fresh helper is required."
+        return task
     }
+    public func close() async { _ = await beginClose().value }
 }

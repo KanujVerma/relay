@@ -438,6 +438,70 @@ class EOUAdapterTests(unittest.TestCase):
         self.assertIsNone(self.machine.current())
         self.assertFalse(self.machine.turns.is_current(root.token))
 
+    def test_blank_revision_of_retained_root_invalidates_correction_even_if_displaced(self):
+        original = self.bridge.ingest(final(
+            "root-A", "Explain customer revenue.",
+            start_ms=500, end_ms=700,
+        ), context=AUTHORIZED)
+        self.assertEqual(original.disposition, "ready")
+        correction = self.bridge.ingest(final(
+            "correction-B", "No, use distinct orders instead.",
+            start_ms=800, end_ms=900,
+        ), context=AUTHORIZED)
+        self.assertEqual(correction.disposition, "ready")
+        # Stable root-A has now revised to BLANK with entirely different
+        # timestamps. Identity, not temporal overlap, revokes B's support.
+        blank = self.bridge.ingest(final(
+            "root-A", "", revision=2, start_ms=0, end_ms=100,
+        ), context=AUTHORIZED)
+        self.assertEqual(blank.disposition, "needs_review")
+        self.assertEqual(blank.reason, "empty_eou_final")
+        self.assertFalse(self.machine.turns.is_current(correction.token))
+        self.assertIsNone(self.machine.current())
+
+    def test_conflicting_blank_tombstone_clears_interrupted_correction_context(self):
+        original = self.bridge.ingest(final(
+            "root", "Explain SQL grouping.", start_ms=500, end_ms=700,
+        ), context=AUTHORIZED)
+        self.assertEqual(original.disposition, "ready")
+        onset = self.bridge.ingest(final(
+            "pending-B", "", stage="processing",
+            start_ms=800, end_ms=900,
+        ), context=AUTHORIZED)
+        self.assertEqual(onset.disposition, "pending")
+        self.assertIsNotNone(self.machine._interrupted)
+        # Old unrelated blank is itself stale; it does not cancel pending B.
+        blank = self.bridge.ingest(final(
+            "blank-X", "", start_ms=0, end_ms=100,
+        ), context=AUTHORIZED)
+        self.assertEqual(blank.disposition, "needs_review")
+        self.assertIsNotNone(self.machine._interrupted)
+        # Same stable ID contradicts the recorded blank terminal.
+        conflicted = self.bridge.ingest(final(
+            "blank-X", "Explain a CTE.", revision=2,
+            start_ms=0, end_ms=100,
+        ), context=AUTHORIZED)
+        self.assertEqual(conflicted.disposition, "needs_review")
+        self.assertEqual(conflicted.reason, "final_conflicts_with_blank_eou")
+        self.assertTrue(self.machine._stopped)
+        self.assertIsNone(self.machine._interrupted)
+        self.assertIsNone(self.machine._leading_partial)
+        self.assertIsNone(self.machine.current())
+        pending_final = self.bridge.ingest(final(
+            "pending-B", "No, group by category.",
+            start_ms=800, end_ms=950,
+        ), context=AUTHORIZED)
+        self.assertNotEqual(pending_final.disposition, "ready")
+        self.assertFalse(self.machine.turns.is_current(original.token))
+        # A fresh authorized generation is required after explicit resume.
+        self.bridge.resume_after_host_authorization(AUTHORIZED)
+        stale = self.bridge.ingest(final(
+            "pending-B", "No, group by category.",
+            start_ms=800, end_ms=950,
+        ), context=AUTHORIZED)
+        self.assertEqual(stale.disposition, "ignored")
+        self.assertIsNone(self.machine.current())
+
     def test_blank_eou_overlapping_root_invalidates_corrected_answer(self):
         first = self.bridge.ingest(final(
             "root", "Explain customer revenue.", start_ms=0, end_ms=1000,

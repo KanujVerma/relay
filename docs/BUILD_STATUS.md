@@ -6,7 +6,7 @@ The owner authorizes frequent scoped commits/pushes and requires GPT-6.1 Sol ext
 
 ## New active product target
 
-The owner now requires a Cluely-style normal desktop experience plus résumé/personal memory, with automatic speech setup and technical choices moved to Settings. The earlier runtime below is a verified engine foundation, not acceptance of its current UI. Three GPT-6.1 Sol extra-high workers are conducting deeper REA coverage, concrete native UX design and managed audio/readiness design from frozen1f8e7fb. See [current direction](superpowers/specs/2026-10-23-cluely-parity-direction.md) and HANDOFF; new implementation remains explicitly separate from historical passing checks.
+The owner now requires a Cluely-style normal desktop experience plus résumé/personal memory, with automatic speech setup and technical choices moved to Settings. The earlier runtime below is a verified engine foundation, not acceptance of its current UI. Three GPT-6.1 Sol extra-high workers are building native UX and automatic speech from frozen1f8e7fb, and reviewing My Context before typed-question/transcript design. The expanded [REA report](research/CLUELY_DEEP_DIVE.md) and [renderer measurements](research/CLUELY_UI_MEASUREMENTS.md) are published here. Concrete [implementation contract](CLUELY_PARITY_CONTRACT.md) separates ownership. Candidate [PR80](https://github.com/KanujVerma/relay/pull/80)62a1f85 passes native23/Python564 with21 optional skips but awaits independent review; UI/automatic source is still partial and unassembled. See [current direction](superpowers/specs/2026-10-23-cluely-parity-direction.md) and HANDOFF; new implementation remains explicitly separate from historical passing checks.
 
 ## Source checkpoints and ownership
 

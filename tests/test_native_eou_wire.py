@@ -123,7 +123,9 @@ class NativeEOUWireTests(unittest.TestCase):
     def test_wire_bounded_utf8_and_sanitized_errors(self):
         self.check_bad(b"", expected="invalid_wire_size")
         self.check_bad(b"x" * (MAX_WIRE_BYTES + 1), expected="invalid_wire_size")
-        self.check_bad("This is not bytes", expected="invalid_wire_size")
+        with self.assertRaises(NativeEOUWireError) as not_bytes:
+            decode_native_eou_wire("This is not bytes")
+        self.assertEqual(not_bytes.exception.code, "invalid_wire_size")
         self.check_bad(b"\xff\xfe", expected="invalid_json")
         self.check_bad(b'{"version":1,', expected="invalid_json")
         self.check_bad(b"true", expected="invalid_field_set")

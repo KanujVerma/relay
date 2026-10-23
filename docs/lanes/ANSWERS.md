@@ -1,8 +1,12 @@
-# Answers lane current review checkpoint
+# Answers lane current review handoff
 
-Round1 review against cd5286a has four reproduced corrections implemented and focused tests green. Original-owner personal d8bb0dc/eb98e41 imported as1472c75/79e19f2; shared emergency adapter updated. See [ANSWERS_REVIEW_R1.md](ANSWERS_REVIEW_R1.md) for exact delta, limits and checks. Standalone personal exit-receipt follow-up and independent re-review remain pending; this checkpoint is not final composition acceptance. No screen/control/workflow/native-capture changes.
+Round1 review baseline cd5286a50700b8040f9e9b03b65c8f960e98fb1c. All four reproduced corrections are implemented and verified in focused10tests. Published correction checkpoint9ef2ee4 plus personal liveness dependency2775fb4(original7ace412). The final source commit follows this record; no optional screen/control/workflow/native-capture composition was added.
 
-Fresh checkpoint: Python460passed/23optional skips; native panel25passed; EVALS26/docs20/diff passed. Shared actual child exit receipt and required emergency profile close tests passed; no waitUntilExit in the owned helper transport.
+See [ANSWERS_REVIEW_R1.md](ANSWERS_REVIEW_R1.md) for exact policy/task/source/display delta and limits. Original-owner personal d8bb0dc/eb98e41 imported as1472c75/79e19f2; follow-up7ace412 as2775fb4. Required emergency callback now binds one helper, synchronously retires source/display/helper/pending admission, awaits actual child termination receipt, blocks recovery until completion and requires fresh helper/port/client/controller. No waitUntilExit in the shared path.
+
+Fresh final-delta checks: Python460passed/23optional skips; native personal17passed and panel25passed; production app build, EVALS26, docs20 and diff whitespace passed. Real child exit/reap and required emergency profile close tests passed; standalone personal36shutdown schedules passed. Local Swift6.4; independent re-review and hosted Swift6.1 CI pending. No live private/hardware/model/account work.
+
+Next: controller re-review immutable corrected source, then composition owner may import it and separately wire screen/controls. Prior implementation smoke below is historical and was not rerun as live acceptance.
 
 ## Prior source handoff (historical)
 

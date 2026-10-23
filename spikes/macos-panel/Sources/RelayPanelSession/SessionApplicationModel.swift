@@ -110,7 +110,6 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     private func shutdownProfile(_ binding:SharedProfileBinding) async {
         binding.retired=true
-        if profileBinding === binding { profileBinding=nil;profileStorage=nil }
         if let old=binding.helper,old === helper {
             // Close all old admission before the first await. Queued frames and
             // source events cannot cross into a replacement helper lifecycle.
@@ -123,6 +122,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
             else { await capture.stop(reason:.transportClosed) }
         }
         await binding.shutdown()
+        if profileBinding === binding { profileBinding=nil;profileStorage=nil }
     }
 
     init(arguments:[String]=CommandLine.arguments) {
@@ -139,6 +139,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     private static func argument(_ key:String,_ args:[String]) -> String? { guard let i=args.firstIndex(of:key),args.indices.contains(i+1) else { return nil };return args[i+1] }
     func ensureHelper() throws -> HelperTransport {
+        guard profileBinding?.retired != true else { throw PanelBridgeError.closed }
         if let helper { return helper }
         let identity=UUID();helperIdentity=identity;helperFailures.activate(identity)
         let nativeAuthority=authority;let failures=helperFailures;let delivery=answers

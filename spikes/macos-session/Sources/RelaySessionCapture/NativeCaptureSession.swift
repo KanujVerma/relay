@@ -155,6 +155,7 @@ protocol SessionCaptureDriver: Sendable {
             var converters: [UInt32: ASRMonoConverter] = [:]
             for driver in drivers { converters[driver.source.rawValue] = ASRMonoConverter() }
             var iteration = 0
+            var observedGenerations: [UInt32: UInt64] = [:]
             while !Task.isCancelled {
                 var consumed = false
                 for driver in drivers {
@@ -162,6 +163,7 @@ protocol SessionCaptureDriver: Sendable {
                     for _ in 0..<8 {
                         guard let frame = driver.queue.dequeue() else { break }
                         consumed = true
+                        observedGenerations[frame.source.rawValue] = frame.streamGeneration
                         do {
                             guard let converter = converters[driver.source.rawValue] else { throw NativeSessionError.invalidFrame }
                             let mono = try converter.mono(frame)
@@ -174,7 +176,7 @@ protocol SessionCaptureDriver: Sendable {
                         }
                     }
                     if iteration % 10 == 0, let reason = await driver.unavailableReason() {
-                        controller.sourceUnavailable(source: driver.source, generation: 1, reason: reason)
+                        controller.sourceUnavailable(source: driver.source, generation: observedGenerations[driver.source.rawValue] ?? 1, reason: reason)
                     }
                 }
                 iteration = (iteration + 1) % 100

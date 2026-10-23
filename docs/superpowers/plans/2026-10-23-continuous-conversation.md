@@ -51,7 +51,7 @@ Interfaces: `NativeCaptureSession.start(configuration:onEvent:) async throws`; c
 - [x] Test configuration rejects default/no-source start and missing local models without capture; verify real adapters compile.
 - [x] Implement local-only model load adapters, independent streams, two owned capture queues, fixed-status source monitoring and explicit Start/Stop executable.
 - [x] Run fake tests, build executable, verify no-argument launch prints safe help without capture/model load, document real hardware/model acceptance still pending.
-- [ ] Push final verified branch slice and create draft PR against the controller-published foundation.
+- [x] Push final verified branch slice and create draft PR against the controller-published foundation (draft PR #68).
 
 ## Implemented refinements
 

@@ -243,6 +243,38 @@ class QuestionTurnMachine:
             self._latest_question_start_ms = -1
             self._seen.clear()
 
+    def accept_remote_generation(self, stream_generation: int) -> bool:
+        """Synchronize an authorized host stream transition, even if silent.
+
+        The EOU bridge must call this before suppressing silence-only events:
+        no prior-generation answer can stay publishable after new capture
+        begins. This is a source-state transition, NOT evidence of consent,
+        a transcript, a question intent or speaker identity.
+        """
+        if (type(stream_generation) is not int
+                or not 0 <= stream_generation <= MAX_EVENT_INTEGER):
+            raise InvalidTranscript("Invalid stream generation.")
+        with self._lock:
+            if (self._stopped or
+                    (self._remote_generation is not None and
+                     stream_generation < self._remote_generation)):
+                return False
+            if (self._remote_generation is None or
+                    stream_generation > self._remote_generation):
+                self.turns.cancel()
+                self._active = None
+                self._interrupted = None
+                self._seen.clear()
+                self._reopened.clear()
+                self._onset_spans.clear()
+                self._leading_partial = None
+                self._invalidated_pending_id = None
+                self._last_final_end = -1
+                self._latest_question_start_ms = -1
+                self._remote_generation = stream_generation
+                self._blocked_generation = None
+            return True
+
     def has_pending_question_context(self, segment_id: str) -> bool:
         """Whether this unfinished remote segment retains a prior accepted turn.
 

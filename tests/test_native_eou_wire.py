@@ -131,7 +131,8 @@ class NativeEOUWireTests(unittest.TestCase):
         self.check_bad(b'{"x":Infinity}', expected="nonfinite_number")
         self.check_bad(encode(wire(text="x" * 1201)), expected="invalid_text")
         self.check_bad(encode(wire(text="Private\x00sentinel")), expected="invalid_text")
-        self.check_bad(encode(wire(text="\ud800")), expected="invalid_json")
+        surrogate_payload = json.dumps(wire(text="\ud800"), ensure_ascii=True).encode("utf-8")
+        self.check_bad(surrogate_payload, expected="invalid_text")
 
     def test_duplicate_json_fields_and_forged_auth_not_allowed(self):
         payload = encode(wire())
@@ -219,16 +220,16 @@ class NativeEOUWireTests(unittest.TestCase):
         self.check_bad(long, expected="utterance_duration_limit")
 
         high_lag = wire(
-            endHostTime=970_000,
+            startHostTime=960_000,
+            endHostTime=960_001,
             finalizedUptimeNanoseconds=40_000_000_000,
             receivedUptimeNanoseconds=41_000_000_000,
             timebase={
                 "hostTicksAtAnchor": 1_000_000,
-                "uptimeNsAtAnchor": 5_000_000_000,
-                "nsNumer": 1000, "nsDenom": 1,
+                "uptimeNsAtAnchor": 40_000_000_000,
+                "nsNumer": 1_000_000, "nsDenom": 1,
             },
         )
-        high_lag["timebase"]["uptimeNsAtAnchor"] = 40_000_000_000
         self.check_bad(high_lag, expected="finalization_lag_limit")
 
     def test_max_uint64_identifiers_still_need_valid_other_fields(self):

@@ -7,6 +7,6 @@ let package = Package(
     products: [.library(name: "RelayScreenContext", targets: ["RelayScreenContext"])],
     targets: [
         .target(name: "RelayScreenContext"),
-        .testTarget(name: "RelayScreenContextTests", dependencies: ["RelayScreenContext"]),
+        .testTarget(name: "RelayScreenContextTests", dependencies: ["RelayScreenContext"], resources: [.copy("Fixtures")]),
     ]
 )

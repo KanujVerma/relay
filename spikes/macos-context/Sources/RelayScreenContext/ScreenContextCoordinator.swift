@@ -17,6 +17,8 @@ import CryptoKit
     private let recognizer: any ScreenTextRecognizer
     private let now: @Sendable () -> UInt64
     private var currentRequest: ScreenRequest?
+    private var lastRequest: ScreenRequest?
+    private var imageTransfer: ScreenImageTransfer?
 
     public init(provider: any ScreenFrameProvider, recognizer: any ScreenTextRecognizer,
                 now: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }) {
@@ -50,16 +52,26 @@ import CryptoKit
         selectedSource = nil; currentRequest = nil
         retire(.retired)
     }
+    public func retireCurrentRequest() {
+        currentRequest = nil
+        retire(.retired)
+    }
     public func revoke() { disable() }
     /// A closed window or denied provider retires selected authority, with no fallback.
     public func sourceUnavailable(_ reason: ScreenFailure = .closed) {
         selectedSource = nil; selectionRevision += 1; permissionRevision += 1
         retire(reason)
     }
-    public func supersede(with request: ScreenRequest) {
-        guard currentRequest != request else { return }
+    @discardableResult public func supersede(with request: ScreenRequest) -> Bool {
+        guard request.sessionEpoch > 0, request.presentationGeneration > 0 else { return false }
+        guard currentRequest != request else { return true }
+        if let current = lastRequest, current.sessionID == request.sessionID {
+            guard request.sessionEpoch > current.sessionEpoch
+                || (request.sessionEpoch == current.sessionEpoch && request.presentationGeneration > current.presentationGeneration) else { return false }
+        }
         retire(.retired)
-        currentRequest = request
+        currentRequest = request; lastRequest = request
+        return true
     }
     /// Local identity check only. Use validateCurrent for actual native publication.
     public func owns(_ candidate: ScreenSnapshot, for request: ScreenRequest) -> Bool {
@@ -68,9 +80,13 @@ import CryptoKit
             && permissionRevision == candidate.permissionRevision && fresh(candidate.capturedUptimeNanoseconds)
     }
     public func validateCurrent(_ candidate: ScreenSnapshot, for request: ScreenRequest,
-                                budgetNanoseconds: UInt64 = 500_000_000) async -> Bool {
-        guard owns(candidate, for: request) else { return false }
-        let result = await run(for: request, budgetNanoseconds: budgetNanoseconds, validating: candidate)
+                                budgetNanoseconds: UInt64 = 500_000_000, requiringImageIdentity: Bool = false) async -> Bool {
+        guard owns(candidate, for: request) else {
+            if snapshot?.id == candidate.id { retire(.retired) }
+            return false
+        }
+        let result = await run(for: request, budgetNanoseconds: budgetNanoseconds, validating: candidate,
+                               requiringImageIdentity: requiringImageIdentity)
         guard case .captured(let checked) = result else { return false }
         return owns(checked, for: request)
     }
@@ -78,12 +94,23 @@ import CryptoKit
                         budgetNanoseconds: UInt64 = 1_500_000_000) async -> ScreenCaptureOutcome {
         await run(for: request, budgetNanoseconds: budgetNanoseconds, validating: nil)
     }
+    /// The boolean is a local host gate, never a screen-frame permission claim.
+    public func makeImageTransfer(for observed: ScreenSnapshot, imageContextEnabled: Bool = false) throws -> ScreenImageTransfer {
+        guard imageContextEnabled else { throw ScreenFailure.disabled }
+        guard owns(observed, for: observed.request), let preview else { throw ScreenFailure.retired }
+        guard imageTransfer == nil || imageTransfer?.isComplete == true else { throw ScreenFailure.busy }
+        let transfer = try ScreenImageTransfer(snapshot: observed, image: preview) { [weak self] in
+            self?.owns(observed, for: observed.request) == true
+        }
+        imageTransfer = transfer
+        return transfer
+    }
     private func fresh(_ captured: UInt64) -> Bool {
         let current = now()
         return captured > 0 && current >= captured && current - captured <= 10_000_000_000
     }
     private func run(for request: ScreenRequest, budgetNanoseconds: UInt64,
-                     validating original: ScreenSnapshot?) async -> ScreenCaptureOutcome {
+                     validating original: ScreenSnapshot?, requiringImageIdentity: Bool = false) async -> ScreenCaptureOutcome {
         guard !Task.isCancelled else { return .unavailable(.retired) }
         guard isEnabled else { return .unavailable(.disabled) }
         guard let source = selectedSource else { return .unavailable(.noSelection) }
@@ -94,7 +121,7 @@ import CryptoKit
         guard flight == nil else { return .unavailable(.busy) }
         guard budgetNanoseconds > 0 else { return .unavailable(.timedOut) }
         let selection = selectionRevision, permission = permissionRevision, id = UUID()
-        if original == nil { snapshot = nil; preview = nil }
+        if original == nil { imageTransfer?.cancel(); imageTransfer = nil; snapshot = nil; preview = nil }
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 let active = Flight(id: id, waiter: continuation)
@@ -118,7 +145,7 @@ import CryptoKit
                         let digest = Self.contentDigest(lines)
                         let result: ScreenSnapshot
                         if let original {
-                            guard digest == original.contentDigest else { throw ScreenFailure.retired }
+                            guard digest == original.contentDigest, !requiringImageIdentity || imageDigest == original.imageDigest else { throw ScreenFailure.retired }
                             result = original
                         } else {
                             result = ScreenSnapshot(id: UUID(), request: request, source: source,
@@ -149,10 +176,12 @@ import CryptoKit
                   fresh(candidate.capturedUptimeNanoseconds) else {
                 waiter.resume(returning: .unavailable(.retired)); return
             }
-            snapshot = candidate; preview = image
+            // A text-only recheck must retain the original pixel artifact and timestamp.
+            if snapshot?.id != candidate.id { preview = image }
+            snapshot = candidate
         } else if case .unavailable(let reason) = outcome {
             if reason == .closed || reason == .denied { sourceUnavailable(reason) }
-            else { snapshot = nil; preview = nil; onInvalidation?(reason) }
+            else { retire(reason) }
             admitted = .unavailable(reason)
         }
         waiter.resume(returning: admitted)
@@ -162,12 +191,14 @@ import CryptoKit
         let waiter = active.waiter
         active.waiter = nil
         active.operation?.cancel(); active.timer?.cancel()
+        imageTransfer?.cancel(); imageTransfer = nil
         snapshot = nil; preview = nil
         onInvalidation?(reason)
         waiter?.resume(returning: .unavailable(reason))
         // Keep flight until the OS/recognizer actually quiesces, even if cancellation is ignored.
     }
     private func retire(_ reason: ScreenFailure) {
+        imageTransfer?.cancel(); imageTransfer = nil
         snapshot = nil; preview = nil
         if let active = flight { retireFlight(active.id, reason: reason) }
         else { onInvalidation?(reason) }

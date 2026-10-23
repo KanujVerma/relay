@@ -42,6 +42,10 @@ import SwiftUI
         isEnabled = false; status = "Screen context is off"
         refresh()
     }
+    public func retireCurrentRequest() {
+        coordinator.retireCurrentRequest()
+        refresh()
+    }
     public func supersede(with request: ScreenRequest) {
         coordinator.supersede(with: request)
         refresh()
@@ -56,15 +60,15 @@ import SwiftUI
             status = "Text captured from \(observed.source.label)"
             return observed
         case .unavailable(let reason):
-            if coordinator.isEnabled { status = "Screen context unavailable (\(reason.rawValue))" }
+            if coordinator.isEnabled { status = reason.screenContextMessage }
             return nil
         default: return nil
         }
     }
     /// One bounded observation recheck on answer-ready. Caller rechecks its native lease after await.
     public func validateForPublication(_ observed: ScreenSnapshot, for request: ScreenRequest,
-                                       budgetNanoseconds: UInt64 = 500_000_000) async -> Bool {
-        let valid = await coordinator.validateCurrent(observed, for: request, budgetNanoseconds: budgetNanoseconds)
+                                       budgetNanoseconds: UInt64 = 500_000_000, requiringImageIdentity: Bool = false) async -> Bool {
+        let valid = await coordinator.validateCurrent(observed, for: request, budgetNanoseconds: budgetNanoseconds, requiringImageIdentity: requiringImageIdentity)
         refresh()
         return valid && coordinator.owns(observed, for: request)
     }
@@ -107,5 +111,18 @@ import SwiftUI
             Text("OCR may misread code symbols or omit diagram connections. Images stay in memory. Image understanding requires a supported model and separate enablement.")
                 .font(.caption).foregroundStyle(.secondary)
         }.padding()
+    }
+}
+
+private extension ScreenFailure {
+    var screenContextMessage: String {
+        switch self {
+        case .noSelection: "Choose a window to add screen context"
+        case .denied: "Screen access was denied. Choose a window again."
+        case .closed: "The selected window closed"
+        case .timedOut: "Screen context took too long for this question"
+        case .busy: "Screen context is finishing the previous capture"
+        default: "Screen context is unavailable for this question"
+        }
     }
 }

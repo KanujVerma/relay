@@ -222,3 +222,66 @@ extension ScreenContextCoordinatorTests {
         XCTAssertEqual(outcome, .unavailable(.noSelection))
     }
 }
+
+extension ScreenContextCoordinatorTests {
+    func testImageDependentValidationRejectsChangedPixelsEvenWhenOCRIsSame() async {
+        let frames = FakeFrames(); let coordinator = configured(frames)
+        guard case .captured(let original) = await coordinator.capture(for: requestA) else { return XCTFail() }
+        frames.color = 1
+        let valid = await coordinator.validateCurrent(original, for: requestA, requiringImageIdentity: true)
+        XCTAssertFalse(valid)
+        XCTAssertNil(coordinator.snapshot)
+    }
+    func testExpiredObservationRetiresPreviewAndCannotRestampTime() async {
+        let clock = ScreenTestClock()
+        let coordinator = ScreenContextCoordinator(provider: FakeFrames(), recognizer: FakeOCR(), now: { clock.now() })
+        coordinator.enable(); coordinator.select(sourceA); coordinator.supersede(with: requestA)
+        guard case .captured(let original) = await coordinator.capture(for: requestA) else { return XCTFail() }
+        clock.advance()
+        let valid = await coordinator.validateCurrent(original, for: requestA)
+        XCTAssertFalse(valid)
+        XCTAssertNil(coordinator.snapshot)
+        XCTAssertNil(coordinator.preview)
+        XCTAssertEqual(original.capturedUptimeNanoseconds,90)
+    }
+}
+final class ScreenTestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: UInt64 = 100
+    func now() -> UInt64 { lock.withLock { value } }
+    func advance() { lock.withLock { value = 10_000_000_091 } }
+}
+
+extension ScreenContextCoordinatorTests {
+    func testEarlierPresentationOrConflictingRequestCannotSupersedeCurrentQuestion() async {
+        let coordinator = configured()
+        let current = ScreenRequest(sessionID: requestA.sessionID, sessionEpoch: 1, presentationGeneration: 3, requestID: UUID())
+        coordinator.supersede(with: current)
+        coordinator.supersede(with: requestA)
+        let old = await coordinator.capture(for: requestA)
+        XCTAssertEqual(old, .unavailable(.retired))
+        let conflict = ScreenRequest(sessionID: current.sessionID, sessionEpoch: 1, presentationGeneration: 3, requestID: UUID())
+        coordinator.supersede(with: conflict)
+        let conflictCapture = await coordinator.capture(for: conflict)
+        XCTAssertEqual(conflictCapture, .unavailable(.retired))
+        guard case .captured(let snapshot) = await coordinator.capture(for: current) else { return XCTFail("current native request must remain selected") }
+        XCTAssertEqual(snapshot.request,current)
+    }
+}
+
+extension ScreenContextCoordinatorTests {
+    func testRemoteOnsetRetiresRequestWhileKeepingExplicitWindowSelection() async {
+        let coordinator = configured()
+        _ = await coordinator.capture(for: requestA)
+        coordinator.retireCurrentRequest()
+        XCTAssertNil(coordinator.snapshot)
+        XCTAssertEqual(coordinator.selectedSource,sourceA)
+        coordinator.supersede(with: requestA)
+        let old = await coordinator.capture(for: requestA)
+        XCTAssertEqual(old,.unavailable(.retired))
+        let next = ScreenRequest(sessionID: requestA.sessionID, sessionEpoch: 1, presentationGeneration: 2, requestID: UUID())
+        coordinator.supersede(with: next)
+        guard case .captured(let snapshot) = await coordinator.capture(for: next) else { return XCTFail() }
+        XCTAssertEqual(snapshot.request,next)
+    }
+}

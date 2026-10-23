@@ -25,6 +25,8 @@ public enum ScreenCaptureDimensions {
     private var filter: SCContentFilter?
     private var revision: UInt64 = 0
     private var registered = false
+    private var callbackGate = PickerCallbackGate()
+    private var observer: PickerObservation?
     private var selectionPending = false
     private var captureActive = false
     public override init() { super.init() }
@@ -34,7 +36,10 @@ public enum ScreenCaptureDimensions {
         clearSelection(reason: .retired)
         selectionPending = true
         let picker = SCContentSharingPicker.shared
-        if !registered { picker.add(self); registered = true }
+        if let observer { picker.remove(observer) }
+        let observer = PickerObservation(owner: self, token: callbackGate.begin())
+        self.observer = observer
+        picker.add(observer); registered = true
         var configuration = SCContentSharingPickerConfiguration()
         configuration.allowedPickerModes = .singleWindow
         configuration.allowsChangingSelectedContent = true
@@ -44,12 +49,14 @@ public enum ScreenCaptureDimensions {
     }
     public func disable() {
         selectionPending = false
+        callbackGate.retire()
         clearSelection(reason: .disabled)
-        if registered {
-            SCContentSharingPicker.shared.remove(self)
+        if registered, let observer {
+            SCContentSharingPicker.shared.remove(observer)
             SCContentSharingPicker.shared.isActive = false
             registered = false
         }
+        observer = nil
     }
     private func clearSelection(reason: ScreenFailure) {
         filter = nil; source = nil; revision += 1
@@ -98,8 +105,8 @@ public enum ScreenCaptureDimensions {
               let pid = window[kCGWindowOwnerPID as String] as? NSNumber else { return false }
         return windowID.uint32Value == source.windowID && pid.int32Value == source.processID
     }
-    private func selected(_ selectedFilter: SCContentFilter) {
-        guard registered, selectionPending || source != nil else { return }
+    fileprivate func selected(_ selectedFilter: SCContentFilter, token: UUID) {
+        guard callbackGate.accepts(token), registered, selectionPending || source != nil else { return }
         // Retire old authority before considering the new selected filter.
         clearSelection(reason: .retired)
         selectionPending = false
@@ -121,17 +128,32 @@ public enum ScreenCaptureDimensions {
 }
 
 @available(macOS 15.2, *)
-extension SystemSelectedWindowCapture: SCContentSharingPickerObserver {
-    nonisolated public func contentSharingPicker(_ picker: SCContentSharingPicker,
-                                                didUpdateWith filter: SCContentFilter, for stream: SCStream?) {
-        let transferred = PickerFilterTransfer(filter)
-        Task { @MainActor [weak self] in self?.selected(transferred.filter) }
+extension SystemSelectedWindowCapture {
+    fileprivate func pickerStopped(token: UUID, failure: ScreenFailure) {
+        guard callbackGate.accepts(token) else { return }
+        selectionPending = false
+        clearSelection(reason: failure)
     }
-    nonisolated public func contentSharingPicker(_ picker: SCContentSharingPicker, didCancelFor stream: SCStream?) {
-        Task { @MainActor [weak self] in self?.selectionPending = false; self?.clearSelection(reason: .retired) }
+}
+
+/// Immutable callback token plus an ARC-managed weak owner; callbacks hand state to MainActor.
+@available(macOS 15.2, *)
+private final class PickerObservation: NSObject, SCContentSharingPickerObserver, @unchecked Sendable {
+    private weak var owner: SystemSelectedWindowCapture?
+    private let token: UUID
+    init(owner: SystemSelectedWindowCapture, token: UUID) { self.owner = owner; self.token = token }
+    func contentSharingPicker(_ picker: SCContentSharingPicker,
+                              didUpdateWith filter: SCContentFilter, for stream: SCStream?) {
+        let transferred = PickerFilterTransfer(filter), token = token, owner = owner
+        Task { @MainActor in owner?.selected(transferred.filter, token: token) }
     }
-    nonisolated public func contentSharingPickerStartDidFailWithError(_ error: any Error) {
-        Task { @MainActor [weak self] in self?.selectionPending = false; self?.clearSelection(reason: .unavailable) }
+    func contentSharingPicker(_ picker: SCContentSharingPicker, didCancelFor stream: SCStream?) {
+        let token = token, owner = owner
+        Task { @MainActor in owner?.pickerStopped(token: token, failure: .retired) }
+    }
+    func contentSharingPickerStartDidFailWithError(_ error: any Error) {
+        let token = token, owner = owner
+        Task { @MainActor in owner?.pickerStopped(token: token, failure: .unavailable) }
     }
 }
 /// Read-only ownership transfer from an OS callback to the one UI actor; never mutate off that actor.

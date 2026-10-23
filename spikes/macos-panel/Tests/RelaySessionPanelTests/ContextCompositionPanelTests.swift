@@ -30,3 +30,25 @@ extension SessionPanelTests {
         XCTAssertThrowsError(try SessionAnswerDecision(data:JSONSerialization.data(withJSONObject:value)))
     }
 }
+
+extension SessionPanelTests {
+    func test_image_use_requires_strict_optional_canonical_digest_on_OCR_only() throws {
+        let authority=SessionPresentationAuthority();try authority.start();let e=try event(authority)
+        var value=try JSONSerialization.jsonObject(with:result(e)) as! [String:Any]
+        var provenance=value["provenance"] as! [String:Any]
+        let base:[String:Any] = ["provenance":"local_ocr","source":"Synthetic diagram","capturedUptimeNanoseconds":123]
+        var context=base;context["imageDigest"]=String(repeating:"a",count:64)
+        provenance["taskContext"]=context;value["provenance"]=provenance
+        XCTAssertEqual(try SessionAnswerDecision(data:JSONSerialization.data(withJSONObject:value)).taskContext?.imageDigest,String(repeating:"a",count:64))
+        for malformed:Any in [String(repeating:"A",count:64),String(repeating:"a",count:63),NSNull(),true,42] {
+            context=base;context["imageDigest"]=malformed
+            provenance["taskContext"]=context;value["provenance"]=provenance
+            XCTAssertThrowsError(try SessionAnswerDecision(data:JSONSerialization.data(withJSONObject:value)))
+        }
+        context=base;context["provenance"]="selected_accessibility_text";context["imageDigest"]=String(repeating:"a",count:64)
+        provenance["taskContext"]=context;value["provenance"]=provenance
+        XCTAssertThrowsError(try SessionAnswerDecision(data:JSONSerialization.data(withJSONObject:value)))
+        provenance["taskContext"]=base;value["provenance"]=provenance
+        XCTAssertNil(try SessionAnswerDecision(data:JSONSerialization.data(withJSONObject:value)).taskContext?.imageDigest)
+    }
+}

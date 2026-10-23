@@ -63,7 +63,10 @@ import RelayNativeSession
         let latch=CaptureLatch();var sent=0;var contextCount=0
         let pump=OrderedContextForwarder(captureBudgetNanoseconds:5_000_000,shouldCapture:{_ in true},capture:{_ in await latch.capture()},
             send:{_,context in sent+=1;contextCount+=context.count},onFailure:{})
-        try pump.enqueue(event(3));try await Task.sleep(for:.milliseconds(30))
+        try pump.enqueue(event(3))
+        // Observe forwarding before releasing the uncooperative capture. Other
+        // synthetic PNG tests can occupy MainActor beyond a fixed sleep.
+        for _ in 0..<100 where sent==0{try await Task.sleep(for:.milliseconds(5))}
         #expect(sent==1);#expect(contextCount==0);#expect(pump.isIdle)
         latch.finish();for _ in 0..<10 { await Task.yield() }
         #expect(sent==1)

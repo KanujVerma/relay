@@ -25,6 +25,85 @@ private final class OwnedChildExit: @unchecked Sendable {
 
 public enum HelperMode: Sendable { case noInference, fixture, oauth }
 
+/// Owned response for an already registered/enqueued visual control. Issuance
+/// is synchronous; waiting for the actual helper terminal remains asynchronous.
+public final class PendingVisualInputResponse:@unchecked Sendable {
+    private let lock=NSLock()
+    private var result:Result<VisualInputResponse,any Error>?
+    private var waiter:CheckedContinuation<VisualInputResponse,any Error>?
+    fileprivate init(){}
+    public func value()async throws->VisualInputResponse {
+        try await withCheckedThrowingContinuation{continuation in
+            let ready:Result<VisualInputResponse,any Error>?=lock.withLock{
+                if let result{return result}
+                guard waiter==nil else{return .failure(PanelBridgeError.malformed)}
+                waiter=continuation;return nil
+            }
+            if let ready{continuation.resume(with:ready)}
+        }
+    }
+    fileprivate func finish(_ value:Result<VisualInputResponse,any Error>) {
+        let pending=lock.withLock{
+            guard result==nil else{return Optional<CheckedContinuation<VisualInputResponse,any Error>>.none}
+            result=value;let pending=waiter;waiter=nil;return pending
+        }
+        pending?.resume(with:value)
+    }
+}
+
+/// A queued image can retire without waiting behind an unrelated blocked write.
+/// Once its first byte is written, only full completion or transport failure ends it.
+private final class ImageWriteReservation:@unchecked Sendable {
+    let id=UUID()
+    let byteCount:Int
+    private let lock=NSLock()
+    private var bytes:Data?
+    private var started=false
+    private var result:Result<Void,any Error>?
+    private var waiter:CheckedContinuation<Void,any Error>?
+    init(_ bytes:Data){self.bytes=bytes;byteCount=bytes.count}
+    var isFinished:Bool{lock.withLock{result != nil}}
+    var hasStarted:Bool{lock.withLock{started}}
+    func wait()async throws {
+        try await withCheckedThrowingContinuation{continuation in
+            let ready:Result<Void,any Error>?=lock.withLock{if let result{return result};waiter=continuation;return nil}
+            if let ready{continuation.resume(with:ready)}
+        }
+    }
+    func retire(_ error:any Error) {
+        let pending=lock.withLock{
+            guard !started,result==nil else{return Optional<CheckedContinuation<Void,any Error>>.none}
+            result = .failure(error);bytes=nil;let pending=waiter;waiter=nil;return pending
+        }
+        pending?.resume(throwing:error)
+    }
+    func finish(_ outcome:Result<Void,any Error>) {
+        let pending=lock.withLock{
+            guard result==nil else{return Optional<CheckedContinuation<Void,any Error>>.none}
+            result=outcome;bytes=nil;let pending=waiter;waiter=nil;return pending
+        }
+        pending?.resume(with:outcome)
+    }
+    /// Runs on MainActor so source retirement cannot interleave between its
+    /// currentness check and the first nonblocking write. Cancellation shares
+    /// this lock; an EAGAIN has not started a frame and stays retireable.
+    @MainActor func start(fd:Int32,deadline:UInt64,isCurrent:()->Bool)throws ->(Data,Int)? {
+        try lock.withLock{
+            guard result==nil,!started,let bytes else{return nil}
+            guard isCurrent() else{throw CancellationError()}
+            guard DispatchTime.now().uptimeNanoseconds<deadline else{throw PanelBridgeError.timedOut}
+            let count=bytes.withUnsafeBytes{raw in
+                var count=Darwin.write(fd,raw.baseAddress!,raw.count)
+                while count<0,errno==EINTR{count=Darwin.write(fd,raw.baseAddress!,raw.count)}
+                return count
+            }
+            if count>0{started=true;self.bytes=nil;return(bytes,count)}
+            if count<0,(errno==EAGAIN || errno==EWOULDBLOCK){return nil}
+            throw PanelBridgeError.closed
+        }
+    }
+}
+
 /// One child and owned binary pipes. Writes are nonblocking with a deadline;
 /// bounded queue overflow/EOF/malformed input retires native admission.
 public final class HelperTransport: @unchecked Sendable {
@@ -35,6 +114,17 @@ public final class HelperTransport: @unchecked Sendable {
     private var source:DispatchSourceRead?;private var stderrSource:DispatchSourceRead?;private var timer:DispatchSourceTimer?
     private var profileRequests:[UUID:CheckedContinuation<Data,any Error>]=[:]
     private var quiescenceRequests:[UUID:(UUID,UInt64,CheckedContinuation<Void,any Error>)]=[:]
+    private struct VisualWaiter {
+        let action:VisualInputAction
+        let response:PendingVisualInputResponse
+        let progress:@Sendable(VisualInputResponse)->Void
+        var last:VisualInputResponse?
+    }
+    private var visualRequests:[UUID:VisualWaiter]=[:]
+    private var visualReplies:[UUID:VisualInputResponse]=[:]
+    private var visualReplyOrder:[UUID]=[]
+    private var visualRequestCount=0
+    private var imageWrites:[UUID:ImageWriteReservation]=[:]
     private var queuedFrames=0;private var queuedBytes=0;private var failed=false
     private let exitReceipt=OwnedChildExit()
     private let decoder=AnswerFrameDecoder();private var partialSince:UInt64?
@@ -72,6 +162,37 @@ public final class HelperTransport: @unchecked Sendable {
     public func sendJSON(_ data:Data) throws {
         _=try StrictJSON.decode(data);var n=UInt32(data.count).bigEndian
         var frame=withUnsafeBytes(of:&n) { Data($0) };frame.append(data);try enqueue(frame)
+    }
+    /// One producer-owned JSON frame, with bounded asynchronous backpressure.
+    /// Once admitted, its full frame must finish or fail the whole transport;
+    /// source cancellation never inserts an EOU into a partially written frame.
+    @MainActor public func sendJSONAwaitingWrite(_ data:Data,deadline:UInt64,isCurrent:@escaping @MainActor ()->Bool) async throws {
+        _=try StrictJSON.decode(data);var length=UInt32(data.count).bigEndian
+        var frame=withUnsafeBytes(of:&length){Data($0)};frame.append(data)
+        while true {
+            try Task.checkCancellation()
+            guard isCurrent() else{throw CancellationError()}
+            guard DispatchTime.now().uptimeNanoseconds<deadline else{throw PanelBridgeError.timedOut}
+            do {
+                let reservation=ImageWriteReservation(frame)
+                try enqueueImage(reservation,deadline:deadline,isCurrent:isCurrent)
+                let monitor=Task{@MainActor in
+                    while !reservation.isFinished {
+                        if !isCurrent(){reservation.retire(CancellationError());return}
+                        if DispatchTime.now().uptimeNanoseconds>=deadline{reservation.retire(PanelBridgeError.timedOut);return}
+                        do{try await Task.sleep(for:.milliseconds(1))}catch{return}
+                    }
+                }
+                defer{monitor.cancel()}
+                try await withTaskCancellationHandler{try await reservation.wait()}onCancel:{reservation.retire(CancellationError())}
+                try Task.checkCancellation()
+                guard isCurrent() else{throw CancellationError()}
+                guard DispatchTime.now().uptimeNanoseconds<deadline else{throw PanelBridgeError.timedOut}
+                return
+            } catch PanelBridgeError.overflow {
+                try await Task.sleep(for:.milliseconds(1))
+            }
+        }
     }
     public func requestProfile(_ command:Data) async throws -> Data {
         _=try StrictJSON.decode(command)
@@ -119,6 +240,66 @@ public final class HelperTransport: @unchecked Sendable {
             }
         }
     }
+    /// The UI explicitly requests verify/disable/status. Status alone grants
+    /// no native image authority, and cancellation completion comes from the
+    /// original verify terminal reply rather than a local timer/Task flag.
+    public func requestVisualInput(_ action:VisualInputAction,onUpdate:@escaping @Sendable(VisualInputResponse)->Void) async throws -> VisualInputResponse {
+        let response=try issueVisualInput(action,onUpdate:onUpdate)
+        return try await response.value()
+    }
+    /// Register and enqueue before the caller can release a staged EOU. No
+    /// helper IO or await occurs here; the existing bounded writer owns order.
+    public func issueVisualInput(_ action:VisualInputAction,onUpdate:@escaping @Sendable(VisualInputResponse)->Void) throws -> PendingVisualInputResponse {
+        let id=UUID()
+        let envelope=try JSONEncoder().encode(WireValue.object(["schemaVersion":.uint(1),"kind":.string("visual_input_request"),"requestID":.string(id.uuidString.lowercased()),"action":.string(action.rawValue)]))
+        let response=PendingVisualInputResponse()
+        try lock.withLock {
+            guard !failed,visualRequests.count<4,visualRequestCount<512 else{throw PanelBridgeError.closed}
+            visualRequestCount+=1
+            visualRequests[id]=VisualWaiter(action:action,response:response,progress:onUpdate,last:nil)
+        }
+        do{try sendJSON(envelope)}catch{
+            let waiter=lock.withLock{visualRequests.removeValue(forKey:id)}
+            waiter?.response.finish(.failure(PanelBridgeError.closed));fail();throw error
+        }
+        io.asyncAfter(deadline:.now() + .seconds(35)){[weak self] in
+            guard let self else{return}
+            let waiter=self.lock.withLock{self.visualRequests.removeValue(forKey:id)}
+            if let waiter{waiter.response.finish(.failure(PanelBridgeError.timedOut));self.fail()}
+        }
+        return response
+    }
+    private enum VisualDelivery {
+        case ignored
+        case progress(@Sendable(VisualInputResponse)->Void)
+        case terminal(PendingVisualInputResponse)
+    }
+    private func acceptVisual(_ reply:VisualInputResponse)throws {
+        let delivery:VisualDelivery=try lock.withLock {
+            guard !failed else{throw PanelBridgeError.closed}
+            guard var waiter=visualRequests[reply.requestID] else{
+                guard visualReplies[reply.requestID]==reply else{throw PanelBridgeError.malformed}
+                return .ignored
+            }
+            guard waiter.action==reply.action else{throw PanelBridgeError.malformed}
+            if waiter.last==reply{return .ignored}
+            if !reply.isTerminal {
+                guard waiter.last==nil else{throw PanelBridgeError.malformed}
+                waiter.last=reply;visualRequests[reply.requestID]=waiter
+                return .progress(waiter.progress)
+            }
+            // All fallible validation precedes removal of continuation ownership.
+            visualRequests.removeValue(forKey:reply.requestID)
+            visualReplies[reply.requestID]=reply;visualReplyOrder.append(reply.requestID)
+            while visualReplyOrder.count>8{visualReplies.removeValue(forKey:visualReplyOrder.removeFirst())}
+            return .terminal(waiter.response)
+        }
+        switch delivery {
+        case .ignored:break
+        case .progress(let callback):callback(reply)
+        case .terminal(let response):response.finish(.success(reply))
+        }
+    }
     private func enqueue(_ frame:Data) throws {
         try lock.withLock {
             guard !failed,input != nil else { throw PanelBridgeError.closed }
@@ -131,11 +312,40 @@ public final class HelperTransport: @unchecked Sendable {
             do { try self.write(frame) } catch { self.fail() }
         }
     }
-    private func write(_ frame:Data) throws {
+    private func enqueueImage(_ reservation:ImageWriteReservation,deadline:UInt64,isCurrent:@escaping @MainActor ()->Bool)throws {
+        try lock.withLock{
+            guard !failed,input != nil else{throw PanelBridgeError.closed}
+            guard queuedFrames<32,queuedBytes+reservation.byteCount<=262144 else{throw PanelBridgeError.overflow}
+            queuedFrames+=1;queuedBytes+=reservation.byteCount;imageWrites[reservation.id]=reservation
+        }
+        writes.async{[weak self] in
+            guard let self else{reservation.finish(.failure(PanelBridgeError.closed));return}
+            // Keep the bounded queue slot until it drains, even if its bytes
+            // and waiter retire earlier. No unbounded cancelled work queue.
+            defer{self.lock.withLock{self.queuedFrames-=1;self.queuedBytes-=reservation.byteCount;self.imageWrites.removeValue(forKey:reservation.id)}}
+            do {
+                guard let fd=self.lock.withLock({!self.failed ? self.input?.fileDescriptor:nil}) else{throw PanelBridgeError.closed}
+                while !reservation.isFinished {
+                    let first=try DispatchQueue.main.sync{
+                        try MainActor.assumeIsolated{try reservation.start(fd:fd,deadline:deadline,isCurrent:isCurrent)}
+                    }
+                    if let (frame,offset)=first {
+                        try self.write(frame,startingAt:offset);reservation.finish(.success(()));return
+                    }
+                    if !reservation.isFinished{var descriptor=pollfd(fd:fd,events:Int16(POLLOUT),revents:0);_=poll(&descriptor,1,50)}
+                }
+            }catch{
+                if reservation.hasStarted{self.fail()}
+                else if case PanelBridgeError.closed=error{self.fail()}
+                reservation.finish(.failure(error))
+            }
+        }
+    }
+    private func write(_ frame:Data,startingAt:Int=0) throws {
         guard let fd=lock.withLock({ !failed ? input?.fileDescriptor:nil }) else { throw PanelBridgeError.closed }
         let deadline=DispatchTime.now().uptimeNanoseconds+2_000_000_000
         try frame.withUnsafeBytes { raw in
-            var offset=0
+            var offset=startingAt
             while offset<raw.count {
                 guard DispatchTime.now().uptimeNanoseconds<deadline,!lock.withLock({ failed }) else { throw PanelBridgeError.timedOut }
                 let n=Darwin.write(fd,raw.baseAddress!.advanced(by:offset),raw.count-offset)
@@ -179,6 +389,8 @@ public final class HelperTransport: @unchecked Sendable {
                             return pending.2
                         }
                         continuation.resume()
+                    } else if case .object(let fields)=node,case .string("visual_input_response")?=fields["kind"] {
+                        try acceptVisual(VisualInputResponse(data:frame))
                     } else { _=try SessionAnswerDecision(data:frame);try onFrame(frame) }
                 }
                 if decoder.hasPartial { if partialSince==nil { partialSince=DispatchTime.now().uptimeNanoseconds } } else { partialSince=nil }
@@ -206,13 +418,16 @@ public final class HelperTransport: @unchecked Sendable {
     }
 
     public func stop() {
-        let (child,pending)=lock.withLock {
+        let (child,pending,images)=lock.withLock {
             failed=true;let pending=Array(profileRequests.values);profileRequests.removeAll()
             let sessions=Array(quiescenceRequests.values);quiescenceRequests.removeAll()
             sessions.forEach { $0.2.resume(throwing:PanelBridgeError.closed) }
-            return (process,pending)
+            let visual=Array(visualRequests.values);visualRequests.removeAll()
+            visual.forEach{$0.response.finish(.failure(PanelBridgeError.closed))}
+            return (process,pending,Array(imageWrites.values))
         }
         pending.forEach { $0.resume(throwing:PanelBridgeError.closed) }
+        images.forEach{$0.retire(PanelBridgeError.closed)}
         io.async { [weak self] in
             guard let self else { return };self.source?.cancel();self.stderrSource?.cancel();self.timer?.cancel()
         }

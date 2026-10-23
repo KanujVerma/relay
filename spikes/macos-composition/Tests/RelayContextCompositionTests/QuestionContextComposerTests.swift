@@ -40,8 +40,10 @@ private actor TextSource:ScreenTextRecognizer {
         let image=ImageSource();let screen=ScreenContextCoordinator(provider:image,recognizer:TextSource())
         screen.enable();screen.select(ScreenSource(windowID:1,bundleID:app.bundleID,processID:42,label:"Synthetic editor"))
         let composer=QuestionContextComposer(authority:authority,screen:screen,selection:selection)
-        let frames=await composer.capture(for:binding,readSelectedText:true)
+        var imageFrames=0
+        let frames=await composer.captureForForwarding(for:binding,readSelectedText:true,imageWriter:{_ in imageFrames+=1})
         #expect(frames.count==1);#expect(selectionSource.calls==1);#expect(image.calls==0)
+        #expect(imageFrames==0)
         #expect(composer.contextUse?.provenance=="selected_accessibility_text")
         #expect(await composer.validateForPublication(binding))
         #expect(selectionSource.calls==2);#expect(composer.ownsCurrent(binding))

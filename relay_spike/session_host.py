@@ -16,7 +16,7 @@ import time
 import uuid
 from .asr_turn_adapter import SyntheticEOUBridge, CaptureContext, FinalizedASRObservation, classify_question_intent
 from .conversation_context import ConversationContext
-from .generated_answer import INSTRUCTIONS, GeneratedCard, CardDetail, CardError, make_prompt, parse_generated_card
+from .generated_answer import INSTRUCTIONS, GeneratedCard, CardDetail, CardError, make_prompt, parse_generated_card, requires_personal_evidence
 from .panel_wire import decode_event, encode_frame, FrameDecoder, WireError, host_ms
 from .question_turns import QuestionTurnMachine
 from .reference_host import ReferencePermission, publish_reference, render_queued_card
@@ -50,6 +50,7 @@ class Request:
     token: object
     display_id: str
     question: str
+    display_question: str
     bundle: object
     accepted_at: float
 
@@ -68,6 +69,7 @@ class SessionHost:
         self.activities={};self.used_requests=set();self.terminal=set();self.tasks=set();self.active=None
         self.model_requests=0
         self._worker=None;self._pending_work=None
+        self._microphone_available=False
 
     def _invalidate(self):
         if self.active is not None:
@@ -106,7 +108,7 @@ class SessionHost:
         value={key:n[key] for key in ('captureSessionID','sessionEpoch','presentationGeneration','requestID','eventSequence')}
         value.update(schemaVersion=1,resultRevision=1 if pending else 2,disposition=disposition,reasonCode=reason,
             pythonToken={'turnID':request.token.turn_id,'version':request.token.version,'generation':request.token.generation},
-            displayID=request.display_id,question=request.question,answerID=uuid.uuid4().hex if disposition=='answer' else None,answerKind=kind,card=card,provenance=provenance)
+            displayID=request.display_id,question=request.display_question,answerID=uuid.uuid4().hex if disposition=='answer' else None,answerKind=kind,card=card,provenance=provenance)
         # Encode before sealing: overflow fails closed; no truncation of facts/code.
         encode_frame(value)
         if not pending: self.terminal.add(n['requestID'])
@@ -137,6 +139,7 @@ class SessionHost:
             self.bridge=SyntheticEOUBridge(self.machine,eligibility_strategy=CompositeEligibility(self.context))
             self.permission=ReferencePermission(self.machine.turns)
             self.session=identity;self.sequence=1;self.presentation=n['presentationGeneration'];self.live=True
+            self._microphone_available=p['microphoneEnabled']
             self.bridge.resume_after_host_authorization(CaptureContext('authorized',True));self.permission.grant()
             return
         if not self.live or identity!=self.session: return
@@ -145,6 +148,12 @@ class SessionHost:
             self.close();raise WireError('session_sequence_gap')
         previous_presentation=self.presentation
         self.sequence=n['eventSequence'];self.presentation=max(self.presentation,n['presentationGeneration'])
+        if source==1 and kind in ('source_unavailable','discontinuity'):
+            self._microphone_available=False
+            self.activities={k:v for k,v in self.activities.items() if k[0]!=1}
+            self.context.mark_gap('microphone_unavailable' if kind=='source_unavailable' else 'microphone_discontinuity')
+            return
+        if source==1 and not self._microphone_available: return
         if kind in ('stopping','stopped','source_unavailable','discontinuity'):
             self.close();return
         key=(source,n['streamGeneration'],p['activityID'])
@@ -201,11 +210,12 @@ class SessionHost:
         snap=result.question.snapshot
         question=snap.prompt if snap.current_utterance!=snap.root_question else snap.current_utterance
         # UI question has its own strict bound; never rewrite semantic content.
-        if len(question.encode())>500:
+        display_question=inner.text
+        if len(display_question.encode())>500:
             self._withhold_native(n,'question_overflow');return
         try: bundle=self.provider.retrieve(question,self.role) if self.provider else None
         except ValueError: bundle=None
-        req=Request(dict(n),result.token,uuid.uuid4().hex,question,bundle,time.monotonic());self.active=req
+        req=Request(dict(n),result.token,uuid.uuid4().hex,question,display_question,bundle,time.monotonic());self.active=req
         route=publish_reference(PolicyInput(question,self.role,'sql',source_channel='remote_final',question_status='final',host_authorized=True),turns=self.machine.turns,token=req.token,consent=self.permission,on_present=lambda _:None)
         if route.card:
             authorized=[]
@@ -218,6 +228,8 @@ class SessionHost:
             self._result(req,'abstain','reference_unavailable');return
         if self._personal_question(question):
             self._personal(req);return
+        if self.context.snapshot().task.state!='ready':
+            self._result(req,'clarify','task_context_'+('overflow' if self.context.snapshot().task.state=='overflow' else 'unresolved'));return
         if self.complete is None:
             self._result(req,'abstain','inference_disabled');return
         self._result(req,'pending','generating',pending=True)
@@ -250,7 +262,7 @@ class SessionHost:
 
     @staticmethod
     def _personal_question(question):
-        return bool(re.search(r'\b(?:your|my)\b.{0,60}\b(?:resume|résumé|project|experience|role|contribution|background|career|team)\b|\b(?:did you|have you|tell me about yourself)\b|\byou\b.{0,40}\b(?:built|worked|led|developed|contributed)\b',question,re.I))
+        return requires_personal_evidence(question)
 
     def _personal(self,req):
         bundle=req.bundle
@@ -278,9 +290,9 @@ class SessionHost:
                         validator=getattr(self.supplemental_provider,'validate_current',None)
                         if value.kind!='screen_text' or callable(validator) and validator(value,req.native):
                             supplemental=value;self._supplemental[req.native['requestID']]=value
-                candidate=await self.complete(make_prompt(req.question,dialogue,req.bundle,supplemental=supplemental),INSTRUCTIONS)
+                candidate=await self.complete(make_prompt(req.question,dialogue,req.bundle,supplemental=supplemental,current_utterance=req.display_question),INSTRUCTIONS)
             if not self._current(req): return
-            code_required=bool(re.search(r'\b(?:write|show|provide)\b.{0,30}\b(?:code|function|query|sql)\b',req.question,re.I))
+            code_required=bool(re.search(r'\b(?:write|show|provide)\b.{0,30}\b(?:code|function|query|sql)\b',req.display_question,re.I))
             card=parse_generated_card(candidate,code_required=code_required)
             self._result(req,'answer','format_checked',card.as_dict(),kind='generated_suggestion',provenance={'model':getattr(getattr(self.complete,'__self__',None),'model','injected_fixture_transport'),'checks':list(card.checks),'independentlyReviewed':False})
         except asyncio.CancelledError: return

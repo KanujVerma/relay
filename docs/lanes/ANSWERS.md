@@ -1,4 +1,10 @@
-# Answers lane checkpoint
+# Answers lane current review checkpoint
+
+Round1 review against cd5286a has four reproduced corrections implemented and focused tests green. Original-owner personal d8bb0dc/eb98e41 imported as1472c75/79e19f2; shared emergency adapter updated. See [ANSWERS_REVIEW_R1.md](ANSWERS_REVIEW_R1.md) for exact delta, limits and checks. Standalone personal exit-receipt follow-up and independent re-review remain pending; this checkpoint is not final composition acceptance. No screen/control/workflow/native-capture changes.
+
+Fresh checkpoint: Python460passed/23optional skips; native panel25passed; EVALS26/docs20/diff passed. Shared actual child exit receipt and required emergency profile close tests passed; no waitUntilExit in the owned helper transport.
+
+## Prior source handoff (historical)
 
 Branch feature/contextual-answer-panel-2026-10-23, issue #62. Original base3e0eb379fdc8a710dd9ebee51bc93b8c6004e02d; foundationa8f8359 merged. Draft PR #67: https://github.com/KanujVerma/relay/pull/67. Verified source head 870396415708ac3ca40176add33234b6ff0c1d3d (published); any later lane-handoff-only commit does not change that tested source. Controller independent review is pending.
 

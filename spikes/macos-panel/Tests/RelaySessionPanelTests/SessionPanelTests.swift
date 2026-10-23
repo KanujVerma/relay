@@ -174,3 +174,46 @@ final class SharedGoldenJSONTests: XCTestCase {
         }
     }
 }
+
+import RelayProfile
+extension HelperTransportTests {
+    @MainActor func test_required_profile_emergency_retires_and_awaits_shared_child() async throws {
+        let root=URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        // A real owned child consumes input but never acknowledges a profile command.
+        let helper=HelperTransport(root:root,python:URL(fileURLWithPath:"/usr/bin/env"),pythonArguments:["python3","-c","import sys; sys.stdin.buffer.read()"],mode:.noInference,onFrame:{ _ in },onFailure:{})
+        try helper.start();let authority=SessionPresentationAuthority();try authority.start()
+        let entered=expectation(description:"request entered the shared transport")
+        let port=ClosureProfilePort(request:{ data in entered.fulfill();return try await helper.requestProfile(data) },emergencyShutdown:{ authority.stop();await helper.shutdownAndWait() })
+        let client=ProfileClient(port:port)
+        let request=Task { @MainActor in do { _=try await client.command(["command":"state"]);return false } catch { return true } }
+        await fulfillment(of:[entered],timeout:3)
+        let outcome=await client.close()
+        XCTAssertEqual(outcome,.helperStopped);XCTAssertNil(authority.snapshot())
+        let rejected=await request.value;XCTAssertTrue(rejected)
+        XCTAssertThrowsError(try helper.start())
+        do { _=try await client.command(["command":"new"]);XCTFail("retired client restarted") } catch {}
+    }
+}
+
+import Darwin
+extension HelperTransportTests {
+    @MainActor func test_exit_receipt_confirms_shared_child_was_reaped() async throws {
+        let root=URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let script="""
+        import json,os,struct,sys
+        n=struct.unpack('>I',sys.stdin.buffer.read(4))[0]
+        request=json.loads(sys.stdin.buffer.read(n))
+        body=json.dumps(dict(schemaVersion=1,kind='profile_response',requestID=request['requestID'],payload=dict(ok=True,pid=os.getpid()))).encode()
+        sys.stdout.buffer.write(struct.pack('>I',len(body))+body);sys.stdout.buffer.flush()
+        sys.stdin.buffer.read()
+        """
+        let helper=HelperTransport(root:root,python:URL(fileURLWithPath:"/usr/bin/env"),pythonArguments:["python3","-c",script],mode:.noInference,onFrame:{ _ in },onFailure:{})
+        try helper.start()
+        let response=try await helper.requestProfile(Data("{\"command\":\"state\"}".utf8))
+        let fields=try XCTUnwrap(JSONSerialization.jsonObject(with:response) as? [String:Any])
+        let pid=try XCTUnwrap(fields["pid"] as? Int32)
+        await helper.shutdownAndWait()
+        var status:Int32=0;errno=0
+        XCTAssertEqual(waitpid(pid,&status,WNOHANG),-1);XCTAssertEqual(errno,ECHILD)
+    }
+}

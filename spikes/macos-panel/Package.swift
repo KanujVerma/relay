@@ -16,7 +16,7 @@ let package = Package(
         .target(name: "RelayPanelState"),
         .target(name: "RelaySessionPanel", dependencies: [.product(name: "RelayNativeSession", package: "macos-session")]),
         .executableTarget(name: "RelayPanelSession", dependencies: ["RelaySessionPanel", .product(name:"RelaySessionCapture",package:"macos-session"), .product(name:"RelayProfile",package:"macos-profile"), .product(name:"RelayAudioBuffer",package:"macos-audio")]),
-        .testTarget(name: "RelaySessionPanelTests", dependencies: ["RelaySessionPanel"]),
+        .testTarget(name: "RelaySessionPanelTests", dependencies: ["RelaySessionPanel",.product(name:"RelayProfile",package:"macos-profile")]),
         .executableTarget(name: "RelayPanelDemo", dependencies: ["RelayPanelState"]),
         .testTarget(name: "RelayPanelStateTests", dependencies: ["RelayPanelState"]),
     ]

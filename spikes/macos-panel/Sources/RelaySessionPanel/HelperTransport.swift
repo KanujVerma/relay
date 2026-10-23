@@ -3,6 +3,26 @@ import Dispatch
 import Darwin
 import RelayNativeSession
 
+private final class OwnedChildExit: @unchecked Sendable {
+    private let lock=NSLock()
+    private var finished=false
+    private var waiters:[CheckedContinuation<Void,Never>]=[]
+    var isFinished:Bool { lock.withLock { finished } }
+    func record() {
+        let pending=lock.withLock { finished=true;let values=waiters;waiters.removeAll();return values }
+        pending.forEach { $0.resume() }
+    }
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            let immediate=lock.withLock {
+                if finished { return true }
+                waiters.append(continuation);return false
+            }
+            if immediate { continuation.resume() }
+        }
+    }
+}
+
 public enum HelperMode: Sendable { case noInference, fixture, oauth }
 
 /// One child and owned binary pipes. Writes are nonblocking with a deadline;
@@ -15,6 +35,7 @@ public final class HelperTransport: @unchecked Sendable {
     private var source:DispatchSourceRead?;private var stderrSource:DispatchSourceRead?;private var timer:DispatchSourceTimer?
     private var profileRequests:[UUID:CheckedContinuation<Data,any Error>]=[:]
     private var queuedFrames=0;private var queuedBytes=0;private var failed=false
+    private let exitReceipt=OwnedChildExit()
     private let decoder=AnswerFrameDecoder();private var partialSince:UInt64?
     public init(root:URL,python:URL,pythonArguments:[String]=[],mode:HelperMode,role:String="analytics",
                 onFrame:@escaping @Sendable(Data)throws->Void,onFailure:@escaping @Sendable()->Void) {
@@ -25,7 +46,11 @@ public final class HelperTransport: @unchecked Sendable {
         child.executableURL=python;child.currentDirectoryURL=root
         child.arguments=pythonArguments+["-m","relay_spike.session_host","--role",role]+(mode == .fixture ? ["--fixture-model"] : mode == .oauth ? ["--oauth"]:[])
         child.standardInput=stdin;child.standardOutput=stdout;child.standardError=stderr
-        child.terminationHandler={ [weak self] _ in self?.fail() }
+        let receipt=exitReceipt
+        child.terminationHandler={ [weak self,receipt] child in
+            _=child.terminationStatus
+            self?.fail();receipt.record()
+        }
         try lock.withLock {
             guard process==nil,!failed else { throw PanelBridgeError.closed }
             try child.run();process=child;input=stdin.fileHandleForWriting;output=stdout.fileHandleForReading;errors=stderr.fileHandleForReading
@@ -129,6 +154,16 @@ public final class HelperTransport: @unchecked Sendable {
         let first=lock.withLock { if failed { return false };failed=true;return true }
         guard first else { return };onFailure();stop()
     }
+    /// Permanently close admission, reject pending continuations and await the
+    /// owned child's actual exit/reap. No replacement can be launched by this object.
+    public func shutdownAndWait() async {
+        stop()
+        guard lock.withLock({ process != nil }) else { return }
+        // The prelaunch termination handler records Foundation's actual child
+        // termination/reap. No launch-thread runloop or blocking wait is needed.
+        await exitReceipt.wait()
+    }
+
     public func stop() {
         let (child,pending)=lock.withLock {
             failed=true;let pending=Array(profileRequests.values);profileRequests.removeAll()
@@ -144,11 +179,12 @@ public final class HelperTransport: @unchecked Sendable {
             self.lock.withLock { try? self.input?.close();self.input=nil }
         }
         guard let child else { return }
+        let receipt=exitReceipt
         io.asyncAfter(deadline:.now() + .seconds(2)) {
-            if child.isRunning { child.terminate() }
+            if !receipt.isFinished,child.isRunning { child.terminate() }
         }
         io.asyncAfter(deadline:.now() + .seconds(4)) {
-            if child.isRunning { _=Darwin.kill(child.processIdentifier,SIGKILL) }
+            if !receipt.isFinished,child.isRunning { _=Darwin.kill(child.processIdentifier,SIGKILL) }
         }
     }
 }

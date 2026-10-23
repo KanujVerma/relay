@@ -378,9 +378,18 @@ class SyntheticEOUBridge:
             if (event.revision == revision and not event.text.strip()
                     and event.start_ms == start_ms and event.end_ms == end_ms):
                 return result("ignored", "duplicate_blank_final")
-            # A blank EOU is a finalized terminal event, not a missing
-            # transcript that can later be silently upgraded to ready.
-            self.machine.turns.cancel()
+            # A blank EOU is terminal, not a missing partial. A subsequent
+            # contradiction must clear the ENTIRE shared machine context,
+            # not just revoke ActiveTurns: otherwise an interrupted question
+            # snapshot could be reused by the next EOU final as a correction.
+            # Require a new explicitly authorized host capture generation.
+            self.machine.cancel()
+            self._retired_generation = max(
+                event.stream_generation,
+                self._latest_generation if self._latest_generation is not None else -1,
+                self._retired_generation if self._retired_generation is not None else -1,
+            )
+            self._awaiting_host_resume = True
             return result("needs_review", "final_conflicts_with_blank_eou")
         if not event.text.strip():
             self._blank_finals[blank_key] = (

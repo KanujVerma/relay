@@ -34,6 +34,8 @@ When two text-free remote speech onsets overlap, the identity and ordering of th
 
 On explicit capture authorization loss, the adapter retires **at least the generation carried by that unauthorized event**, even when it is newer than previously seen data. After host-approved resume, those generations cannot be replayed to create a question.
 
+A blank successful EOU is unresolved remote speech, not silence. The machine cancels a current answer or pending correction if a blank EOU overlaps **any accepted contributing question/correction source interval**, including earlier roots and original text-free onset spans, even when its end is older than the newest finalized correction. A truly unrelated older blank may be ignored by the state machine but remains a recorded review-only terminal in the bridge; same-millisecond terminal boundaries are treated conservatively. These decisions are synthetic tests, not speech/diarization evidence.
+
 The bounded blank-final tombstone map has only 128 entries. Once it must evict any finalized blank identity, the entire current generation stops automatic question routing because arbitrary opaque segment IDs and revised timestamps do not prove that a later "new" final was not the evicted terminal. A future generation restores routing. These fail-closed behaviors are **not** evidence that the local FluidAudio worker implements native permission or overlap detection.
 
 ## Intent and answer safety

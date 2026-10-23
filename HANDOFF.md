@@ -1,6 +1,6 @@
 # Relay handoff: current state and continuation
 
-Updated 2026-10-23. Snapshot base: `eb28d1586e52b7f0fd2e3b15580ae08ff295872e` on GitHub main. This documentation branch does not implement the proposed features below. Recheck live branches, PR heads, checks and working-tree state before acting.
+Updated 2026-10-23. Snapshot main: `eb28d1586e52b7f0fd2e3b15580ae08ff295872e`, rechecked through current PR base metadata. Runtime features are published on separate draft branches listed in [BUILD_STATUS](docs/BUILD_STATUS.md). Documentation PR #59 mirrors this handoff without importing their runtime code. Recheck live branches, PR heads, checks and working-tree state before acting.
 
 ## Goal and approved decisions
 
@@ -11,6 +11,12 @@ The owner clarified the end experience: one always-ready assistant listens to th
 The owner requested parallel agents managed by a controller, with one agent first repairing existing work. The owner subsequently authorized frequent commits and pushes of agreed work at meaningful verified checkpoints; routine scoped publication does not require repeated confirmation. Merge approval and material scope expansion remain separate. Every worker for this effort must use **GPT-6.1 Sol with extra-high reasoning or higher**. Before creating new architecture, inspect relevant open-source source and tests, check version/license/platform requirements, and record actual reuse versus lessons or rejected alternatives.
 
 GitHub is the durable source of truth. A new chat or agent must be able to continue from this repository, not a preceding conversation. Update this file and the relevant contract/evidence in each slice. [PARALLEL_PLAN.md](docs/PARALLEL_PLAN.md) owns lane scope, write ownership, proposed interfaces and integration order. [UPSTREAM_REUSE.md](docs/research/UPSTREAM_REUSE.md) owns the new source-research record. Proposed detailed contracts are [SESSION_BRIDGE.md](docs/SESSION_BRIDGE.md) and [GENERATED_ANSWERS.md](docs/GENERATED_ANSWERS.md); [repair evidence](docs/evidence/2026-10-23-pr-fixes.md) records local verification.
+
+## Active implementation, approved by owner
+
+The owner approved the three core features and directed agents to build them in parallel. Current delivery is tracked in [BUILD_STATUS](docs/BUILD_STATUS.md), with implementation interfaces in [BUILD_CONTRACT](docs/BUILD_CONTRACT.md) and the [execution plan](docs/superpowers/plans/2026-10-23-parallel-implementation.md). Personal PR #63, answer/panel PR #67, conversation PR #68 and screen-context PR #69 are published drafts. Shortcuts/app controls are building separately. Personal independent review found three reproducible issues and corrections are underway; conversation independent review is active. PR #67 also exposes a Swift 6.1.2 compilation failure in its imported profile dependency. Independent review, complete app composition and real hardware/account acceptance remain open.
+
+Additional accepted requirements include coding with an engineer, feature case studies, optional screen context and useful global shortcuts/app controls. A separate agent completed the requested [REA/Cluely investigation](docs/research/CLUELY_LESSONS.md); its observed implementation details and unknowns inform these features. No proprietary app code or private user material is copied into Relay.
 
 ## Implemented on the snapshot main
 
@@ -37,18 +43,18 @@ Observed remote CI is green on both repaired code heads: PR46 [contract checks](
 
 The 21 Python skips are optional document-converter integration tests; their dependencies were not installed for these repairs. Synthetic tests do not establish on-device recognition, microphone/system permission coverage, model latency or real UI behavior.
 
-## Proposed work, not implemented
+## Implementation boundaries
 
-Following the full-experience clarification, the recommended three core lanes are continuous conversation/session capture, selected personal/job context with verified retrieval, and one contextual answer engine plus the actual panel. Reviewed technical references remain reusable material in that engine; expanded reference coverage can take the next freed worker slot. This rebalanced assignment is proposed for discussion, not implemented. All answer paths feed one router and one native display contract. The automatic/both-lanes goals are approved; the detailed transport, generated-answer publication policy and implementation briefs remain proposals for architecture discussion.
+The active lanes are continuous conversation/session capture, selected personal/job context with verified retrieval, and one contextual answer engine plus the actual panel, with optional screen context and app controls alongside them. Reviewed technical references remain reusable material in that engine. BUILD_CONTRACT governs the approved implementation; the older SESSION_BRIDGE and GENERATED_ANSWERS proposals are planning history where they differ. Published feature drafts are not an accepted joined runtime.
 
-Important current gaps:
+Important boundaries to preserve during review and composition:
 
 - ASR supplies null confidence. VAD probability is speech probability, not transcript accuracy. Automatic intent/eligibility needs an evaluated confidence-free strategy, not a fabricated score.
 - The existing inner EOU v1 schema has **13 exact keys**. Session IDs, ordering, speech onset and stop need an explicit versioned outer contract; do not silently add inner fields.
 - PR #46 already has `remote_speech_started(...)` and retained interrupted context. Reuse it. VAD activity IDs and ASR segment IDs cannot be equated without proven consumed-audio provenance.
 - Python object identity/locks do not survive transport. Native must reject stale cards again at actual UI state commit, using source-stamped session/request fences.
-- Current broad model output is withheld. Showing a generated suggestion needs an explicit new status/policy, distinct from an independently reviewed reference or verified personal fact.
-- The current synchronous SSE read can block; safe stale-output suppression alone does not establish prompt cancellation or useful interruption recovery.
+- Main still withholds broad model output. The feature draft adds the approved generated-suggestion path and its own validation; it must not inherit independently reviewed-reference or verified-personal authority.
+- Main's synchronous SSE read can block. The feature draft adds a bounded async HTTPX adapter; actual upstream cancellation and useful live interruption recovery remain acceptance questions.
 
 ## At risk and publication boundary
 
@@ -58,7 +64,7 @@ For each subsequent checkpoint, record exact commit/PR links and observed check/
 
 ## One exact next action
 
-Complete and verify exact-head review for published PR46 head 7cba4e1 and PR49 head cf30aaa; their remote CI is green. Then agree the proposed generated-answer/shared-session contract before starting new feature code. Main merges remain separately approved actions.
+Finish personal review round-one corrections, then independently re-review that delta while the conversation review and controls builder continue. The controller next assembles accepted lane heads, repairs hosted build coverage, composes screen/controls and verifies the actual joined synthetic path. Exact lane heads and remaining gates are in BUILD_STATUS; main merges remain separately approved actions.
 
 ## Resume procedure and open decisions
 
@@ -67,4 +73,4 @@ Complete and verify exact-head review for published PR46 head 7cba4e1 and PR49 h
 3. Inspect Git status and the published repair commits plus evidence before reusing local artifacts. Do not reapply superseded patches to a repaired branch or assume an old unresolved comment proves the current source is still broken.
 4. Continue the next action above, or an explicitly approved disjoint lane. Do not repeat merged prototypes or turn proposed architecture into a completion claim.
 
-Open architecture decisions: complete-session context and personal-grounding scope, generated-answer release rules, cancelable transport choice, and exact shared session/answer schema. The owner invited discussion. Real source/ASR/UI/inference acceptance remains separately measured on the target M2 Pro.
+Implementation decisions and changes are recorded in BUILD_CONTRACT/BUILD_STATUS. Remaining acceptance includes independent lane review, joined native app behavior, actual source/model permissions and live quality/latency. The owner invited discussion. Real source/ASR/UI/inference acceptance remains separately measured on the target M2 Pro.

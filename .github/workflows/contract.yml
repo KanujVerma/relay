@@ -6,6 +6,7 @@ on:
       - 'EVALS/**'
       - 'relay_spike/**'
       - 'tests/**'
+      - 'contracts/**'
       - 'requirements-spike.txt'
       - 'docs/**'
       - 'AGENTS.md'

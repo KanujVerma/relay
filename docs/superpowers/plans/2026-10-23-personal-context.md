@@ -26,3 +26,27 @@
 ## Source decisions
 
 KeychainAccess v4.2.2 at 84e546727d66f1adc5439debad16270d0fdd04e7 (MIT) and Apple swift-crypto 3.15.1 at 95ba0316a9b733e92bb6b071255ff46263bbe7dc (Apache-2.0) are source/test references. Use native Security/CryptoKit APIs directly rather than vendoring either wrapper or adding a runtime package. Exact inspected files and validation belong in PERSONAL_CONTEXT.md.
+
+## Lane handoff
+
+Lane implementation and local verification are complete in draft PR #63. Joined interview acceptance, independent controller review and real private-user/Keychain acceptance remain separate. See docs/lanes/PERSONAL.md for exact published state and next action.
+
+
+## Review round 1 follow-up
+
+- [x] Reproduce the three independent findings on the reviewed baseline with synthetic regressions.
+- [x] Require acknowledged lock or independent emergency helper retirement, with a distinct outcome.
+- [x] Fence client/controller generations and delayed persistence/publication; retain MainActor closure isolation.
+- [x] Preserve C/R relevance and require positive non-overview query evidence.
+- [x] Replace fixed native-test Python paths with a required version/capability-checked override or PATH resolution.
+- [x] Run complete local checks and preserve host integration instructions.
+- [ ] Controller independently re-reviews the frozen correction delta and validates hosted Swift 6.1.2/shared-helper composition.
+
+
+## Native shutdown liveness follow-up
+
+- [x] Inspect root's actual stalled stack and current Apple Process lifecycle documentation.
+- [x] Reproduce with a short actual-child cooperative shutdown regression under an external deadline.
+- [x] Install a prelaunch exit receipt, remove blocking run-loop waits, and retain owner/admission until actual exit.
+- [x] Verify 17 native tests under a 50-second external deadline; no unrelated Python rerun.
+- [ ] Root independently re-reviews this focused delta and verifies joined/hosted shutdown behavior.

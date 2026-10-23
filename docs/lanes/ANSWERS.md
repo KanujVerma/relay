@@ -1,4 +1,14 @@
-# Answers lane checkpoint
+# Answers lane current review handoff
+
+Round1 review baseline cd5286a50700b8040f9e9b03b65c8f960e98fb1c. All four reproduced corrections are implemented and verified in focused10tests. Published correction checkpoint9ef2ee4 plus personal liveness dependency2775fb4(original7ace412). The final source commit follows this record; no optional screen/control/workflow/native-capture composition was added.
+
+See [ANSWERS_REVIEW_R1.md](ANSWERS_REVIEW_R1.md) for exact policy/task/source/display delta and limits. Original-owner personal d8bb0dc/eb98e41 imported as1472c75/79e19f2; follow-up7ace412 as2775fb4. Required emergency callback now binds one helper, synchronously retires source/display/helper/pending admission, awaits actual child termination receipt, blocks recovery until completion and requires fresh helper/port/client/controller. No waitUntilExit in the shared path.
+
+Fresh final-delta checks: Python460passed/23optional skips; native personal17passed and panel25passed; production app build, EVALS26, docs20 and diff whitespace passed. Real child exit/reap and required emergency profile close tests passed; standalone personal36shutdown schedules passed. Local Swift6.4; independent re-review and hosted Swift6.1 CI pending. No live private/hardware/model/account work.
+
+Next: controller re-review immutable corrected source, then composition owner may import it and separately wire screen/controls. Prior implementation smoke below is historical and was not rerun as live acceptance.
+
+## Prior source handoff (historical)
 
 Branch feature/contextual-answer-panel-2026-10-23, issue #62. Original base3e0eb379fdc8a710dd9ebee51bc93b8c6004e02d; foundationa8f8359 merged. Draft PR #67: https://github.com/KanujVerma/relay/pull/67. Verified source head 870396415708ac3ca40176add33234b6ff0c1d3d (published); any later lane-handoff-only commit does not change that tested source. Controller independent review is pending.
 

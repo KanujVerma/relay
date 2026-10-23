@@ -16,12 +16,12 @@ This protects the persisted payload, not plaintext process memory, swap, the use
 
 The final app uses one answer helper containing one `ProfileBridge`. The standalone profile executable uses a lazy demonstration child, not a second production database.
 
-- `ProfilePort.request(Data) async throws -> Data` exchanges one JSON command and result. `ClosureProfilePort(request:close:)` adapts the main app's UUID-correlated profile envelope. The answer lane owns the outer envelope and replay rejection.
-- `@MainActor ProfileClient(port:)` handles bounded transfers, state, snapshots and lock. `close()` sends a profile lock before closing its port. A shared helper port can keep the conversation transport alive in its close closure.
-- `@MainActor ProfileController(client:vault:onInvalidate:)` owns preparation state and saves each mutation before presenting its result as saved. The `onInvalidate` callback must synchronously clear current personal-answer admission before a mutation or lock. A failed save locks the profile, closes the preparation port and clears its visible evidence rather than leaving an unsaved approval active.
+- `ProfilePort.request(Data) async throws -> Data` exchanges one JSON command and result. `ClosureProfilePort(request:emergencyShutdown:close:)` adapts the main app's UUID-correlated profile envelope. The answer lane owns the outer envelope and replay rejection.
+- `@MainActor ProfileClient(port:)` handles bounded transfers, state, snapshots and lock. `close()` returns `ProfileCloseOutcome.locked` only after the helper acknowledges `{ok:true,locked:true,ready:false}`. A shared helper port can keep conversation alive with a no-op normal closer. An in-flight request/transfer or missing acknowledgement forces the required `emergencyShutdown()` capability; the outcome is `helperStopped`, and the old client/port cannot start or use another helper. Construct a fresh helper/client/controller to recover.
+- `@MainActor ProfileController(client:vault:onInvalidate:)` owns preparation state and saves each mutation before presenting its result as saved. The `onInvalidate` callback must synchronously clear current personal-answer admission before a mutation or lock. A failed save retires profile authority and clears visible evidence. A confirmed lock preserves the shared conversation helper; a missing acknowledgement stops it independently. The UI reports `helperStopped` as unavailable, not as a successful normal lock. Controller lifecycle generations fence every awaited result and vault/state commit after close or replacement. Its mutation action is explicitly `@MainActor`, preserving dictionary isolation on Swift 6.1.
 - `ProfilePreparationView(controller:role:)` is the real SwiftUI selected-file, entered-note, ownership review, explicit correction and source-revocation view. Supply the app-owned canonical role to lock the preparation role to the answer engine. Add it to the existing window; no separate answer mode is required.
 
-Native frame IO and the standalone Python harness use a four-byte big-endian length with at most 16 KiB UTF-8 JSON per frame. Snapshots/files use sequential 4096-byte base64 chunks and exact size/SHA-256 manifests, never one giant answer frame. Transfers are serialized and bounded. Incomplete or oversized loads never authorize retrieval. An active profile must be explicitly locked before another load; the final main-helper envelope must reject replayed request UUIDs. Native demo IO has a total 15-second frame deadline and reaps a failed child.
+Native frame IO and the standalone Python harness use a four-byte big-endian length with at most 16 KiB UTF-8 JSON per frame. Snapshots/files use sequential 4096-byte base64 chunks and exact size/SHA-256 manifests, never one giant answer frame. Transfers are serialized and bounded. Incomplete or oversized loads never authorize retrieval. An active profile must be explicitly locked before another load; the final main-helper envelope must reject replayed request UUIDs. Native demo IO has a total 15-second frame deadline. Failed-child shutdown retains ownership and closes admission until an actual prelaunch termination-handler exit receipt arrives; elapsed grace only escalates TERM to KILL and is not evidence of reap. No fixed shutdown-latency bound is claimed.
 
 ## Verified retrieval API
 
@@ -49,7 +49,7 @@ GRDB/SQLCipher and general memory frameworks were not adopted: whole encrypted s
 
 ## Verification and remaining acceptance
 
-At the native checkpoint: **414 Python tests passed with 21 optional converter skips**, and **9 native tests passed**. Synthetic Swift tests inject keys and a Security client; they exercise encryption/tampering, owner-only permissions, Keychain failure behavior, lazy startup, real Python child framing, review/save/reopen/revoke and failed-save admission retirement. No actual private imports, real Keychain reads/writes, permission dialogs, capture or model calls were exercised.
+At the native checkpoint: **415 Python tests passed with 21 optional converter skips**, and **16 native tests passed**. Synthetic Swift tests inject keys and a Security client; they exercise encryption/tampering, owner-only permissions, Keychain failure behavior, lazy startup, real Python child framing, review/save/reopen/revoke, successful shared-helper close-to-lock, failed lock with approved facts, failed-save emergency retirement, and delayed open/selection/review/lookup across close/reopen. Native child tests resolve `RELAY_TEST_PYTHON` or PATH and require Python 3.11+ with SQLite serialization; they never skip the real child. No actual private imports, real Keychain reads/writes, permission dialogs, capture or model calls were exercised.
 
 Run from the repository root:
 
@@ -59,3 +59,37 @@ CLANG_MODULE_CACHE_PATH=/private/tmp/relay-profile-clang SWIFTPM_MODULECACHE_OVE
 ```
 
 The demo can be launched explicitly with `swift run --package-path spikes/macos-profile relay-profile-prep --repository /absolute/path/to/relay --python /absolute/path/to/python3`. The integrated app should inject its shared helper port instead. Signed-app Keychain behavior, actual native picker/review clicks with owner-approved private material, optional real PDF/DOCX conversion fidelity and the combined interview flow remain acceptance gates.
+
+
+## Review round 1 correction and host adapter requirements
+
+The independent review baseline is `d8bb0dcaf72be5db053b688d895fb5830a206a01`. Its three reproduced findings required changes: swallowed lock failures could leave an approved provider active, delayed controller responses could republish closed state, and C/R skill queries could bypass relevance after tokenization. Targeted regressions failed on the reviewed code (five native assertions and seven retrieval assertions) before correction. Currentness checks remain required in the answer layer.
+
+The `ProfilePort` contract now requires `func emergencyShutdown() async`; there is no default no-op. The `ClosureProfilePort` initializer is:
+
+```swift
+ClosureProfilePort(
+    request: @escaping @Sendable (Data) async throws -> Data,
+    emergencyShutdown: @escaping @Sendable () async -> Void,
+    close: @escaping @Sendable () async -> Void = {}
+)
+```
+
+The app-owned emergency callback must synchronously retire native helper/session/display admission, reject and fence all pending request continuations/queued frames for the old helper, then terminate and reap that helper before returning. No old queued load/command can run afterward. It must not silently start a replacement helper; recovery uses a fresh helper/client/controller under a new lifecycle. A normal `close` callback may remain a no-op because the acknowledged Python lock already discarded the profile ledger while keeping conversation alive. `ProfileController.closeOutcome` distinguishes `.locked` and `.helperStopped` for the host and UI.
+
+C/R are retained as meaningful single-letter terms. Every non-overview, non-project-scoped query requires positive term relevance, so an empty token set does not authorize arbitrary biography. The explicit résumé overview path and bounded project follow-ups remain available.
+
+Local verification used Apple Swift 6.4 on arm64 and Python 3.14. Hosted Intel/Swift 6.1.2 validation is still pending; local success does not establish that older toolchain path. No private data, actual Keychain operations, capture or inference were exercised for these corrections.
+
+
+## Shutdown liveness correction after integration
+
+The root's complete native run at `eb98e41ebec670452f96313289203ebe1853afa6` compiled and then stalled for more than five minutes. The sampled cooperative executor was inside Foundation `Process.waitUntilExit`, even though no Python child remained. This supersedes the earlier local 16-test pass as sufficient shutdown verification.
+
+[Apple's waitUntilExit documentation](https://developer.apple.com/documentation/foundation/process/waituntilexit()) describes polling the current thread's run loop. The current SDK `NSTask.h` also documents that default termination notifications target the launch thread and recommends [terminationHandler](https://developer.apple.com/documentation/foundation/process/terminationhandler) for secondary threads/queues. A Swift actor may resume on another cooperative thread. This matched the observed stack; the fix does not move the same unbounded wait to another executor or increase its timeout.
+
+`ProfileProcessExitReceipt` is installed through `child.terminationHandler` **before** `run()`. It latches the actual termination status under a lock and resumes async waiters safely whether completion precedes or follows waiter registration. Foundation remains the sole production reaper. `PipeProfilePort` coalesces shutdown, closes inherited IO, sends TERM, allows the existing 500 ms grace asynchronously, escalates to KILL if still running, then suspends until the actual receipt. No production `waitpid`, `waitUntilExit` or blocking `Thread.sleep` is used. Pending shutdown retains the process/receipt and rejects new requests; only actual completion clears ownership. The public port API and normal shared-helper lock behavior are unchanged.
+
+A short actual-child regression covers 16 EOF shutdowns, 16 children proven already exited before close, and four SIGTERM-ignoring children requiring escalation. Shutdown is invoked from independently scheduled cooperative tasks. Each case checks `waitpid(pid, WNOHANG) == -1` with `ECHILD` **after** completion, proving Foundation already reaped the owned child. This is a test observation, not a second production reaper. [Apple's waitpid documentation](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/waitpid.2.html) defines those outcomes.
+
+The regression exceeded an external 40-second deadline on the old source and passed on the correction. The complete corrected native suite passed **17 tests** in **5.962 seconds** (build 8.09 seconds), under an explicit external 50-second deadline. Python source was unchanged and its full suite was not rerun for this native-only correction. The capability-check test process also uses a prelaunch handler with a five-second failure deadline instead of a run-loop wait. Verification used local arm64 Swift 6.4; hosted Swift 6.1.2, joined-helper integration and independent delta review remain separate. No new package, copied upstream implementation or private/hardware/model action was introduced.

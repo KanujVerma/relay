@@ -32,6 +32,15 @@ private actor FixtureRecognizer: ActivityRecognizer {
     func recognize(_ samples:[Float]) async throws -> String { questions.isEmpty ? "":questions.removeFirst() }
 }
 
+@MainActor private final class SharedProfileBinding {
+    var retired=false
+    var helper:HelperTransport?
+    func shutdown() async {
+        retired=true
+        await helper?.shutdownAndWait()
+    }
+}
+
 @MainActor final class SessionApplicationModel: ObservableObject {
     @Published private(set) var snapshot=SessionPanelSnapshot()
     @Published private(set) var running=false
@@ -73,21 +82,48 @@ private actor FixtureRecognizer: ActivityRecognizer {
             try queue.enqueue(event) { [weak self] in self?.forward($0) }
         })
     }()
-    private var profileWasCreated=false
-    lazy var profile:ProfileController = {
-        profileWasCreated=true
-        let port=ClosureProfilePort(request:{ [weak self] data in
+    private var profileStorage:ProfileController?
+    private var profileBinding:SharedProfileBinding?
+    private var forwardedSessionID:UUID?
+    var profile:ProfileController {
+        if let profileStorage { return profileStorage }
+        let binding=SharedProfileBinding();profileBinding=binding
+        let port=ClosureProfilePort(request:{ [weak self,binding] data in
             guard let self else { throw PanelBridgeError.closed }
-            let command=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any]
-            if command?["command"] as? String == "lock",await self.helper==nil { throw PanelBridgeError.closed }
-            let helper=try await self.ensureHelper()
-            return try await helper.requestProfile(data)
+            return try await self.profileRequest(data,binding:binding)
+        },emergencyShutdown:{ [weak self,binding] in
+            if let self { await self.shutdownProfile(binding) }
+            else { await binding.shutdown() }
         })
         let directory=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("Relay",isDirectory:true)
-        return ProfileController(client:ProfileClient(port:port),vault:ProfileVault(directory:directory),onInvalidate:{ [weak self] in
+        let controller=ProfileController(client:ProfileClient(port:port),vault:ProfileVault(directory:directory),onInvalidate:{ [weak self] in
             guard let self else { return };self.authority.invalidate();self.panel.clear(status:"Background updated")
         })
-    }()
+        profileStorage=controller;return controller
+    }
+    private func profileRequest(_ data:Data,binding:SharedProfileBinding) async throws -> Data {
+        guard !binding.retired,profileBinding === binding else { throw PanelBridgeError.closed }
+        let transport:HelperTransport
+        if let bound=binding.helper { transport=bound }
+        else { transport=try ensureHelper();binding.helper=transport }
+        return try await transport.requestProfile(data)
+    }
+    private func shutdownProfile(_ binding:SharedProfileBinding) async {
+        binding.retired=true
+        if let old=binding.helper,old === helper {
+            // Close all old admission before the first await. Queued frames and
+            // source events cannot cross into a replacement helper lifecycle.
+            if fixture { native.beginStop() } else { capture.controller.beginStop(reason:.transportClosed) }
+            authority.stop();helperIdentity=UUID();helperFailures.activate(helperIdentity)
+            forwardedSessionID=nil;helper=nil;running=false
+            panel.clear(status:"Profile unavailable");error="Profile could not be locked. Its helper was stopped. Reopen background to recover."
+            old.stop()
+            if fixture { await native.waitForQuiescence();native.finishStop(quiesced:true) }
+            else { await capture.stop(reason:.transportClosed) }
+        }
+        await binding.shutdown()
+        if profileBinding === binding { profileBinding=nil;profileStorage=nil }
+    }
 
     init(arguments:[String]=CommandLine.arguments) {
         fixture=arguments.contains("--fixture-suite")
@@ -103,21 +139,28 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     private static func argument(_ key:String,_ args:[String]) -> String? { guard let i=args.firstIndex(of:key),args.indices.contains(i+1) else { return nil };return args[i+1] }
     func ensureHelper() throws -> HelperTransport {
+        guard profileBinding?.retired != true else { throw PanelBridgeError.closed }
         if let helper { return helper }
         let identity=UUID();helperIdentity=identity;helperFailures.activate(identity)
         let nativeAuthority=authority;let failures=helperFailures;let delivery=answers
+        let sourceController=fixture ? native:capture.controller
         let helper=HelperTransport(root:root,python:python,pythonArguments:pythonArguments,mode:fixture ? .fixture:oauth ? .oauth:.noInference,role:role,onFrame:{ [weak self] data in
             try delivery.enqueue(data,byteCount:data.count) { [weak self] data in
                 guard let self,self.helperIdentity==identity else { return }
                 do { _=try self.panel.accept(data) } catch { self.failSession() }
             }
         },onFailure:{ [weak self] in
-            guard failures.withCurrent(identity,perform:{ nativeAuthority.stop() }) else { return }
+            guard failures.withCurrent(identity,perform:{ sourceController.retire();nativeAuthority.stop() }) else { return }
             Task { @MainActor in guard let self,self.helperIdentity==identity else { return };self.failSession() }
         })
         try helper.start();self.helper=helper;return helper
     }
     private func forward(_ event:NativeSessionEvent) {
+        if event.kind == .sessionStarted {
+            guard helper != nil,authority.snapshot()?.captureSessionID==event.captureSessionID else { return }
+            forwardedSessionID=event.captureSessionID
+        }
+        guard helper != nil,forwardedSessionID==event.captureSessionID else { return }
         panel.observe(event)
         do { try helper?.send(event) } catch { failSession() }
     }
@@ -152,10 +195,10 @@ private actor FixtureRecognizer: ActivityRecognizer {
         else { panel.clear(status:"Stopped");running=false;await capture.stop(reason:.userStop) }
     }
     func failSession() {
-        authority.stop()
         if fixture { native.retire() } else { capture.controller.retire();Task { await capture.stop(reason:.transportClosed) } }
+        authority.stop()
         panel.clear(status:"Session unavailable");running=false;error="The session ended. Restart when you are ready."
-        helper?.stop();helper=nil;helperIdentity=UUID();helperFailures.activate(helperIdentity)
-        if profileWasCreated { Task { await profile.close() } }
+        helper?.stop();helper=nil;helperIdentity=UUID();helperFailures.activate(helperIdentity);forwardedSessionID=nil
+        if let controller=profileStorage { Task { await controller.close() } }
     }
 }

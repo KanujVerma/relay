@@ -118,6 +118,22 @@ class PersonalContextTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.provider.retrieve("Atlas?", "")
 
+    def test_single_letter_skills_require_matching_reviewed_evidence(self):
+        self.approve("I implemented Atlas SQL tests.", "atlas.tests")
+        for question in ("Have you used R?", "Have you used C?", "Have you used it?"):
+            with self.subTest(question=question):
+                bundle = self.provider.retrieve(question, "developer", budget=1)
+                self.assertEqual(bundle.status, "no_evidence")
+                self.assertEqual(bundle.facts, ())
+        _, r = self.approve("I used R for forecasting.", "forecasting.language")
+        _, c = self.approve("I used C for an embedded controller.", "embedded.language")
+        for skill, fact in (("R", r), ("C", c), ("r", r), ("c", c)):
+            with self.subTest(skill=skill):
+                bundle = self.provider.retrieve("Have you used " + skill + "?", "developer", budget=1)
+                self.assertEqual(bundle.status, "ready")
+                self.assertEqual([entry.fact_id for entry in bundle.facts], [fact.fact_id])
+        self.assertEqual(len(self.provider.retrieve("Tell me about yourself.", "developer", budget=2).facts), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

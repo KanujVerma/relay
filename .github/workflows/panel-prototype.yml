@@ -1,9 +1,17 @@
-name: macOS mock panel Swift tests
+name: macOS copilot synthetic tests
 
 on:
   pull_request:
     paths:
       - 'spikes/macos-panel/**'
+      - 'spikes/macos-session/**'
+      - 'spikes/macos-profile/**'
+      - 'spikes/macos-context/**'
+      - 'spikes/macos-controls/**'
+      - 'spikes/macos-audio/**'
+      - 'relay_spike/**'
+      - 'tests/**'
+      - 'contracts/**'
       - 'docs/NATIVE_PANEL_PROTOTYPE.md'
       - '.github/workflows/panel-prototype.yml'
   workflow_dispatch:
@@ -20,12 +28,29 @@ jobs:
     # Real M2 Pro validation is separate; avoid private-repo hosted Mac billing.
     if: ${{ !github.event.repository.private }}
     runs-on: macos-15-intel
-    timeout-minutes: 10
+    timeout-minutes: 30
+    env:
+      # KeyboardShortcuts 3.1.0 requires Swift 6.2. This toolchain is included
+      # in the macos-15 runner image; do not silently use its Xcode 16 default.
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Show Swift version
         run: swift --version
-      - name: Test pure offline panel reducer
-        run: swift test --package-path spikes/macos-panel
-      - name: Compile native SwiftUI demo (do not launch)
+      - name: Test native packages with synthetic inputs only
+        shell: bash
+        run: |
+          set -euo pipefail
+          export RELAY_TEST_PYTHON="$(command -v python3)"
+          for package in macos-session macos-profile macos-context macos-controls macos-panel; do
+            if [[ -f "spikes/$package/Package.swift" ]]; then
+              swift test --package-path "spikes/$package"
+            else
+              echo "Package $package has not landed on this branch."
+            fi
+          done
+      - name: Compile native SwiftUI apps (do not launch)
         run: swift build --package-path spikes/macos-panel

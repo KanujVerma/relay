@@ -2,6 +2,12 @@ import Dispatch
 import Foundation
 import RelayAudioBuffer
 
+public enum NativeSessionLimits {
+    /// The existing inner wire admits at most 120 seconds. Session duration is
+    /// unlimited; each individual continuous activity remains memory bounded.
+    public static let maximumActivitySamples = 1_920_000
+}
+
 public struct SpeechBoundary: Sendable, Equatable {
     public enum Kind: Sendable { case start, end }
     public let kind: Kind
@@ -59,6 +65,7 @@ final class SourcePipeline: @unchecked Sendable {
     private var pending: [SessionAudioPacket] = []
     private var pendingSamples = 0
     private var draining = false
+    private var drainerTask: Task<Void, Never>?
     private var previous: SessionAudioPacket?
     private let source: PCMSource
     private let processor: ActivityProcessor
@@ -105,12 +112,24 @@ final class SourcePipeline: @unchecked Sendable {
             return true
         }
         if let reason { stop(); failure(reason, packet.streamGeneration) }
-        if kick { Task { await drain() } }
+        if kick {
+            let task = Task { await drain() }
+            lock.withLock {
+                drainerTask = task
+                if !active { task.cancel() }
+            }
+        }
     }
     func stop() {
-        lock.withLock { active = false; pending.removeAll(); pendingSamples = 0 }
+        lock.withLock { active = false; pending.removeAll(); pendingSamples = 0; drainerTask?.cancel() }
+        Task { await processor.cancel() }
         // No backend.reset() races a still-running accept/finish. The drainer
         // and recognizer own their references until the operations quiesce.
+    }
+    func waitForQuiescence() async {
+        let task = lock.withLock { drainerTask }
+        await task?.value
+        await processor.waitForQuiescence()
     }
     private var isActive: Bool { lock.withLock { active } }
     private func drain() async {
@@ -142,6 +161,7 @@ private actor ActivityProcessor {
     private var activityLease: PresentationLease?
     private var activityID: UInt64 = 0
     private var recognizing = false
+    private var recognitionTask: Task<Void, Never>?
     private var failed = false
     private var clock = NativeClockCalibration.now()
 
@@ -189,6 +209,9 @@ private actor ActivityProcessor {
                               let first = span(at: start), let last = span(at: boundary.sampleIndex - 1) else {
                             fail(.vadUnavailable, packet.streamGeneration); return
                         }
+                        guard boundary.sampleIndex - start <= UInt64(NativeSessionLimits.maximumActivitySamples) else {
+                            fail(.queueOverflow, packet.streamGeneration); return
+                        }
                         let activity = ClosedActivity(id: activityID, firstSequence: first.packet.sequence,
                             lastSequence: last.packet.sequence,
                             startHostTime: try clock.hostTicks(after: first.packet.hostTime, sampleOffset: Int(start - first.first), rate: 16_000),
@@ -200,10 +223,10 @@ private actor ActivityProcessor {
                         onEnd(activity)
                         guard !recognizing else { fail(.asrUnavailable, packet.streamGeneration); return }
                         recognizing = true
-                        Task { await recognize(activity, isActive: isActive) }
+                        recognitionTask = Task { await recognize(activity, isActive: isActive) }
                     }
                 }
-                if let start = activityStart, processed - start > 320_000 {
+                if let start = activityStart, processed - start > UInt64(NativeSessionLimits.maximumActivitySamples) {
                     fail(.queueOverflow, packet.streamGeneration); return
                 }
                 // Retain 512 ms pre-roll while idle. A longer VAD lookback must
@@ -216,9 +239,16 @@ private actor ActivityProcessor {
             }
         } catch { fail(.vadUnavailable, packet.streamGeneration) }
     }
+    func cancel() {
+        failed = true
+        recognitionTask?.cancel()
+        history.removeAll(); pending.removeAll(); spans.removeAll()
+        activityStart = nil; activityLease = nil
+    }
+    func waitForQuiescence() async { await recognitionTask?.value }
     private func span(at sample: UInt64) -> Span? { spans.first { $0.first <= sample && sample < $0.end } }
     private func recognize(_ activity: ClosedActivity, isActive: @escaping @Sendable () -> Bool) async {
-        defer { recognizing = false }
+        defer { recognizing = false; recognitionTask = nil }
         do {
             let text = try await components.recognizer.recognize(activity.samples)
             guard isActive(), !failed else { return }

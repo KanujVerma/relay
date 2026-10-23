@@ -36,3 +36,15 @@ final class FluidAdapterTests: XCTestCase {
         XCTAssertThrowsError(try selected.validateLocalModels())
     }
 }
+
+extension FluidAdapterTests {
+    func testThirtySecondActivityIsNotLimitedByLegacyTwentySecondSpike() async throws {
+        let backend = HintRecognizer()
+        let audio = Array(repeating: Float(0.2), count: 480_000)
+        let consumingAdapter = FluidClosedActivityRecognizer(backend: backend)
+        let result = try await consumingAdapter.recognize(audio)
+        XCTAssertEqual(result, "complete constraint")
+        let received = await backend.received
+        XCTAssertEqual(received.count, audio.count)
+    }
+}

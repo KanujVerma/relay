@@ -168,10 +168,13 @@ extension SessionPipelineTests {
         let oldID = controller.authority.snapshot()?.captureSessionID
         controller.ingest(packet(sequence: 1)); try await waitUntil { await vad.entered }
         controller.stop()
+        XCTAssertThrowsError(try controller.start(selectedBundleID: "com.example.meeting", microphoneEnabled: false,
+            components: [2: SourceComponents(vad: ScriptVad([:]), recognizer: RecordingRecognizer())]))
+        await vad.release()
+        await controller.waitForQuiescence()
         try controller.start(selectedBundleID: "com.example.meeting", microphoneEnabled: false,
             components: [2: SourceComponents(vad: ScriptVad([1: .start, 2: .end]), recognizer: RecordingRecognizer())])
         XCTAssertNotEqual(controller.authority.snapshot()?.captureSessionID, oldID)
-        await vad.release()
         controller.ingest(packet(sequence: 1)); controller.ingest(packet(sequence: 2, generation: 2))
         XCTAssertEqual(probe.events.last?.payload["reasonCode"], .string("device_changed"))
         controller.stop()
@@ -181,5 +184,108 @@ extension SessionPipelineTests {
         XCTAssertThrowsError(try controller.start(selectedBundleID: "com.example.meeting", microphoneEnabled: false,
             components: [2: SourceComponents(vad: ScriptVad([:]), recognizer: RecordingRecognizer())]))
         XCTAssertNil(controller.authority.snapshot())
+    }
+}
+
+actor CancelAwareRecognizer: ActivityRecognizer {
+    let probe: FailureProbe
+    private(set) var entered = false
+    init(probe: FailureProbe) { self.probe = probe }
+    func recognize(_ samples: [Float]) async throws -> String {
+        entered = true
+        return try await withTaskCancellationHandler(operation: {
+            try await Task.sleep(for: .seconds(30)); return "must not finish after stop"
+        }, onCancel: { self.probe.fail() })
+    }
+}
+extension SessionPipelineTests {
+    func testStopCancelsOwnedRecognizerTaskRatherThanOnlyHidingItsResult() async throws {
+        let cancellation = FailureProbe(), probe = EventProbe()
+        let recognizer = CancelAwareRecognizer(probe: cancellation)
+        let controller = NativeSessionController(onEvent: probe.append)
+        try controller.start(selectedBundleID: "com.example.meeting", microphoneEnabled: false,
+            components: [2: SourceComponents(vad: ScriptVad([1: .start, 2: .end]), recognizer: recognizer)])
+        controller.ingest(packet(sequence: 1)); controller.ingest(packet(sequence: 2))
+        try await waitUntil { await recognizer.entered }
+        controller.stop()
+        for _ in 0..<100 { if cancellation.failed { break }; try await Task.sleep(for: .milliseconds(1)) }
+        XCTAssertTrue(cancellation.failed, "Stop must cancel the actual recognition task")
+        XCTAssertFalse(probe.events.contains { $0.kind == .eou })
+    }
+}
+
+actor WideVad: SpeechActivityDetector {
+    nonisolated let chunkSamples = 8192
+    private(set) var count = 0
+    func accept(_ samples: [Float]) async throws -> [SpeechBoundary] {
+        count += 1
+        if count == 1 { return [SpeechBoundary(kind: .start, sampleIndex: 0)] }
+        if count == 235 { return [SpeechBoundary(kind: .end, sampleIndex: UInt64(count * chunkSamples))] }
+        return []
+    }
+}
+extension SessionPipelineTests {
+    func testClosureCrossingActivityLimitCannotBypassCap() async throws {
+        let probe = EventProbe(), vad = WideVad(), recognizer = RecordingRecognizer()
+        let controller = NativeSessionController(onEvent: probe.append)
+        try controller.start(selectedBundleID: "com.example.meeting", microphoneEnabled: false,
+            components: [2: SourceComponents(vad: vad, recognizer: recognizer)])
+        for i in 1...235 {
+            controller.ingest(packet(sequence: UInt64(i), count: 8192))
+            try await waitUntil { await vad.count >= i }
+        }
+        try await waitUntil { probe.events.contains { $0.kind == .eou || $0.kind == .discontinuity } }
+        XCTAssertFalse(probe.events.contains { $0.kind == .eou })
+        XCTAssertEqual(probe.events.last?.payload["reasonCode"], .string("queue_overflow"))
+        let inputs = await recognizer.inputs
+        XCTAssertTrue(inputs.isEmpty)
+        controller.stop()
+    }
+}
+
+extension SessionPipelineTests {
+    func testBothSourcesOverlapWithoutMixingAndExportNativeSessionFrames() async throws {
+        let probe = EventProbe(), remote = RecordingRecognizer("explain a dictionary lookup including collisions")
+        let microphone = RecordingRecognizer("I would first clarify how collisions are handled")
+        let controller = NativeSessionController(onEvent: probe.append)
+        try controller.start(selectedBundleID: "com.example.meeting", microphoneEnabled: true, components: [
+            2: SourceComponents(vad: ScriptVad([1: .start, 2: .end]), recognizer: remote),
+            1: SourceComponents(vad: ScriptVad([1: .start, 2: .end]), recognizer: microphone)])
+        controller.ingest(packet(sequence: 1, value: 1))
+        try await waitUntil { probe.events.contains { $0.kind == .speechStarted && $0.sourceCode == 2 } }
+        let lease = controller.authority.snapshot()
+        controller.ingest(packet(.microphone, sequence: 1, value: 2))
+        controller.ingest(packet(sequence: 2, value: 1))
+        controller.ingest(packet(.microphone, sequence: 2, value: 2))
+        try await waitUntil { probe.events.filter { $0.kind == .eou }.count == 2 }
+        XCTAssertEqual(controller.authority.snapshot(), lease)
+        let remoteSamples = await remote.inputs.first, micSamples = await microphone.inputs.first
+        XCTAssertTrue(remoteSamples?.allSatisfy { $0 == 1 } ?? false)
+        XCTAssertTrue(micSamples?.allSatisfy { $0 == 2 } ?? false)
+        controller.stop()
+        let events = probe.events
+        XCTAssertEqual(events.map(\.eventSequence), Array(1...UInt64(events.count)))
+        XCTAssertEqual(events.filter { $0.requestID != nil }.count, 1)
+        if let path = ProcessInfo.processInfo.environment["RELAY_SYNTHETIC_EVENTS_PATH"] {
+            var data = Data()
+            for event in events { data.append(try event.encodedFrame()) }
+            try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+        }
+    }
+}
+
+extension SessionPipelineTests {
+    func testTransportAuthorityWithdrawalStillCancelsModelOwners() async throws {
+        let cancellation = FailureProbe()
+        let owned = CancelAwareRecognizer(probe: cancellation)
+        let controller = NativeSessionController(onEvent: { _ in })
+        try controller.start(selectedBundleID: "com.example.meeting", microphoneEnabled: false,
+            components: [2: SourceComponents(vad: ScriptVad([1: .start, 2: .end]), recognizer: owned)])
+        controller.ingest(packet(sequence: 1)); controller.ingest(packet(sequence: 2))
+        try await waitUntil { await owned.entered }
+        controller.authority.stop()
+        controller.stop(reason: .transportClosed)
+        await controller.waitForQuiescence()
+        XCTAssertTrue(cancellation.failed)
     }
 }

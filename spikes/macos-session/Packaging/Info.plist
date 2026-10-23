@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>relay-native-session</string>
+<key>CFBundleIdentifier</key><string>com.relay.native-session</string>
+<key>CFBundleName</key><string>RelayNativeSession</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>NSMicrophoneUsageDescription</key><string>Relay uses your microphone during a session you start to understand your replies alongside the selected meeting app. Stop ends capture. Audio is processed locally in memory and is not recorded.</string>
+<key>NSAudioCaptureUsageDescription</key><string>Relay captures only the app you select during a session you start, so it can understand the permitted conversation and suggest talking points. Stop ends capture. Audio is processed locally in memory and is not recorded.</string>
+</dict></plist>

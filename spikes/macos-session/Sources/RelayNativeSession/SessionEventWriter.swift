@@ -51,6 +51,17 @@ public final class BoundedSessionEventWriter: @unchecked Sendable {
         guard kick || lock.withLock({ accepting }) else { throw NativeSessionError.transportClosed }
         if kick { queue.async { self.drain() } }
     }
+    public func flush(timeoutMilliseconds: Int = 600) async -> Bool {
+        guard (1...1000).contains(timeoutMilliseconds) else { return false }
+        let start = DispatchTime.now().uptimeNanoseconds
+        while DispatchTime.now().uptimeNanoseconds - start < UInt64(timeoutMilliseconds) * 1_000_000 {
+            let state = lock.withLock { (accepting, queuedFrames == 0) }
+            if !state.0 { return false }
+            if state.1 { return true }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        return false
+    }
     public func close() {
         let closeNow = lock.withLock { () -> Bool in
             accepting = false; frames.removeAll(); queuedFrames = 0; queuedBytes = 0

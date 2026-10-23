@@ -29,3 +29,11 @@ swift test --disable-sandbox --skip-update --package-path spikes/macos-session \
 ```
 
 Use owned writable temporary Swift module/scratch caches where required by the environment. A180-second outer deadline bounded compilation/test execution. Ordinary test runs omit these three environment variables and skip before any cache inspection/model load. No audio or model artifact is committed. Final logs also contain CoreML sandbox-extension warnings, but both models load, actual inference assertions pass and the cache remains valid. No lock/permission bypass or visible UI action was involved.
+
+## Actual audio-to-panel pipeline
+
+`OfflineSpeechPanelTests` adds the next boundary check in the panel package. It loads the same actual local VAD/ASR, feeds the fictional file in paced32ms PCM packets into the actual NativeSessionController, forwards its real native events through bounded main delivery and the existing HelperTransport, and accepts the real helper decisions in SessionPanelController. No fake ASR final or manual question submission is generated. The helper uses its existing injected synthetic answer model; this does not verify a live account/model response or answer quality.
+
+**1passed,zero failures,8.992s**: the native pipeline automatically produces the Python/list question and the real panel reducer holds a nonempty card with Talking points status. The native sources actually quiesce and the owned helper child is reaped. This is a headless library-port integration; it does not instantiate the whole SessionApplicationModel/window, start an audio driver or show pixels on the locked Mac. Earlier synthetic UI renders separately demonstrate how that panel content is presented. The first harness compilation needed the correct test-only import for the internal asset store; only the test import changed before execution.
+
+Run with the same three explicit variables plus `RELAY_TEST_PYTHON` pointing to the configured synthetic-helper interpreter, selecting `OfflineSpeechPanelTests` under `spikes/macos-panel`. The default guard was separately executed:1skip in5ms, with no model/cache/helper action. Source-only validation and opt-in tests are separate from ordinary full package totals; no full settled suite was repeated for this test-only addition.

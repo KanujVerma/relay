@@ -1,6 +1,6 @@
 # Proposed automatic generated-answer policy
 
-Status 2026-10-23: architecture proposal, not implemented or a relaxed current gate. The owner approved both automatic reviewed answers and open-ended technical model answers. The remaining substantive decision is whether to display completed validated output as an explicitly **AI-generated suggestion, not independently verified**, with the limits below. [SESSION_BRIDGE](SESSION_BRIDGE.md) owns the common result/display contract.
+Status 2026-10-23: owner approved building the full contextual answer experience. Implementation uses separate host provenance for **AI-generated suggestions** and reviewed references behind one interface. The shared implementation contract and source budgets are in [BUILD_CONTRACT](BUILD_CONTRACT.md); code and product acceptance are tracked in [BUILD_STATUS](BUILD_STATUS.md). [SESSION_BRIDGE](SESSION_BRIDGE.md) owns the common result/display contract.
 
 ## Full-experience clarification
 
@@ -40,7 +40,7 @@ The current synchronous urllib read may block until its next event/socket timeou
 
 Recommended candidate: one session-scoped HTTPX AsyncClient using the same auth.active_access_token, response_payload, official endpoint, headers and error mapping; explicit no retries/redirects, one active task and one replaceable newest pending candidate. Keep the existing sync CLI unchanged. Reuse source cancellation cleanup patterns and independently test real blocked local sockets, not only cooperative iterators. This dependency/adapter remains proposed.
 
-Proposed starting limits, to evaluate: accepted-question deadline 15 seconds, connect 5 seconds, read inactivity 10 seconds, at most 10 requests/minute and 60/session. Replays do not reset spent budgets. Enforce fixed-size reads, <=64 KiB SSE event, <=512 KiB total wire, <=32 output items, <=4 KiB candidate JSON and the shared <=16 KiB bridge frame. Bounds are enforced before unbounded line/object allocation. They are candidate product defaults, not measured optimal values or new approved latency promises.
+Proposed starting limits, to evaluate: accepted-question deadline 15 seconds, connect 5 seconds, read inactivity 10 seconds, at most 10 requests/minute and 60/session. Replays do not reset spent budgets. Enforce fixed-size reads, <=64 KiB SSE event, <=512 KiB total wire, <=32 output items, <=8 KiB candidate JSON and the shared <=16 KiB bridge frame. Bounds are enforced before unbounded line/object allocation. They are candidate product defaults, not measured optimal values or new approved latency promises.
 
 Official preview limitations exclude max_output_tokens; client deadlines/disconnects bound local work and waiting, not guaranteed provider token use after cancellation. Preserve the product's existing first-useful-answer goal and measure actual accepted-question/ASR-final/request/first-private-text/completed/check/native-commit/observed-draw times separately. Do not call first text useful or invent p50/p95 from fixture execution.
 

@@ -471,9 +471,20 @@ class QuestionTurnMachine:
                 (start_ms == end_ms and dep_start <= start_ms <= dep_end)
                 for _, dep_start, dep_end in spans
             )
+            # The stable segment ID is authoritative when a finalized
+            # dependency is revised to blank. Revised timestamps can move
+            # entirely outside the original span; relying only on overlap
+            # would leave a correction token grounded in revoked words.
+            dependency_identity = (
+                (context is not None and
+                 segment_id in context.dependency_segment_ids) or
+                (self._leading_partial is not None and
+                 segment_id == self._leading_partial[0])
+            )
             if (start_ms < self._latest_question_start_ms and
                     end_ms <= self._last_final_end and
-                    not overlapping_dependency):
+                    not overlapping_dependency and
+                    not dependency_identity):
                 return TurnDecision("ignored", "stale_blank_eou")
             self.turns.cancel()
             self._active = None

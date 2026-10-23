@@ -313,23 +313,54 @@ class QuestionTurnMachine:
                 and event.segment_id in
                 self._interrupted[1].dependency_segment_ids
             )
-            # A correction or follow-up keeps earlier accepted wording in
-            # its prompt. A late unclassified remote final overlapping ANY
-            # contributing source interval invalidates the whole current
-            # answer, even if its end precedes the latest correction's start.
-            # Each accepted snapshot retains at most MAX_DEPENDENT_SEGMENTS
-            # identifiers and intervals; no transcript content is duplicated.
+            # A correction can be awaiting its final with _active=None;
+            # the prior accepted question still contributes through
+            # _interrupted. Late unknown speech must invalidate both active
+            # AND pending answers when it overlaps any relied-on source span.
+            context = (
+                self._active if self._active is not None else
+                self._interrupted[1] if self._interrupted is not None else None
+            )
+            pending = self._leading_partial
+            overlaps_context = (
+                context is not None and any(
+                    event.start_ms < end and event.end_ms > start
+                    for _, start, end in context.dependency_intervals
+                )
+            )
+            overlaps_pending = (
+                pending is not None and
+                event.start_ms < pending[2] and event.end_ms > pending[1]
+            )
             if (event.status == "final" and event.intent == "unknown"
-                    and self._active is not None
-                    and any(
-                        event.start_ms < source_end and event.end_ms > source_start
-                        for _, source_start, source_end
-                        in self._active.dependency_intervals
-                    )):
+                    and (overlaps_context or overlaps_pending)):
+                if pending is not None:
+                    self._invalidated_pending_id = pending[0]
                 self.turns.cancel()
                 self._active = None
                 self._interrupted = None
+                self._leading_partial = None
                 return TurnDecision("needs_review", "unclassified_overlapping_remote_utterance")
+            # Revised finalized speech from ANY retained dependent segment
+            # can invalidate a newer correction that still quotes its words,
+            # even when its source time predates the latest correction.
+            dependent = context
+            dependency_prior = self._seen.get(event.segment_id)
+            if (dependent is not None
+                    and event.status in ("final", "partial")
+                    and event.segment_id in dependent.dependency_segment_ids
+                    and dependency_prior is not None
+                    and dependency_prior.status == "final"
+                    and event.revision > dependency_prior.revision):
+                if pending is not None:
+                    self._invalidated_pending_id = pending[0]
+                self.turns.cancel()
+                self._active = None
+                self._interrupted = None
+                self._leading_partial = None
+                if event.status == "partial":
+                    self._reopened.add(event.segment_id)
+                return TurnDecision("needs_review", "contributing_final_revised")
             # Until the newest tentative question finishes, an older
             # finalized segment must not regain authority merely because no
             # other *final* advanced the timestamp watermark yet.
@@ -415,9 +446,12 @@ class QuestionTurnMachine:
                     self._leading_partial is not None and
                     event.segment_id == self._leading_partial[0]
                 )
+                # _reopened retains old final-revision quarantine, but a
+                # retraction of that superseded segment cannot cancel a new
+                # independent active/pending question that does not depend
+                # on it. Keep quarantine metadata until a trusted reset.
                 if not (current_dependency or interrupted_dep
-                        or leading_dependency or
-                        event.segment_id in self._reopened):
+                        or leading_dependency):
                     return TurnDecision("ignored", "superseded_segment_retraction")
                 if interrupted_dep and self._leading_partial is not None:
                     self._invalidated_pending_id = self._leading_partial[0]
@@ -431,6 +465,19 @@ class QuestionTurnMachine:
                 # new unrelated questions in the same generation remain valid.
                 return TurnDecision("cancelled", "transcript_retracted")
             if event.status == "partial":
+                # An unseen old partial must not cancel an already accepted
+                # newer question merely because it arrives late. Use the
+                # earliest observed source start before remembering/replacing
+                # the active turn, but allow active/leading/reopened revisions
+                # to follow their existing conservative safety guards.
+                if (event.intent in ("question", "correction", "follow_up")
+                        and effective_start_ms < self._latest_question_start_ms
+                        and event.segment_id not in self._reopened
+                        and (self._active is None or
+                             event.segment_id != self._active.current_segment_id)
+                        and (self._leading_partial is None or
+                             event.segment_id != self._leading_partial[0])):
+                    return TurnDecision("ignored", "stale_partial_after_newer_question")
                 # Ignore a delayed update to an older partial after a newer
                 # tentative remote question has taken priority.
                 if (self._leading_partial is not None

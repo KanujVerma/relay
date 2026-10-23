@@ -63,7 +63,7 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
             return json.dumps(dict(lead='An obsolete answer.',points=[],detail=None,assumptions=[],coverage=['approach'],personal_fact_ids=[]))
         h=SessionHost(complete=complete,emit=out.append)
         await h.handle(start());await h.handle(speech(2));await h.handle(end(3));await h.handle(final(4,'Explain hash collisions.'))
-        await ready.wait();await h.handle(event('stopping',5,3,payload={'reason':'user_stop'}));release.set();await h.drain()
+        await ready.wait();await h.handle(event('stopping',5,3,payload={'reasonCode':'user_stop'}));release.set();await h.drain()
         self.assertFalse(any(x['disposition']=='answer' for x in out))
 
     async def test_missing_closed_association_and_duplicate_remote_eou_no_calls(self):
@@ -88,3 +88,22 @@ class ChildTests(unittest.TestCase):
         child=subprocess.run([sys.executable,'-m','relay_spike.session_host'],input=b'\0\0\0\x10secret',capture_output=True,timeout=5)
         self.assertEqual(child.returncode,2)
         self.assertEqual(child.stdout,b'');self.assertEqual(child.stderr,b'')
+
+class LateContextTests(unittest.IsolatedAsyncioTestCase):
+    async def test_late_old_final_updates_history_without_canceling_new_request(self):
+        calls=[];out=[]
+        async def complete(prompt,instructions):
+            calls.append(json.loads(prompt));return json.dumps(dict(lead='A current explanation.',points=[],detail=None,assumptions=[],coverage=['current'],personal_fact_ids=[]))
+        h=SessionHost(complete=complete,emit=out.append)
+        await h.handle(start());await h.handle(speech(2));await h.handle(end(3))
+        await h.handle(speech(4,2,3));await h.handle(end(5,2,3))
+        newer=final(6,'Explain a queue.',2,3)
+        await h.handle(newer);await h.drain()
+        active=h.active
+        late=final(7,'Explain the earlier cache.',1,2)
+        late['payload']['event']['startHostTime']=2000000000;late['payload']['event']['endHostTime']=3000000000
+        late['payload']['firstInputSequence']=2;late['payload']['lastInputSequence']=3;late['payload']['lastSpeechInputSequence']=3
+        await h.handle(late)
+        self.assertIs(h.active,active);self.assertTrue(h.live);self.assertEqual(len(calls),1)
+        dialogue=h.context.snapshot().dialogue
+        self.assertIn('earlier cache',dialogue[-2][1]);self.assertIn('queue',dialogue[-1][1])

@@ -86,8 +86,9 @@ def decode_event(value):
         if p['event']['sourceCode']!=source or inner.stream_generation!=value['streamGeneration']: raise WireError('source_mismatch')
         return value,inner
     else:
-        exact(p,('reason',))
-        if p['reason'] not in REASONS: raise WireError('control_reason')
+        exact(p,('reasonCode','quiesced') if kind=='stopped' else ('reasonCode',))
+        if kind=='stopped' and type(p['quiesced']) is not bool: raise WireError('quiescence_status')
+        if p['reasonCode'] not in REASONS: raise WireError('control_reason')
     return value,None
 
 def validate_timebase(tb):

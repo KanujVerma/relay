@@ -33,31 +33,40 @@ class ConversationContext:
         self._history = deque()
         self._max_count, self._max_bytes = max_utterances, max_bytes
         self._kind = 'discussion'
+        self._order = 0
+        self._kind_order = -1
 
     def clear(self):
         self._history.clear()
         self._kind = 'discussion'
+        self._order = 0
+        self._kind_order = -1
 
-    def observe(self, channel: str, text: str):
+    def observe(self, channel: str, text: str, *, order: int | None = None):
         if channel not in ('remote', 'microphone') or not isinstance(text, str):
             raise ValueError('Invalid conversation input.')
         if not text.strip():
             return
         if len(text.encode('utf-8')) > self._max_bytes or any(ord(c) < 32 and c not in '\n\t' for c in text):
             raise ValueError('Conversation input exceeds budget.')
+        self._order += 1
+        order = self._order if order is None else order
         low = text.lower()
-        if channel == 'remote':
+        if channel == 'remote' and order >= self._kind_order:
             if re.search(r'case study|design (?:a|an|the) (?:feature|product|app|system)', low):
                 self._kind = 'case_study'
+                self._kind_order = order
             elif re.search(r'implement|coding|write (?:a |the )?(?:function|code)|solve|algorithm', low):
                 self._kind = 'coding'
-        self._history.append((channel, text))
-        while len(self._history) > self._max_count or sum(len(t.encode()) for _, t in self._history) > self._max_bytes:
+                self._kind_order = order
+        self._history.append((channel, text, order))
+        self._history = deque(sorted(self._history, key=lambda row: row[2]))
+        while len(self._history) > self._max_count or sum(len(t.encode()) for _, t, _ in self._history) > self._max_bytes:
             self._history.popleft()
 
     def snapshot(self) -> DialogueSnapshot:
-        remote = tuple(text for channel, text in self._history if channel == 'remote')
-        user = tuple(text for channel, text in self._history if channel == 'microphone')
+        remote = tuple(text for channel, text, _ in self._history if channel == 'remote')
+        user = tuple(text for channel, text, _ in self._history if channel == 'microphone')
         current = remote[-1].lower() if remote else ''
         stage = 'clarify'
         for name, pattern in (
@@ -70,7 +79,7 @@ class ConversationContext:
                 break
         # These are verbatim attributed observations, not inferred requirements.
         task = TaskContext(self._kind, remote[:1], tuple(t for t in remote if re.search(r'must|only|capacity|constraint|require|assume', t, re.I))[-2:], stage, user[-2:], remote[-2:], next_step='Discuss ' + stage + '; keep uncertain requirements explicit.')
-        snapshot = DialogueSnapshot(tuple(self._history), task)
+        snapshot = DialogueSnapshot(tuple((channel,text) for channel,text,_ in self._history), task)
         # Fixed fields plus duplicated task observations have their own bound.
         while len(json.dumps(snapshot.as_dict(), ensure_ascii=False).encode()) > 16000 and len(self._history) > 1:
             self._history.popleft()

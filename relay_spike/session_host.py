@@ -80,7 +80,7 @@ class SessionHost:
         value={key:n[key] for key in ('captureSessionID','sessionEpoch','presentationGeneration','requestID','eventSequence')}
         value.update(schemaVersion=1,resultRevision=1 if pending else 2,disposition=disposition,reasonCode=reason,
             pythonToken={'turnID':request.token.turn_id,'version':request.token.version,'generation':request.token.generation},
-            displayID=request.display_id,question=request.question,answerKind=kind,card=card,provenance=provenance)
+            displayID=request.display_id,question=request.question,answerID=uuid.uuid4().hex if disposition=='answer' else None,answerKind=kind,card=card,provenance=provenance)
         # Encode before sealing: overflow fails closed; no truncation of facts/code.
         encode_frame(value)
         if not pending: self.terminal.add(n['requestID'])
@@ -101,16 +101,16 @@ class SessionHost:
             return
         if not self.live or identity!=self.session: return
         if n['eventSequence']<=self.sequence: return
-        if n['eventSequence']!=self.sequence+1 or n['presentationGeneration']<self.presentation:
+        if n['eventSequence']!=self.sequence+1 or (n['presentationGeneration']<self.presentation and kind!='eou'):
             self.close();raise WireError('session_sequence_gap')
-        self.sequence=n['eventSequence'];self.presentation=n['presentationGeneration']
+        self.sequence=n['eventSequence'];self.presentation=max(self.presentation,n['presentationGeneration'])
         if kind in ('stopping','stopped','source_unavailable','discontinuity'):
             self.close();return
         key=(source,n['streamGeneration'],p['activityID'])
         logical=f"activity-{source}-{n['streamGeneration']}-{p['activityID']}"
         if kind=='speech_started':
             if key in self.activities or len(self.activities)>=64: self.close();raise WireError('activity_replay')
-            self.activities[key]={'start':p,'end':None,'used':False}
+            self.activities[key]={'start':p,'end':None,'used':False,'presentation':n['presentationGeneration']}
             if source==2:
                 self._invalidate()
                 start=host_ms(p['startHostTime'],p['timebase'])
@@ -129,8 +129,13 @@ class SessionHost:
             if source==2: self._invalidate();self.machine.cancel()
             return
         activity['used']=True
+        if source==2 and n['presentationGeneration']<self.presentation:
+            # A validated final from an older closed activity is history only.
+            # Its original lease cannot authorize a request or mutate turn state.
+            if inner.text: self.context.observe('remote',inner.text,order=inner.start_ms)
+            return
         if source==1:
-            if inner.text: self.context.observe('microphone',inner.text)
+            if inner.text: self.context.observe('microphone',inner.text,order=inner.start_ms)
             return
         request_id=n['requestID'].lower()
         if request_id in self.used_requests: return
@@ -140,7 +145,7 @@ class SessionHost:
         result=self.bridge.ingest(observation,context=CaptureContext('authorized',True))
         if result.disposition!='ready' or result.token is None: return
         snap=result.question.snapshot
-        self.context.observe('remote',inner.text)
+        self.context.observe('remote',inner.text,order=inner.start_ms)
         question=snap.prompt if snap.current_utterance!=snap.root_question else snap.current_utterance
         # UI question has its own strict bound; never rewrite semantic content.
         if len(question.encode())>500: return

@@ -11,6 +11,9 @@ from .benchmark import (BenchmarkError, DEFAULT_CASES, DEFAULT_EFFORTS, DEFAULT_
 from .stream import (MODELS, StreamError, stream_answer, visible_models,
                      validated_reasoning_effort)
 from .live_qa import run_live_synthetic_case, validate_live_case
+from .publication_policy import PolicyInput
+from .reference_host import ReferencePermission, preview_reference, publish_reference
+from .streaming_qa import ActiveTurns
 
 
 def main(argv=None) -> int:
@@ -46,6 +49,28 @@ def main(argv=None) -> int:
                       help="Explicitly authorize ONE real ChatGPT-plan inference.")
     live.add_argument("--technical-card", action="store_true",
                       help="Opt in to reviewed canonical D02/E09 technical-card QA after completion.")
+    # A separate fully offline host reference route. No authentication,
+    # inference, or model catalog lookup may be reached by this command.
+    reference = commands.add_parser(
+        "reference-qa",
+        help="Review a known synthetic technical question without any model request."
+    )
+    reference.add_argument("--question", required=True,
+                           help="Synthetic technical question, never private interview text.")
+    reference.add_argument("--role", required=True,
+                           choices=["analytics", "epic"])
+    reference.add_argument("--category", required=True,
+                           help="Trusted host category (e.g. sql); unsupported categories withhold.")
+    reference.add_argument("--synthetic-source", action="store_true",
+                           help="Attest that this is an authorized synthetic input, not real ASR.")
+    reference.add_argument("--final", action="store_true",
+                           help="Attest that this is the final complete question.")
+    reference.add_argument("--authorized", action="store_true",
+                           help="Attest explicit host authorization for this synthetic demo.")
+    reference.add_argument("--constraint", action="append", default=[],
+                           help="Additional question requirement (withholds unmatched cards).")
+    reference.add_argument("--publish", action="store_true",
+                           help="Synchronously show a reviewed local card, no OAuth or model call.")
     commands.add_parser("disconnect", help="Delete local OAuth credential record.")
     benchmark = commands.add_parser(
         "benchmark", help="Compare synthetic prompts; DRY-RUN unless --execute."
@@ -79,6 +104,58 @@ def main(argv=None) -> int:
         if args.command == "disconnect":
             disconnect()
             return 0
+        if args.command == "reference-qa":
+            # CLI permits synthetic input only. No contact with ASR, mic or
+            # ChatGPT happens on this path. Real native host integration is
+            # a separate permission and transport boundary.
+            turns = ActiveTurns()
+            token = turns.activate("synthetic:reference-qa", 1)
+            consent = ReferencePermission(turns)
+            if args.authorized:
+                consent.grant()
+            request = PolicyInput(
+                question=args.question, role=args.role, category=args.category,
+                source_channel="user_synthetic" if args.synthetic_source else "unknown",
+                question_status="final" if args.final else "partial",
+                host_authorized=args.authorized,
+                constraints=tuple(args.constraint),
+            )
+            if not args.publish:
+                result = preview_reference(
+                    request, turns=turns, token=token, consent=consent,
+                )
+                print(json.dumps({
+                    "dry_run": True,
+                    "state": result.state,
+                    "reason_code": result.reason_code,
+                    "would_publish_reviewed_reference": result.would_publish,
+                    "answer": None,
+                    "model_requests": 0,
+                    "oauth_requests": 0,
+                    "first_useful_verified_ms": None,
+                    "note": "Synthetic offline preview, no UI paint or model inference.",
+                }, sort_keys=True, indent=2))
+                return 0
+            shown = []
+            result = publish_reference(
+                request, turns=turns, token=token, consent=consent,
+                on_present=shown.append,
+            )
+            card = shown[0] if result.state == "reviewed_reference" else None
+            print(json.dumps({
+                "dry_run": False,
+                "state": result.state,
+                "reason_code": result.reason_code,
+                "answer": card.text if card is not None else None,
+                "reference_id": card.reference_id if card is not None else None,
+                "source_ref": card.source_ref if card is not None else None,
+                "model_requests": 0,
+                "oauth_requests": 0,
+                "first_useful_verified_ms": None,
+                "note": "Local reviewed technical explanation only; "
+                        "not verified user expertise or native Mac UI proof.",
+            }, sort_keys=True, indent=2))
+            return 0 if card is not None else 2
         if args.command == "live-qa":
             case = validate_live_case(args.case, args.model, args.effort)
             if not args.execute:

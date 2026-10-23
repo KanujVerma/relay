@@ -349,6 +349,8 @@ class QuestionTurnMachine:
             if (dependent is not None
                     and event.status in ("final", "partial")
                     and event.segment_id in dependent.dependency_segment_ids
+                    and (self._active is None or
+                         event.segment_id != self._active.current_segment_id)
                     and dependency_prior is not None
                     and dependency_prior.status == "final"
                     and event.revision > dependency_prior.revision):
@@ -465,11 +467,15 @@ class QuestionTurnMachine:
                 # new unrelated questions in the same generation remain valid.
                 return TurnDecision("cancelled", "transcript_retracted")
             if event.status == "partial":
-                # An unseen old partial must not cancel an already accepted
-                # newer question merely because it arrives late. Use the
-                # earliest observed source start before remembering/replacing
-                # the active turn, but allow active/leading/reopened revisions
-                # to follow their existing conservative safety guards.
+                # Preserve the existing distinct-leading-partial decision,
+                # then apply the broader accepted-turn source watermark.
+                if (self._leading_partial is not None
+                        and event.segment_id != self._leading_partial[0]
+                        and event.start_ms < self._leading_partial[1]):
+                    return TurnDecision("ignored", "superseded_partial_revision")
+                # An unseen old partial cannot cancel an accepted newer turn.
+                # Active/current and reopened-final revisions retain their
+                # stronger conflict/revision handling from above.
                 if (event.intent in ("question", "correction", "follow_up")
                         and effective_start_ms < self._latest_question_start_ms
                         and event.segment_id not in self._reopened
@@ -478,12 +484,6 @@ class QuestionTurnMachine:
                         and (self._leading_partial is None or
                              event.segment_id != self._leading_partial[0])):
                     return TurnDecision("ignored", "stale_partial_after_newer_question")
-                # Ignore a delayed update to an older partial after a newer
-                # tentative remote question has taken priority.
-                if (self._leading_partial is not None
-                        and event.segment_id != self._leading_partial[0]
-                        and event.start_ms < self._leading_partial[1]):
-                    return TurnDecision("ignored", "superseded_partial_revision")
                 self._remember(event, digest)
                 # A new tentative question/correction invalidates in-flight
                 # answers immediately, before any of its partial text is used.

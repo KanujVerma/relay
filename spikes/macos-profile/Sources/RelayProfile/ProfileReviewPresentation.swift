@@ -3,7 +3,10 @@ import Foundation
 
 /// Presentation defaults never establish ownership or approve a source.
 enum ProfileReviewPresentation {
-    static func claimKey(sourceID: String, factID: String, topic: String) -> String {
+    static func claimKey(sourceID: String, factID: String, topic: String,
+                         selectedClaimKey: String? = nil) -> String {
+        // An existing ledger key is identity, not free text to normalize.
+        if let selectedClaimKey { return selectedClaimKey }
         let explicit = topic.folding(options: [.diacriticInsensitive, .caseInsensitive],
                                      locale: Locale(identifier: "en_US_POSIX"))
             .lowercased().replacingOccurrences(of: "[^a-z0-9]+", with: ".", options: .regularExpression)
@@ -17,8 +20,8 @@ enum ProfileReviewPresentation {
     }
 
     static func canApprove(actor: String, claimKey: String, hasExisting: Bool,
-                           replacesExisting: Bool) -> Bool {
+                           replacesExisting: Bool, requiresExisting: Bool = false) -> Bool {
         ["self", "team", "teammate"].contains(actor) && !claimKey.isEmpty && claimKey.count <= 160 &&
-            (!hasExisting || replacesExisting)
+            (!hasExisting || replacesExisting) && (!requiresExisting || (hasExisting && replacesExisting))
     }
 }

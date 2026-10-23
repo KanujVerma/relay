@@ -129,6 +129,12 @@ def _validate(event: TranscriptEvent) -> None:
     if event.status in ("partial", "final"):
         if not event.text.strip():
             raise InvalidTranscript("Empty text segment.")
+        if event.status == "final" and event.start_ms == event.end_ms:
+            # Floor-rounded native timestamps may collapse a nonempty EOU
+            # final onto one millisecond. Such text has no trustworthy
+            # source interval; do not treat it as a harmless stale final.
+            # ingest() invalidates an existing remote answer on rejection.
+            raise InvalidTranscript("Zero-duration final transcript.")
     elif event.text:
         raise InvalidTranscript("Control event text must be empty.")
     if event.confidence is not None:

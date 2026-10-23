@@ -1,0 +1,31 @@
+name: macOS mock panel Swift tests
+
+on:
+  pull_request:
+    paths:
+      - 'spikes/macos-panel/**'
+      - 'docs/NATIVE_PANEL_PROTOTYPE.md'
+      - '.github/workflows/panel-prototype.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-panel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swift-panel-tests:
+    # Real M2 Pro validation is separate; avoid private-repo hosted Mac billing.
+    if: ${{ !github.event.repository.private }}
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show Swift version
+        run: swift --version
+      - name: Test pure offline panel reducer
+        run: swift test --package-path spikes/macos-panel
+      - name: Compile native SwiftUI demo (do not launch)
+        run: swift build --package-path spikes/macos-panel

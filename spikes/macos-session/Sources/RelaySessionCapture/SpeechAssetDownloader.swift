@@ -111,6 +111,9 @@ private final class SpeechDownloadTransfer:NSObject,URLSessionDownloadDelegate,@
         owned.1?.finishTasksAndInvalidate();owned.0?.resume(with:result)
     }
     func urlSession(_ session:URLSession,downloadTask:URLSessionDownloadTask,didWriteData bytesWritten:Int64,totalBytesWritten:Int64,totalBytesExpectedToWrite:Int64){
+        if let response=downloadTask.response as? HTTPURLResponse,response.statusCode != 200 {
+            reject(SpeechDownloadFailure.response(response.statusCode,Self.retryAfter(response.value(forHTTPHeaderField:"Retry-After"))));return
+        }
         guard totalBytesWritten>=0,UInt64(totalBytesWritten)<=artifact.byteCount,
               totalBytesExpectedToWrite<=0 || UInt64(totalBytesExpectedToWrite)<=artifact.byteCount else{reject(SpeechDownloadFailure.invalidArtifact);return}
         guard DispatchTime.now().uptimeNanoseconds<deadline else{reject(SpeechDownloadFailure.expired);return}

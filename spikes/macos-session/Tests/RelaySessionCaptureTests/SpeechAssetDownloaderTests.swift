@@ -80,4 +80,10 @@ private final class SpeechObservedBytes:@unchecked Sendable {
         do{try await task.value;XCTFail("cancelled response completed")}catch{}
         XCTAssertGreaterThan(SpeechHTTPProtocol.stopCount,0);XCTAssertFalse(FileManager.default.fileExists(atPath:file.path))
     }
+    func testTransientErrorPageLargerThanAnArtifactStillUsesTheFiniteRetryPolicy()async throws{
+        SpeechHTTPProtocol.reset([.init(status:503,body:Data(repeating:65,count:4096),type:"text/html"),.init(status:200,body:Data("abc".utf8))])
+        let file=directory.appendingPathComponent("after-error-page")
+        try await downloader().download(artifact,to:file,deadline:deadline,progress:{_ in})
+        XCTAssertEqual(SpeechHTTPProtocol.requests.count,2);XCTAssertEqual(try Data(contentsOf:file),Data("abc".utf8))
+    }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+import Darwin
 @testable import RelaySessionPanel
 
 @MainActor final class ImageWriteBackpressureTests:XCTestCase {
@@ -68,6 +69,30 @@ import XCTest
     }
     func testAdmittedImageDeadlineRetiresBeforeItsFirstByte()async throws {
         try await checkAdmittedRetirement("deadline")
+    }
+    func testFirstBytePipeFailureRetiresAndReapsTheSharedChild()async throws {
+        let script="""
+        import json,os,struct,sys,time
+        size=struct.unpack('>I',sys.stdin.buffer.read(4))[0]
+        req=json.loads(sys.stdin.buffer.read(size))
+        os.close(0)
+        reply=dict(schemaVersion=1,kind='profile_response',requestID=req['requestID'],payload=dict(pid=os.getpid()))
+        data=json.dumps(reply).encode()
+        sys.stdout.buffer.write(struct.pack('>I',len(data))+data);sys.stdout.buffer.flush()
+        while True:time.sleep(.01)
+        """
+        let failure=expectation(description:"first-byte EPIPE fails shared transport")
+        let helper=HelperTransport(root:root,python:URL(fileURLWithPath:"/usr/bin/env"),pythonArguments:["python3","-u","-c",script],mode:.fixture,onFrame:{_ in},onFailure:{failure.fulfill()})
+        try helper.start()
+        let response=try await helper.requestProfile(Data("{\"command\":\"state\"}".utf8))
+        let payload=try JSONSerialization.jsonObject(with:response) as! [String:Any]
+        let pid=(payload["pid"] as! NSNumber).int32Value
+        do{try await helper.sendJSONAwaitingWrite(Data("{\"synthetic_image_chunk\":1}".utf8),deadline:DispatchTime.now().uptimeNanoseconds+1_000_000_000,isCurrent:{true});XCTFail("closed input accepted an image")}catch{}
+        await fulfillment(of:[failure],timeout:0.5)
+        for _ in 0..<300{if kill(pid,0)<0,errno==ESRCH{break};try await Task.sleep(for:.milliseconds(10))}
+        XCTAssertLessThan(kill(pid,0),0,"I/O failure must stop its retained child without another shutdown call")
+        XCTAssertEqual(errno,ESRCH)
+        await helper.shutdownAndWait()
     }
     private func checkAdmittedRetirement(_ mode:String)async throws {
         let gate=FileManager.default.temporaryDirectory.appendingPathComponent("relay-queued-"+UUID().uuidString)

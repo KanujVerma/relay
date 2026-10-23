@@ -306,6 +306,7 @@ public final class HelperTransport: @unchecked Sendable {
                 }
             }catch{
                 if reservation.hasStarted{self.fail()}
+                else if case PanelBridgeError.closed=error{self.fail()}
                 reservation.finish(.failure(error))
             }
         }

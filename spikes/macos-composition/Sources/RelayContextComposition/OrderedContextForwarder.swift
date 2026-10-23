@@ -7,7 +7,7 @@ public enum ContextForwardingError: Error, Equatable { case overflow, retired, o
 /// New invalidation promptly forwards the held EOU without context, even if
 /// the OS capture ignores cancellation. Native authority retires at source.
 @MainActor public final class OrderedContextForwarder {
-    private struct Pending { let event: NativeSessionEvent; let bytes: Int }
+    private struct Pending { let event: SessionIngress; let bytes: Int }
     private struct Flight { let id: UUID; let pending: Pending; let operation: Task<Void, Never>; let timer: Task<Void, Never> }
     private var queue: [Pending] = []
     private var bytes = 0
@@ -16,30 +16,30 @@ public enum ContextForwardingError: Error, Equatable { case overflow, retired, o
     private let maximumFrames: Int
     private let maximumBytes: Int
     private let captureBudgetNanoseconds: UInt64
-    private let shouldCapture: @MainActor (NativeSessionEvent) -> Bool
-    private let capture: @MainActor (NativeSessionEvent) async -> [Data]
-    private let send: @MainActor (NativeSessionEvent, [Data]) throws -> Void
+    private let shouldCapture: @MainActor (SessionIngress) -> Bool
+    private let capture: @MainActor (SessionIngress) async -> [Data]
+    private let send: @MainActor (SessionIngress, [Data]) throws -> Void
     private let onFailure: @MainActor () -> Void
     public var isIdle: Bool { queue.isEmpty && flight == nil }
 
     public init(maximumFrames: Int = 32, maximumBytes: Int = 262_144, captureBudgetNanoseconds: UInt64 = 1_500_000_000,
-                shouldCapture: @escaping @MainActor (NativeSessionEvent) -> Bool,
-                capture: @escaping @MainActor (NativeSessionEvent) async -> [Data],
-                send: @escaping @MainActor (NativeSessionEvent, [Data]) throws -> Void,
+                shouldCapture: @escaping @MainActor (SessionIngress) -> Bool,
+                capture: @escaping @MainActor (SessionIngress) async -> [Data],
+                send: @escaping @MainActor (SessionIngress, [Data]) throws -> Void,
                 onFailure: @escaping @MainActor () -> Void) {
         self.maximumFrames = maximumFrames; self.maximumBytes = maximumBytes
         self.captureBudgetNanoseconds = min(captureBudgetNanoseconds, 1_500_000_000)
         self.shouldCapture = shouldCapture; self.capture = capture; self.send = send; self.onFailure = onFailure
     }
-    public func enqueue(_ event: NativeSessionEvent) throws {
+    public func enqueue(_ event: NativeSessionEvent) throws { try enqueue(.audio(event)) }
+    public func enqueue(_ event: SessionIngress) throws {
         guard !retired else { throw ContextForwardingError.retired }
-        let size = try event.encodedFrame().count
+        let size = try event.encodedByteCount()
         guard queue.count + (flight == nil ? 0 : 1) < maximumFrames, bytes + size <= maximumBytes else {
             retire(); onFailure(); throw ContextForwardingError.overflow
         }
         queue.append(Pending(event: event, bytes: size)); bytes += size
-        if (event.sourceCode == 2 && event.kind == .speechStarted)
-            || [.sessionStarted, .stopping, .stopped, .sourceUnavailable, .discontinuity].contains(event.kind) {
+        if event.invalidatesOptionalWork {
             if let current = flight { current.operation.cancel(); finish(current.id, context: []) }
         }
         drain()
@@ -50,7 +50,7 @@ public enum ContextForwardingError: Error, Equatable { case overflow, retired, o
     private func drain() {
         while !retired, flight == nil, !queue.isEmpty {
             let next = queue.removeFirst()
-            if next.event.kind == .eou, next.event.sourceCode == 2, shouldCapture(next.event) {
+            if next.event.binding != nil, shouldCapture(next.event) {
                 let id = UUID()
                 let operation = Task { [weak self, capture] in
                     let context = await capture(next.event)

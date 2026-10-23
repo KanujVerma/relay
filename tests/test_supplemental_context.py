@@ -64,4 +64,14 @@ class SupplementalContextTests(unittest.TestCase):
         self.current=None
         self.assertFalse(self.provider.validate_current(snippet,self.native))
 
+    def test_future_manual_context_stages_without_mutating_current_issued_context(self):
+        self.current=self.native;self.provider.stage(self.selected());original=self.provider(self.native)
+        newer={**self.native,'requestID':str(uuid.uuid4()),'presentationGeneration':3}
+        self.assertTrue(self.provider.stage(self.selected(**newer)))
+        self.assertTrue(self.provider.validate_current(original,self.native))
+        self.current=newer
+        changed=self.provider(newer)
+        self.assertIsInstance(changed,ContextSnippet)
+        self.assertFalse(self.provider.validate_current(original,self.native))
+
 if __name__=='__main__':unittest.main()

@@ -46,11 +46,13 @@ class SupplementalContextProvider:
         self._staged=None;self._native=None;self._snippet=None;self._issued=None
     def stage(self,payload):
         try:
-            if self._native is not None:return False # No late attachment to an admitted request.
             if self._staged is not None:
                 self._staged=None;return False
             value=strict_json(payload,max_bytes=16384)
-            _fences(value)
+            fences=_fences(value)
+            if self._native is not None:
+                old=_fences(self._native)
+                if fences[:2]!=old[:2] or fences[2]<=old[2] or fences[3]==old[3]:return False
             if value.get('kind')=='selected_text_context':_selected(value,self._now())
             elif value.get('kind')=='screen_context':
                 # Reuse exact screen schema validation in a disposable consumer.
@@ -70,6 +72,7 @@ class SupplementalContextProvider:
         try:
             if not 0<=self._now()-staged_at<=2_000_000_000 or _fences(value)!=_fences(native):return None
             if value['kind']=='screen_context':
+                self._screen=SupplementalScreenProvider(now_ns=self._now,on_invalidation=self._changed)
                 if not self._screen.ingest(raw,native):return None
                 snippet=self._screen(native)
             else:

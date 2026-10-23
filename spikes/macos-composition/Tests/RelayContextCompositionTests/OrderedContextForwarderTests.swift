@@ -20,7 +20,7 @@ import RelayNativeSession
             streamGeneration: 1, emittedUptimeNanoseconds: 1, payload: [:], requestID: kind == .eou ? UUID():nil)
     }
     @Test func obsoleteCaptureCannotReorderOriginalNativeEvents() async throws {
-        let latch = CaptureLatch(); var sent: [NativeSessionEvent] = []; var frames: [Data] = []
+        let latch = CaptureLatch(); var sent: [SessionIngress] = []; var frames: [Data] = []
         let pump = OrderedContextForwarder(shouldCapture: { _ in true }, capture: { _ in await latch.capture() },
             send: { event, context in sent.append(event); frames += context }, onFailure: {})
         let original = event(3), onset = event(4, .speechStarted, generation: 3)
@@ -28,21 +28,21 @@ import RelayNativeSession
         for _ in 0..<20 where !latch.entered { await Task.yield() }
         #expect(latch.entered); #expect(sent.isEmpty)
         try pump.enqueue(onset)
-        #expect(sent == [original, onset]); #expect(frames.isEmpty)
+        #expect(sent == [.audio(original), .audio(onset)]); #expect(frames.isEmpty)
         latch.finish(); for _ in 0..<10 { await Task.yield() }
-        #expect(sent == [original, onset]); #expect(frames.isEmpty)
+        #expect(sent == [.audio(original), .audio(onset)]); #expect(frames.isEmpty)
     }
     @Test func contextIsDeliveredImmediatelyBeforeItsOriginalEvent() async throws {
-        var sent: [NativeSessionEvent] = []; var contextCounts: [Int] = []
+        var sent: [SessionIngress] = []; var contextCounts: [Int] = []
         let pump = OrderedContextForwarder(shouldCapture: { _ in true }, capture: { _ in [Data("context".utf8)] },
             send: { event, context in sent.append(event); contextCounts.append(context.count) }, onFailure: {})
         let original = event(3)
         try pump.enqueue(original)
         for _ in 0..<20 where sent.isEmpty { await Task.yield() }
-        #expect(sent == [original]); #expect(contextCounts == [1]); #expect(pump.isIdle)
+        #expect(sent == [.audio(original)]); #expect(contextCounts == [1]); #expect(pump.isIdle)
     }
     @Test func retirementPreventsAnUncooperativeCaptureFromSending() async throws {
-        let latch = CaptureLatch(); var sent: [NativeSessionEvent] = []
+        let latch = CaptureLatch(); var sent: [SessionIngress] = []
         let pump = OrderedContextForwarder(shouldCapture: { _ in true }, capture: { _ in await latch.capture() },
             send: { event, _ in sent.append(event) }, onFailure: {})
         try pump.enqueue(event(3)); for _ in 0..<20 where !latch.entered { await Task.yield() }

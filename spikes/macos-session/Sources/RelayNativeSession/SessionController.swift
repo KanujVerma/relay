@@ -53,6 +53,34 @@ public final class NativeSessionController: @unchecked Sendable {
             guard sessionID != nil else { throw NativeSessionError.transportClosed }
         }
     }
+    /// Atomically orders explicit Help after exactly the native events already
+    /// forwarded by the app. A stamped but queued event makes the anchor stale.
+    /// The bounded ingress callback must enqueue synchronously and never await
+    /// helper IO. This method does not consume the global audio event sequence.
+    public func issueManualHelp(expectedEventSequence: UInt64, expectedLease: PresentationLease,
+                                question: String,
+                                enqueue: @Sendable (NativeManualHelpRequest) throws -> Void) throws -> NativeManualHelpRequest {
+        try lock.withLock {
+            guard sessionID == expectedLease.captureSessionID,
+                  sequence == expectedEventSequence, expectedEventSequence > 0,
+                  authority.snapshot() == expectedLease,
+                  !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  question.utf8.count <= 500,
+                  !question.unicodeScalars.contains(where: {
+                      switch $0.properties.generalCategory {
+                      case .control, .format, .lineSeparator, .paragraphSeparator: true
+                      default: false
+                      }
+                  }) else { throw NativeSessionError.notAuthorized }
+            guard let lease = authority.invalidate() else { transportFailed(); throw NativeSessionError.notAuthorized }
+            let issued = NativeManualHelpRequest(lease: lease, requestID: UUID(),
+                anchorEventSequence: sequence, emittedUptimeNanoseconds: DispatchTime.now().uptimeNanoseconds,
+                question: question)
+            do { try enqueue(issued) }
+            catch { transportFailed(); throw NativeSessionError.transportClosed }
+            return issued
+        }
+    }
     public func isSourceActive(_ source: PCMSource) -> Bool {
         lock.withLock { sources[source.rawValue] != nil && authority.snapshot() != nil }
     }

@@ -6,15 +6,19 @@ public struct TurnKey: Equatable, Sendable {
     public let identifier: String
     public let revision: UInt64
     public let generation: UInt64
+    // Assigned by the trusted producer when the event is CREATED, not when a
+    // delayed callback is delivered. Increases after every stop/resume cycle.
+    public let sessionEpoch: UInt64
 
-    public init?(identifier: String, revision: UInt64, generation: UInt64) {
+    public init?(identifier: String, revision: UInt64, generation: UInt64, sessionEpoch: UInt64) {
         let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.")
         guard !identifier.isEmpty, identifier.utf8.count <= 64,
               identifier.unicodeScalars.allSatisfy({ allowed.contains($0) }),
-              revision > 0, generation > 0 else { return nil }
+              revision > 0, generation > 0, sessionEpoch > 0 else { return nil }
         self.identifier = identifier
         self.revision = revision
         self.generation = generation
+        self.sessionEpoch = sessionEpoch
     }
 }
 
@@ -94,8 +98,11 @@ public struct PanelState: Sendable {
     public private(set) var card: PanelCard?
     public private(set) var reason: WithholdReason?
     public private(set) var isStopped = false
+    // Every queued begin/publish/withhold event must preserve its originating
+    // epoch; a pre-stop event delivered after resume carries the old epoch.
+    public private(set) var sessionEpoch: UInt64 = 1
 
-    // Never reset on stop/resume: a queued pre-resume event cannot be replayed.
+    // Never reset on stop/resume; generations remain monotonic across epochs.
     private var highestGeneration: UInt64 = 0
 
     public init() {}
@@ -104,20 +111,30 @@ public struct PanelState: Sendable {
     public mutating func apply(_ update: PanelUpdate) -> Bool {
         switch update {
         case let .begin(turn, question):
-            // Even while stopped, retire an observed generation. Replaying a
-            // pre-resume event must never reauthorize the old turn afterward.
+            // Reject any stale event minted in a previous session, including
+            // callbacks queued before stop but only delivered after resume.
+            guard turn.sessionEpoch == sessionEpoch else { return false }
             if isStopped {
+                // Retire observations from the stopped session; they cannot
+                // become legitimate after resume even if delivered twice.
                 highestGeneration = max(highestGeneration, turn.generation)
                 return false
             }
-            guard turn.generation > highestGeneration,
-                  let cleanQuestion = BoundedText.clean(question, maxBytes: 500)
-            else { return false }
+            guard turn.generation > highestGeneration else { return false }
+            // A newer turn supersedes the old card even if the replacement
+            // question is malformed. Advance before examining untrusted text.
             highestGeneration = turn.generation
-            currentTurn = turn
-            self.question = cleanQuestion
+            currentTurn = nil
+            self.question = nil
             card = nil
             reason = nil
+            guard let cleanQuestion = BoundedText.clean(question, maxBytes: 500) else {
+                reason = .validationRequired
+                status = .needsReview
+                return false
+            }
+            currentTurn = turn
+            self.question = cleanQuestion
             status = .waiting
             return true
 
@@ -146,7 +163,10 @@ public struct PanelState: Sendable {
             return true
 
         case .resume:
-            guard isStopped else { return false }
+            // Fail closed rather than wrapping an epoch and reauthorizing old
+            // queued events after an unrealistic UInt64 counter exhaustion.
+            guard isStopped, sessionEpoch < UInt64.max else { return false }
+            sessionEpoch += 1
             // Resuming never resurrects prior content or the previous turn key.
             currentTurn = nil
             question = nil

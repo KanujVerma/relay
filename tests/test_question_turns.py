@@ -857,6 +857,127 @@ class TurnSafety(unittest.TestCase):
         self.assertEqual(delayed.reason, "late_final_after_newer_utterance")
         self.assertEqual(self.machine.current().token, independent.token)
 
+    def test_late_unknown_during_pending_correction_invalidates_its_context(self):
+        original = self.machine.ingest(remote(
+            "A", "Explain top five customers by revenue.",
+            start_ms=0, end_ms=1000,
+        ))
+        self.assertEqual(original.state, "ready")
+        pending = self.machine.ingest(remote(
+            "B", "No, top five by distinct orders",
+            status="partial", intent="correction",
+            start_ms=1100, end_ms=1200,
+        ))
+        self.assertEqual(pending.state, "pending")
+        self.assertIsNone(self.machine.current())
+        self.assertEqual(self.machine._interrupted[1].dependency_intervals,
+                         (("A", 0, 1000),))
+        late = self.machine.ingest(remote(
+            "X", "I may have another requirement.",
+            intent="unknown", start_ms=500, end_ms=800,
+        ))
+        self.assertEqual(late.state, "needs_review")
+        self.assertEqual(late.reason, "unclassified_overlapping_remote_utterance")
+        self.assertIsNone(self.machine._interrupted)
+        self.assertIsNone(self.machine._leading_partial)
+        self.assertFalse(self.machine.turns.is_current(original.token))
+        attempted = self.machine.ingest(remote(
+            "B", "No, top five by distinct orders in 2025.",
+            status="final", intent="correction",
+            start_ms=1100, end_ms=1300,
+        ))
+        self.assertEqual(attempted.state, "needs_review")
+        self.assertEqual(attempted.reason, "pending_context_retracted")
+        self.assertIsNone(self.machine.current())
+
+    def test_revised_root_final_invalidates_current_correction(self):
+        original = self.machine.ingest(remote(
+            "A", "Explain total revenue by customer.",
+            start_ms=0, end_ms=250,
+        ))
+        correction = self.machine.ingest(remote(
+            "B", "No, rank by distinct orders.",
+            intent="correction", start_ms=300, end_ms=450,
+        ))
+        self.assertEqual(correction.state, "ready")
+        revision = self.machine.ingest(remote(
+            "A", "Explain gross profit instead of revenue.",
+            revision=2, start_ms=0, end_ms=275,
+        ))
+        self.assertEqual(revision.state, "needs_review")
+        self.assertEqual(revision.reason, "contributing_final_revised")
+        self.assertFalse(self.machine.turns.is_current(correction.token))
+        self.assertIsNone(self.machine.current())
+        self.assertFalse(self.machine.turns.is_current(original.token))
+
+    def test_reopened_root_partial_invalidates_current_correction(self):
+        self.machine.ingest(remote(
+            "A", "Explain revenue.", start_ms=0, end_ms=200,
+        ))
+        current = self.machine.ingest(remote(
+            "B", "Make that distinct orders.",
+            intent="correction", start_ms=250, end_ms=400,
+        ))
+        reopened = self.machine.ingest(remote(
+            "A", "Explain gross",
+            status="partial", revision=2,
+            start_ms=0, end_ms=150,
+        ))
+        self.assertEqual(reopened.state, "needs_review")
+        self.assertEqual(reopened.reason, "contributing_final_revised")
+        self.assertFalse(self.machine.turns.is_current(current.token))
+        self.assertIn("A", self.machine._reopened)
+        late = self.machine.ingest(remote(
+            "A", "Explain gross profit.",
+            revision=3, start_ms=0, end_ms=600,
+        ))
+        self.assertNotEqual(late.state, "ready")
+        self.assertIsNone(self.machine.current())
+
+    def test_retraction_of_unrelated_reopened_segment_does_not_cancel_new_question(self):
+        first = self.machine.ingest(remote(
+            "A", "Explain a hash table.", start_ms=0, end_ms=200,
+        ))
+        self.assertEqual(first.state, "ready")
+        reopened = self.machine.ingest(remote(
+            "A", "Explain a hash",
+            status="partial", revision=2,
+            start_ms=0, end_ms=230,
+        ))
+        self.assertEqual(reopened.reason, "final_reopened_as_partial")
+        self.assertIn("A", self.machine._reopened)
+        new_question = self.machine.ingest(remote(
+            "C", "Explain database normalization.",
+            start_ms=400, end_ms=600,
+        ))
+        self.assertEqual(new_question.state, "ready")
+        retract = self.machine.ingest(remote(
+            "A", "", status="retracted", intent="unknown",
+            revision=3, start_ms=0, end_ms=650,
+        ))
+        self.assertEqual(retract.state, "ignored")
+        self.assertEqual(retract.reason, "superseded_segment_retraction")
+        self.assertEqual(self.machine.current().token, new_question.token)
+        self.assertTrue(self.machine.turns.is_current(new_question.token))
+        self.assertIn("A", self.machine._reopened)
+
+    def test_stale_unseen_partial_cannot_cancel_newer_active_question(self):
+        current = self.machine.ingest(remote(
+            "B", "Explain binary search.",
+            start_ms=1000, end_ms=1200,
+        ))
+        self.assertEqual(current.state, "ready")
+        stale = self.machine.ingest(remote(
+            "old-A", "Explain an",
+            status="partial", intent="correction",
+            start_ms=100, end_ms=200,
+        ))
+        self.assertEqual(stale.state, "ignored")
+        self.assertEqual(stale.reason, "stale_partial_after_newer_question")
+        self.assertEqual(self.machine.current().token, current.token)
+        self.assertTrue(self.machine.turns.is_current(current.token))
+        self.assertIsNone(self.machine._leading_partial)
+
     def test_discontinuity_cancels_and_blocks_old_generation(self):
         initial = self.machine.ingest(remote(
             "question", "Explain a query plan.", end_ms=300

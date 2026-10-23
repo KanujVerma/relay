@@ -69,10 +69,17 @@ public struct SessionAnswerDecision: Sendable {
             } else {
                 _=try o["provenance"]!.object(p["taskContext"] == nil ? ["model","checks","independentlyReviewed"] : ["model","checks","independentlyReviewed","taskContext"])
                 if let context=p["taskContext"] {
-                    let c=try context.object(["provenance","source","capturedUptimeNanoseconds"])
+                    guard case .object(let fields)=context else{throw PanelBridgeError.malformed}
+                    let c=try context.object(fields["imageDigest"]==nil ? ["provenance","source","capturedUptimeNanoseconds"]:["provenance","source","capturedUptimeNanoseconds","imageDigest"])
                     let provenance=try c["provenance"]!.string()
                     guard ["local_ocr","selected_accessibility_text"].contains(provenance) else { throw PanelBridgeError.malformed }
-                    taskContext=TaskContextUse(provenance:provenance,source:try c["source"]!.string(160),capturedUptimeNanoseconds:try c["capturedUptimeNanoseconds"]!.uint())
+                    var imageDigest:String?
+                    if let digest=c["imageDigest"] {
+                        let value=try digest.string(64)
+                        guard provenance=="local_ocr",value.utf8.count==64,value.utf8.allSatisfy({(48...57).contains($0)||(97...102).contains($0)}) else{throw PanelBridgeError.malformed}
+                        imageDigest=value
+                    }
+                    taskContext=TaskContextUse(provenance:provenance,source:try c["source"]!.string(160),capturedUptimeNanoseconds:try c["capturedUptimeNanoseconds"]!.uint(),imageDigest:imageDigest)
                 } else { taskContext=nil }
                 _=try p["model"]!.string(120);guard try !p["independentlyReviewed"]!.boolean() else { throw PanelBridgeError.malformed }
                 let checks=try p["checks"]!.array(3).map { try $0.string(80) }

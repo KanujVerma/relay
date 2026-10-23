@@ -42,7 +42,7 @@ import RelayNativeSession
         let gate=ContextPublicationGate(authority:authority);gate.bind(request)
         var continuation:CheckedContinuation<Bool,Never>?;var rejected=0;var commits=0
         gate.publish(request,budgetNanoseconds:5_000_000,validate:{await withCheckedContinuation{continuation=$0}},owns:{true},commit:{commits+=1},rejected:{rejected+=1})
-        try await Task.sleep(for:.milliseconds(30))
+        for _ in 0..<100 where rejected==0{try await Task.sleep(for:.milliseconds(5))}
         #expect(rejected==1);#expect(commits==0)
         continuation?.resume(returning:true);for _ in 0..<10{await Task.yield()}
         #expect(rejected==1);#expect(commits==0)

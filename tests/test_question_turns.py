@@ -910,6 +910,28 @@ class TurnSafety(unittest.TestCase):
         self.assertIsNone(self.machine.current())
         self.assertFalse(self.machine.turns.is_current(original.token))
 
+    def test_conflicting_same_revision_root_final_invalidates_correction(self):
+        root = self.machine.ingest(remote(
+            "root", "Describe total revenue.",
+            revision=1, start_ms=0, end_ms=250,
+        ))
+        correction = self.machine.ingest(remote(
+            "correction", "No, by distinct orders.",
+            intent="correction", start_ms=300, end_ms=400,
+        ))
+        self.assertEqual(correction.state, "ready")
+        # A same-ID/same-revision conflicting final cannot bypass the
+        # earlier-root dependency gate merely because it is older than B.
+        conflicting = self.machine.ingest(remote(
+            "root", "Describe average revenue.",
+            revision=1, start_ms=0, end_ms=250,
+        ))
+        self.assertEqual(conflicting.state, "needs_review")
+        self.assertEqual(conflicting.reason, "contributing_final_revised")
+        self.assertFalse(self.machine.turns.is_current(correction.token))
+        self.assertFalse(self.machine.turns.is_current(root.token))
+        self.assertIsNone(self.machine.current())
+
     def test_reopened_root_partial_invalidates_current_correction(self):
         self.machine.ingest(remote(
             "A", "Explain revenue.", start_ms=0, end_ms=200,

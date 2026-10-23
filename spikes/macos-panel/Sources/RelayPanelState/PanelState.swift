@@ -102,7 +102,8 @@ public struct PanelState: Sendable {
     // epoch; a pre-stop event delivered after resume carries the old epoch.
     public private(set) var sessionEpoch: UInt64 = 1
 
-    // Never reset on stop/resume; generations remain monotonic across epochs.
+    // Monotonic within the current epoch; the epoch rejects every prior
+    // session's delayed event, so a new session may restart generations.
     private var highestGeneration: UInt64 = 0
 
     public init() {}
@@ -114,12 +115,7 @@ public struct PanelState: Sendable {
             // Reject any stale event minted in a previous session, including
             // callbacks queued before stop but only delivered after resume.
             guard turn.sessionEpoch == sessionEpoch else { return false }
-            if isStopped {
-                // Retire observations from the stopped session; they cannot
-                // become legitimate after resume even if delivered twice.
-                highestGeneration = max(highestGeneration, turn.generation)
-                return false
-            }
+            if isStopped { return false }
             guard turn.generation > highestGeneration else { return false }
             // A newer turn supersedes the old card even if the replacement
             // question is malformed. Advance before examining untrusted text.
@@ -167,6 +163,7 @@ public struct PanelState: Sendable {
             // queued events after an unrealistic UInt64 counter exhaustion.
             guard isStopped, sessionEpoch < UInt64.max else { return false }
             sessionEpoch += 1
+            highestGeneration = 0
             // Resuming never resurrects prior content or the previous turn key.
             currentTurn = nil
             question = nil

@@ -132,7 +132,10 @@ private struct RelayPanelView: View {
     private func startQuestion(corrected: Bool) {
         generation += 1
         let keyName = corrected ? "demo-correction-\(generation)" : "demo-question-\(generation)"
-        guard let key = TurnKey(identifier: keyName, revision: 1, generation: generation) else { return }
+        // Stamp the token when the demo action creates it; an integration
+        // must NOT re-stamp a delayed pre-resume event when it reaches the UI.
+        guard let key = TurnKey(identifier: keyName, revision: 1, generation: generation,
+                                sessionEpoch: state.sessionEpoch) else { return }
         let question = corrected
             ? "Actually, how do WHERE and HAVING differ when aggregation is involved?"
             : "What is the difference between SQL WHERE and HAVING?"

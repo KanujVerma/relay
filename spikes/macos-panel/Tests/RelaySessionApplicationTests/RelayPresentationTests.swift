@@ -1,6 +1,7 @@
 import XCTest
 import AppKit
 import RelayControls
+import RelayScreenContext
 @testable import RelayPanelSession
 
 @MainActor final class RelayPresentationTests:XCTestCase {
@@ -37,6 +38,34 @@ import RelayControls
         XCTAssertTrue(state.allows(.showSession));XCTAssertFalse(state.allows(.resume))
         state.stopping=false
         XCTAssertFalse(state.allows(.showSession))
+    }
+    func testPresentationAcceptsAnExplicitMicrophoneOnlySourceWithoutStartingIt() {
+        let model=SessionApplicationModel(arguments:["relay"])
+        model.selectedBundleID="";model.microphoneEnabled=true;model.authorizedConversation=true
+        XCTAssertTrue(model.relayPresentation.hasSelectedSource)
+        XCTAssertFalse(model.relayPresentation.hasRemoteSource)
+        XCTAssertTrue(model.relayPresentation.allows(.start))
+        model.microphoneEnabled=false
+        XCTAssertFalse(model.relayPresentation.hasSelectedSource)
+        XCTAssertFalse(model.relayPresentation.allows(.start))
+        model.selectedBundleID="com.example.synthetic"
+        XCTAssertTrue(model.relayPresentation.hasRemoteSource)
+        XCTAssertTrue(model.relayPresentation.hasSelectedSource)
+        XCTAssertFalse(model.running);XCTAssertNil(model.currentSessionID)
+    }
+    func testScreenLabelRequiresAnActualCurrentSelectionWithoutOpeningThePicker() {
+        let model=SessionApplicationModel(arguments:["relay"])
+        let screen=model.screen
+        XCTAssertEqual(model.relayContextLabel,"Screen off")
+        screen.coordinator.enable();screen.retireCurrentRequest()
+        XCTAssertTrue(screen.isEnabled);XCTAssertNil(screen.selectedSource)
+        XCTAssertEqual(model.relayContextLabel,"Choose a window")
+        screen.coordinator.select(ScreenSource(windowID:123,bundleID:"com.example.synthetic",processID:1,label:"Synthetic editor"))
+        screen.retireCurrentRequest()
+        XCTAssertEqual(model.relayContextLabel,"Window selected")
+        screen.coordinator.sourceUnavailable(.closed)
+        XCTAssertTrue(screen.isEnabled);XCTAssertNil(screen.selectedSource)
+        XCTAssertEqual(model.relayContextLabel,"Choose a window")
     }
     func testFixtureHomeReopenDoesNotAutomaticallyStartAnotherSession() {
         let shell=RelayWindowShell()

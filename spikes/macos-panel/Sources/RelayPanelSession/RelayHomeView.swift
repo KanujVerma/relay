@@ -51,7 +51,7 @@ struct RelayHomeView<SourceControls:View>:View {
                         Button("Add résumé or context"){onAction(.context)}.buttonStyle(RelayQuietButtonStyle()).disabled(fixture)
                     }
                 }.padding(20).background(RelayTheme.raised,in:RoundedRectangle(cornerRadius:16)).overlay{RoundedRectangle(cornerRadius:16).strokeBorder(RelayTheme.line)}
-                Text("Suggestions appear automatically as questions develop.").font(.system(size:12)).foregroundStyle(RelayTheme.muted)
+                Text(state.hasRemoteSource ? "Suggestions appear automatically as questions develop.":"Choose a conversation app for automatic question help. Your microphone adds reply context.").font(.system(size:12)).foregroundStyle(RelayTheme.muted)
                 Spacer(minLength:0)
                 if fixture{Text("SYNTHETIC DEMO · no audio capture or account request").font(.system(size:10,weight:.medium)).foregroundStyle(RelayTheme.muted)}
             }.padding(36).frame(maxWidth:.infinity,maxHeight:.infinity)

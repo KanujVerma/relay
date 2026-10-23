@@ -18,6 +18,7 @@ import UniformTypeIdentifiers
     @State private var topic = ""
     @State private var replaceExisting = false
     @State private var lookupKey: String?
+    @State private var selectedCorrection: ProfileMemoryFact?
 
     public init(controller: ProfileController, role: String? = nil) {
         self.controller = controller
@@ -27,10 +28,14 @@ import UniformTypeIdentifiers
 
     private var claimKey: String {
         guard let card = controller.card else { return "" }
-        return ProfileReviewPresentation.claimKey(sourceID: card.sourceID, factID: card.factID, topic: topic)
+        return ProfileReviewPresentation.claimKey(sourceID: card.sourceID, factID: card.factID, topic: topic,
+                                                   selectedClaimKey: selectedCorrection?.claimKey)
     }
     private var earlierFact: ProfileExistingFact? {
-        lookupKey == claimKey && controller.existingClaimKey == claimKey ? controller.existingFact : nil
+        guard lookupKey == claimKey, controller.existingClaimKey == claimKey,
+              let fact = controller.existingFact else { return nil }
+        guard selectedCorrection == nil || fact.factID == selectedCorrection?.factID else { return nil }
+        return fact
     }
 
     public var body: some View {
@@ -62,9 +67,11 @@ import UniformTypeIdentifiers
         .frame(minWidth: 480, minHeight: 500)
         .onChange(of: controller.card?.factID) { _, _ in
             actor = "unknown"; topic = ""; replaceExisting = false; lookupKey = nil
+            selectedCorrection = nil
             sourceDetailsExpanded = false; reviewOptionsExpanded = false
         }
         .onChange(of: topic) { _, _ in
+            guard selectedCorrection == nil else { return }
             replaceExisting = false
             if lookupKey != claimKey { lookupKey = nil }
         }
@@ -196,16 +203,26 @@ import UniformTypeIdentifiers
             }.font(.callout)
             DisclosureGroup("Correct an earlier fact", isExpanded: $reviewOptionsExpanded) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Use the same topic as the earlier fact when replacing information. Leave it blank for a new source-backed fact.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    TextField("Memory topic (optional)", text: $topic).textFieldStyle(.roundedBorder)
-                    Button("Find earlier fact") {
-                        let key = claimKey; lookupKey = key
-                        Task { await controller.lookupExisting(claimKey: key) }
-                    }.disabled(topic.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    if let selectedCorrection {
+                        Text("Selected saved fact from \(selectedCorrection.sourceLabel)").font(.callout)
+                        Button("Clear selection") {
+                            self.selectedCorrection = nil; lookupKey = nil; replaceExisting = false; topic = ""
+                        }
+                    } else {
+                        Text("Select a saved fact below, or enter an earlier topic. Leave it blank for a new source-backed fact.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        TextField("Memory topic (optional)", text: $topic).textFieldStyle(.roundedBorder)
+                        Button("Find earlier fact") {
+                            let key = claimKey; lookupKey = key
+                            Task { await controller.lookupExisting(claimKey: key) }
+                        }.disabled(topic.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
                     if let earlier = earlierFact {
                         Text(earlier.claimText).font(.callout)
                         Toggle("Replace this earlier fact", isOn: $replaceExisting)
+                    } else if selectedCorrection != nil && !controller.busy {
+                        Text("This saved fact could not be matched. Clear the selection or choose a current fact below.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }.padding(.top, 10)
             }.font(.callout)
@@ -218,7 +235,8 @@ import UniformTypeIdentifiers
                     Task { await controller.review(card, actor: selectedActor, claimKey: selectedKey, replaces: replacement) }
                 }.buttonStyle(.borderedProminent)
                     .disabled(!ProfileReviewPresentation.canApprove(actor: actor, claimKey: claimKey,
-                        hasExisting: earlierFact != nil, replacesExisting: replaceExisting))
+                        hasExisting: earlierFact != nil, replacesExisting: replaceExisting,
+                        requiresExisting: selectedCorrection != nil))
             }
         }.padding(20).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12)).id(card.factID)
     }
@@ -272,7 +290,7 @@ import UniformTypeIdentifiers
                         Spacer()
                         if controller.card != nil {
                             Button("Correct this fact") {
-                                topic = memory.claimKey; lookupKey = memory.claimKey
+                                selectedCorrection = memory; lookupKey = memory.claimKey
                                 replaceExisting = false; reviewOptionsExpanded = true
                                 Task { await controller.lookupExisting(claimKey: memory.claimKey) }
                             }.help("Compare the pending statement with this saved fact before replacing it")

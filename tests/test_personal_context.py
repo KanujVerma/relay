@@ -49,6 +49,16 @@ class PersonalContextTests(unittest.TestCase):
         bundle = self.provider.retrieve("Tell me about Atlas", "developer", project_hint="Atlas")
         self.assertEqual({f.actor for f in bundle.facts}, {"team", "teammate"})
 
+    def test_resume_overview_and_project_followup_retrieve_bounded_facts(self):
+        self.approve("I built Atlas SQL tests.", "atlas.tests")
+        self.approve("I chose SQLite for Atlas because transactions mattered.", "atlas.reason")
+        self.approve("I built Boreal API tests.", "boreal.tests")
+        overview = self.provider.retrieve("Tell me about yourself.", "developer", budget=2)
+        self.assertEqual(len(overview.facts), 2)
+        followup = self.provider.retrieve("Why that choice?", "developer", project_hint="Atlas")
+        self.assertEqual({f.claim_key for f in followup.facts}, {"atlas.tests", "atlas.reason"})
+        self.assertEqual(self.provider.retrieve("What Tableau experience do you have?", "developer").facts, ())
+
     def test_revocation_and_supersession_retire_existing_bundle(self):
         source, old = self.approve("I built Atlas SQL tests.", "atlas.tests")
         original = self.provider.retrieve("Atlas SQL tests?", "developer")

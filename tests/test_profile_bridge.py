@@ -47,6 +47,9 @@ class ProfileBridgeTests(unittest.TestCase):
                             "fingerprint": card["card_fingerprint"], "decision": "approve",
                             "actor": "self", "claim_key": "atlas.tests"})
         bundle = self.bridge.retrieve("Atlas SQL?", "developer")
+        with self.assertRaises(ValueError):
+            self.bridge.handle({"command": "load_begin", "size": 20, "sha256": "0" * 64})
+        self.bridge.handle({"command": "lock"})
         self.bridge.handle({"command": "load_begin", "size": 20, "sha256": "0" * 64})
         self.assertFalse(self.bridge.validate_current(bundle))
         with self.assertRaises(ValueError):
@@ -64,11 +67,14 @@ class ProfileBridgeTests(unittest.TestCase):
             parts.append(base64.b64decode(message["data"]))
         snapshot = b"".join(parts)
         self.assertEqual(sha256(snapshot).hexdigest(), manifest["sha256"])
+        self.bridge.handle({"command": "lock"})
         self.bridge.handle({"command": "load_begin", "size": len(snapshot), "sha256": manifest["sha256"]})
         for offset in range(0, len(snapshot), 4096):
             self.bridge.handle({"command": "transfer_chunk", "offset": offset,
                     "data": base64.b64encode(snapshot[offset:offset+4096]).decode()})
         self.assertIsNotNone(self.bridge.handle({"command": "load_commit"})["card"])
+        with self.assertRaises(ValueError):
+            self.bridge.handle({"command": "load_begin", "size": len(snapshot), "sha256": manifest["sha256"]})
 
     def test_oversized_out_of_order_and_extra_authority_fail(self):
         for message in ({"command": "new", "authorized": True},
@@ -79,6 +85,16 @@ class ProfileBridgeTests(unittest.TestCase):
                             "file_type": "txt", "purpose": "resume", "label": "Selected", "role": "developer"})
         with self.assertRaises(ValueError):
             self.bridge.handle({"command": "transfer_chunk", "offset": 1, "data": "YWJjZA=="})
+
+    def test_lookup_current_fact_enables_explicit_correction_only(self):
+        card = self.select()
+        self.bridge.handle({"command": "decide", "fact_id": card["fact_id"],
+                            "fingerprint": card["card_fingerprint"], "decision": "approve",
+                            "actor": "self", "claim_key": "atlas.tests"})
+        result = self.bridge.handle({"command": "current_claim", "claim_key": "ATLAS.TESTS"})
+        self.assertEqual(result["fact"]["fact_id"], card["fact_id"])
+        self.bridge.handle({"command": "revoke", "source_id": card["source_id"]})
+        self.assertIsNone(self.bridge.handle({"command": "current_claim", "claim_key": "atlas.tests"})["fact"])
 
     def test_actual_child_uses_bounded_frames_and_no_content_logs(self):
         root = Path(__file__).resolve().parents[1]

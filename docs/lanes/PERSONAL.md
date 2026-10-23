@@ -16,8 +16,8 @@ Validation after resumed state: **411 Python tests passed, 21 optional converter
 
 ## In progress
 
-Native encrypted vault code/tests are in progress and not part of this Python checkpoint. Existing on-disk BrainStore is still synthetic only. The plan is [personal-context](../superpowers/plans/2026-10-23-personal-context.md). Controller owns shared integration/review. The provider contract and composable bridge have been sent to the answer lane. Read the accepted BUILD_CONTRACT at published foundation a8f8359354f44e11be39e22a55422b2cef9f6c91; current ports agree with it.
+The native RelayProfile library and preparation window are implemented. CryptoKit encrypts the entire payload, Keychain supplies a device-local non-synchronizing key, and all native acceptance uses injected synthetic keys. Default launch is inert until the user opens the protected profile. Nine native tests pass, including a real child plus encrypted review/save/reopen/revoke and save-failure lock. Full Python now passes 413 tests with 21 optional converter skips. The UI is built but actual file-picker clicks and real Keychain acceptance remain pending. Details and exact source/test/license pins are in [PERSONAL_CONTEXT](../PERSONAL_CONTEXT.md). Existing on-disk BrainStore is still synthetic only. The plan is [personal-context](../superpowers/plans/2026-10-23-personal-context.md). Controller owns shared integration/review. The provider contract and composable bridge have been sent to the answer lane. Read the accepted BUILD_CONTRACT at published foundation a8f8359354f44e11be39e22a55422b2cef9f6c91; current ports agree with it.
 
 ## Next action
 
-Finish the native encrypted-storage and selected-file/review UI boundary, then verify synthetic whole-path persistence without accessing private inputs or Keychain.
+Integrate RelayProfile via the answer lane shared helper, complete independent review, and verify the joined synthetic flow. Actual private-source/Keychain acceptance remains separate.

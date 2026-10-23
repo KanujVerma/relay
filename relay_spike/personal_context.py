@@ -119,6 +119,10 @@ class BrainContextProvider:
         revision = self._revision()
         question_terms = _terms(question)
         project_terms = _terms(project_hint or "")
+        overview = re.fullmatch(
+            r"(?:tell me about yourself|(?:please )?walk me through your (?:resume|résumé|background)|"
+            r"(?:give me |an? )?(?:overview|summary) of your (?:experience|background|projects))\s*[.!?]*",
+            question.casefold().strip()) is not None
         ranked: list[tuple[int, ContextFact]] = []
         missing: set[str] = set()
         conflict = False
@@ -140,7 +144,7 @@ class BrainContextProvider:
             if project_terms and not project_terms.intersection(haystack):
                 continue
             overlap = len(question_terms.intersection(haystack))
-            if question_terms and not overlap and not project_terms:
+            if question_terms and not overlap and not project_terms and not overview:
                 continue
             # A pending alternative under an existing canonical key is an
             # unresolved contradiction, never a second approved claim.

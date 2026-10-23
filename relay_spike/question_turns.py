@@ -67,6 +67,10 @@ class QuestionSnapshot:
     parts_hint: tuple[str, ...]
     parts_are_heuristic: bool
     dependency_segment_ids: tuple[str, ...] = ()
+    # Bounded source intervals for ALL accepted questions/corrections that
+    # still contribute to this snapshot. Required to reject late unknown
+    # speech inside an older retained question, not just the latest utterance.
+    dependency_intervals: tuple[tuple[str, int, int], ...] = ()
     start_ms: int = 0
     end_ms: int = 0
 
@@ -309,14 +313,19 @@ class QuestionTurnMachine:
                 and event.segment_id in
                 self._interrupted[1].dependency_segment_ids
             )
-            # An unclassified final inside the active question's source-time
-            # interval cannot be dismissed as an old harmless finalized
-            # segment just because its end precedes the question end.
+            # A correction or follow-up keeps earlier accepted wording in
+            # its prompt. A late unclassified remote final overlapping ANY
+            # contributing source interval invalidates the whole current
+            # answer, even if its end precedes the latest correction's start.
+            # Each accepted snapshot retains at most MAX_DEPENDENT_SEGMENTS
+            # identifiers and intervals; no transcript content is duplicated.
             if (event.status == "final" and event.intent == "unknown"
                     and self._active is not None
-                    and event.segment_id != self._active.current_segment_id
-                    and event.start_ms < self._active.end_ms
-                    and event.end_ms > self._active.start_ms):
+                    and any(
+                        event.start_ms < source_end and event.end_ms > source_start
+                        for _, source_start, source_end
+                        in self._active.dependency_intervals
+                    )):
                 self.turns.cancel()
                 self._active = None
                 self._interrupted = None
@@ -573,6 +582,21 @@ class QuestionTurnMachine:
                 self._active = None
                 self._interrupted = None
                 return TurnDecision("needs_review", "correction_chain_too_long")
+            prior_intervals = (
+                previous.dependency_intervals
+                if (previous is not None and
+                    event.intent in ("correction", "follow_up"))
+                else ()
+            )
+            intervals_by_id = {
+                segment: (start, end)
+                for segment, start, end in prior_intervals
+            }
+            # Only source metadata is carried across a correction chain.
+            intervals_by_id[event.segment_id] = (event.start_ms, event.end_ms)
+            dependency_intervals = tuple(
+                (segment, *intervals_by_id[segment]) for segment in dependencies
+            )
             token = self.turns.activate(logical_id, next_version)
             snapshot = QuestionSnapshot(
                 token=token, source_channel="remote",
@@ -582,6 +606,7 @@ class QuestionTurnMachine:
                 prompt=prompt, parts_hint=_parts_hint(current_text),
                 parts_are_heuristic=True,
                 dependency_segment_ids=dependencies,
+                dependency_intervals=dependency_intervals,
                 start_ms=event.start_ms, end_ms=event.end_ms,
             )
             self._active = snapshot

@@ -34,8 +34,8 @@ public enum HelperRuntimeResolver {
             guard root.isFileURL,FileManager.default.fileExists(atPath:root.path,isDirectory:&isDirectory),isDirectory.boolValue else{throw HelperRuntimeError.developerOverrideInvalid}
             return HelperRuntimeLocation(executable:URL(fileURLWithPath:python ?? "/usr/bin/env"),arguments:python==nil ? ["python3"]:[],resourceRoot:root)
         }
-        let runtime=bundleURL.appendingPathComponent("Contents/Helpers/RelayRuntime",isDirectory:true)
-        let executable=runtime.appendingPathComponent("relay-helper"),data=runtime.appendingPathComponent("_internal",isDirectory:true)
+        let runtime=bundleURL.appendingPathComponent("Contents/Helpers/RelayRuntime.app",isDirectory:true)
+        let executable=runtime.appendingPathComponent("Contents/MacOS/relay-helper"),data=runtime.appendingPathComponent("Contents/Resources",isDirectory:true)
         guard FileManager.default.isExecutableFile(atPath:executable.path),FileManager.default.fileExists(atPath:data.path) else{throw HelperRuntimeError.bundledRuntimeUnavailable}
         do {
             try requireContained(executable,in:bundleURL);try requireContained(data,in:bundleURL)

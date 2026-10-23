@@ -956,6 +956,61 @@ class TurnSafety(unittest.TestCase):
         self.assertNotEqual(late.state, "ready")
         self.assertIsNone(self.machine.current())
 
+    def test_repeated_partial_of_quarantined_reopened_segment_preserves_new_question(self):
+        self.assertEqual(self.machine.ingest(remote(
+            "A", "Explain a hash table.", start_ms=0, end_ms=200,
+        )).state, "ready")
+        opened = self.machine.ingest(remote(
+            "A", "Explain a hash", revision=2,
+            status="partial", start_ms=0, end_ms=210,
+        ))
+        self.assertEqual(opened.reason, "final_reopened_as_partial")
+        next_question = self.machine.ingest(remote(
+            "C", "Explain data normalization.", start_ms=400, end_ms=600,
+        ))
+        self.assertEqual(next_question.state, "ready")
+        # Revised partial A's reported start is now well past C, but the
+        # original finalized A was already reopened and quarantined.
+        replay = self.machine.ingest(remote(
+            "A", "Explain something else", revision=3,
+            status="partial", start_ms=800, end_ms=950,
+        ))
+        self.assertEqual(replay.state, "ignored")
+        self.assertEqual(replay.reason, "reopened_segment_quarantined")
+        self.assertEqual(self.machine.current().token, next_question.token)
+        self.assertTrue(self.machine.turns.is_current(next_question.token))
+
+    def test_partial_history_survives_lru_noise_and_revised_start_cannot_preempt(self):
+        old = self.machine.ingest(remote(
+            "abandoned-A", "Explain a join",
+            status="partial", start_ms=100, end_ms=200,
+        ))
+        self.assertEqual(old.state, "pending")
+        newer = self.machine.ingest(remote(
+            "new-B", "Explain a B-tree.",
+            start_ms=300, end_ms=450,
+        ))
+        self.assertEqual(newer.state, "ready")
+        for i in range(MAX_SEEN_SEGMENTS + 17):
+            ordinary = self.machine.ingest(remote(
+                f"ordinary-statement-{i}", f"Ordinary statement {i}.",
+                intent="statement", start_ms=600 + i * 10,
+                end_ms=609 + i * 10,
+            ))
+            self.assertEqual(ordinary.state, "ignored")
+        self.assertIn("abandoned-A", self.machine._seen)
+        self.assertEqual(self.machine._seen["abandoned-A"].status, "partial")
+        self.assertEqual(self.machine._seen["abandoned-A"].first_start_ms, 100)
+        revised = self.machine.ingest(remote(
+            "abandoned-A", "Explain a different join",
+            status="partial", revision=2,
+            start_ms=5000, end_ms=5100,
+        ))
+        self.assertEqual(revised.state, "ignored")
+        self.assertEqual(revised.reason, "stale_partial_after_newer_question")
+        self.assertEqual(self.machine.current().token, newer.token)
+        self.assertTrue(self.machine.turns.is_current(newer.token))
+
     def test_retraction_of_unrelated_reopened_segment_does_not_cancel_new_question(self):
         first = self.machine.ingest(remote(
             "A", "Explain a hash table.", start_ms=0, end_ms=200,

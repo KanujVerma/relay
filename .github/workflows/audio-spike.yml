@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'spikes/macos-audio/**'
+      - '!spikes/macos-audio/asr/**'
       - '.github/workflows/audio-spike.yml'
   workflow_dispatch:
 

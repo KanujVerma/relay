@@ -56,7 +56,7 @@ class Request:
 
 
 class SessionHost:
-    def __init__(self,*,complete=None,emit=None,personal_provider=None,supplemental_provider=None,role='analytics',deadline=15):
+    def __init__(self,*,complete=None,emit=None,personal_provider=None,supplemental_provider=None,role='analytics',deadline=15,visual_transport=None):
         self.context=ConversationContext()
         self.machine=QuestionTurnMachine()
         self.bridge=SyntheticEOUBridge(self.machine,eligibility_strategy=CompositeEligibility(self.context))
@@ -70,8 +70,11 @@ class SessionHost:
         self.model_requests=0
         self._worker=None;self._pending_work=None
         self._microphone_available=False
+        from .visual_host import HostVisualInput
+        self.visual=HostVisualInput(self,visual_transport)
 
     def _invalidate(self):
+        self.visual.retire_request()
         if self.active is not None:
             self.terminal.add(self.active.native['requestID'])
         self.active=None
@@ -84,11 +87,13 @@ class SessionHost:
         invalidate=getattr(self.supplemental_provider,'invalidate',None)
         if callable(invalidate):invalidate()
 
-    def close(self):
+    def close(self,*,preserve_visual=False):
+        if not preserve_visual:self.visual.disable(cancel_work=False)
         self._clear_context_provider()
         self._invalidate();self.permission.revoke();self.bridge.stop();self.live=False;self.context.clear();self.activities.clear()
 
     async def drain(self):
+        await self.visual.drain_probe()
         while self.tasks:
             batch=tuple(self.tasks)
             await asyncio.gather(*batch,return_exceptions=True)
@@ -103,7 +108,8 @@ class SessionHost:
                 if snippet.kind=='screen_text' and (not callable(validator) or not validator(snippet,request.native)): return False
             return (self.live and self.active is request and request.native['requestID'] not in self.terminal
                     and self.machine.turns.is_current(request.token) and self.permission.authorized()
-                    and (request.bundle is None or self.provider.validate_current(request.bundle)))
+                    and (request.bundle is None or self.provider.validate_current(request.bundle))
+                    and self.visual.current_for(request))
         except Exception:
             return False
 
@@ -137,7 +143,8 @@ class SessionHost:
         if kind=='session_started':
             if self.live or n['eventSequence']!=1 or identity==self.session:
                 self.close();raise WireError('session_restart')
-            self.close()
+            self.visual.session_starting()
+            self.close(preserve_visual=True)
             # Fresh native UUID permits source counters to restart. Old worker
             # results still fail request-object/session identity checks.
             self.machine=QuestionTurnMachine()
@@ -238,6 +245,30 @@ class SessionHost:
             and native['presentationGeneration']==self.presentation
             and native['requestID'] not in self.terminal and self.machine.turns.is_current(req.token)
             and self.permission.authorized() and (req.bundle is None or self.provider.validate_current(req.bundle)))
+
+    def handle_visual_control(self,value):
+        self.visual.handle_control(value)
+
+    def handle_supplemental_retirement(self,value):
+        from .panel_wire import exact,uuid_string,u64
+        exact(value,('schemaVersion','kind','captureSessionID','sessionEpoch','presentationGeneration','requestID','reasonCode'))
+        if (type(value['schemaVersion']) is not int or value['schemaVersion']!=1
+            or value['kind']!='supplemental_context_retired' or value['reasonCode']!='context_changed'):
+            raise WireError('supplemental_retirement')
+        uuid_string(value['captureSessionID']);uuid_string(value['requestID'])
+        u64(value['sessionEpoch'],True);u64(value['presentationGeneration'],True)
+        provider=self.supplemental_provider
+        if provider is None:return
+        retire_staged=getattr(provider,'retire_staged',None)
+        if callable(retire_staged):retire_staged(value)
+        current=self.active
+        if (current is not None and current.native['requestID'] in self._supplemental
+            and uuid_string(value['captureSessionID'])==uuid_string(current.native['captureSessionID'])
+            and uuid_string(value['requestID'])==uuid_string(current.native['requestID'])
+            and value['sessionEpoch']==current.native['sessionEpoch']
+            and value['presentationGeneration']==current.native['presentationGeneration']):
+            retire_current=getattr(provider,'retire_current',None)
+            if callable(retire_current):retire_current(current.native)
 
     def _admit_supplemental(self,req):
         if self.supplemental_provider is None or not self.supplemental_request_current(req.native):return None
@@ -343,21 +374,33 @@ class SessionHost:
         try:
             self.model_requests+=1
             async with asyncio.timeout(max(0,self.deadline-(time.monotonic()-req.accepted_at))):
+                # A just-started session may have cancelled an idle probe. The
+                # same stream must actually quiesce before the answer uses it.
+                await self.visual.drain_probe()
                 supplemental=self._supplemental.get(req.native['requestID'])
-                candidate=await self.complete(make_prompt(req.question,dialogue,req.bundle,supplemental=supplemental,current_utterance=req.display_question),INSTRUCTIONS)
+                permit=self.visual.prepare(req,supplemental)
+                prompt=make_prompt(req.question,dialogue,req.bundle,supplemental=supplemental,current_utterance=req.display_question)
+                candidate=await self.complete(prompt,INSTRUCTIONS,visual_attachment=permit) if permit is not None else await self.complete(prompt,INSTRUCTIONS)
+                if not await self.visual.validate_publication(req,permit=permit):
+                    self.visual.failed_request(req);self._result(req,'abstain','answer_unavailable');return
             if not self._current(req): return
             code_required=bool(re.search(r'\b(?:write|show|provide)\b.{0,30}\b(?:code|function|query|sql)\b',req.display_question,re.I))
             card=parse_generated_card(candidate,code_required=code_required)
             provenance={'model':getattr(getattr(self.complete,'__self__',None),'model','injected_fixture_transport'),'checks':list(card.checks),'independentlyReviewed':False}
             if supplemental is not None:
                 provenance['taskContext']={'provenance':supplemental.provenance,'source':supplemental.source,'capturedUptimeNanoseconds':supplemental.captured_uptime_ns}
+                digest=self.visual.used_image_digest(req)
+                if digest is not None:provenance['taskContext']['imageDigest']=digest
             self._result(req,'answer','format_checked',card.as_dict(),kind='generated_suggestion',provenance=provenance)
-        except asyncio.CancelledError: return
-        except TimeoutError: self._result(req,'error','answer_timeout')
-        except Exception: self._result(req,'abstain','answer_unavailable')
+        except asyncio.CancelledError:
+            self.visual.failed_request(req);return
+        except TimeoutError:
+            self.visual.failed_request(req);self._result(req,'error','answer_timeout')
+        except Exception:
+            self.visual.failed_request(req);self._result(req,'abstain','answer_unavailable')
 
 
-async def run_stdio(args):
+async def run_stdio(args,*,oauth_stream=None):
     loop=asyncio.get_running_loop()
     reader=asyncio.StreamReader(limit=32768)
     await loop.connect_read_pipe(lambda:asyncio.StreamReaderProtocol(reader),sys.stdin.buffer)
@@ -373,17 +416,24 @@ async def run_stdio(args):
             queue.put_nowait(frame)
             queued_bytes+=len(frame)
         except asyncio.QueueFull: raise WireError('writer_overflow') from None
-    complete=None
+    complete=None;visual_transport=None
     if args.oauth:
         from .oauth_answer_stream import OAuthAnswerStream
-        complete=OAuthAnswerStream(model=args.model).complete
+        visual_transport=oauth_stream or OAuthAnswerStream(model=args.model)
+        complete=visual_transport.complete
     elif args.fixture_model:
         async def complete(prompt,instructions):
             obj=json.loads(prompt);task=obj['conversation']['task']
+            if task['kind']=='case_study':
+                return json.dumps({'lead':'Start with the users, workflow, and problem that needs to improve.',
+                    'points':['Clarify the information needed and where the current workflow fails.',
+                        'Choose the smallest useful flow and define a success measure.'],
+                    'detail':None,'assumptions':['This is injected synthetic output for offline transport checks.'],
+                    'coverage':['current_request'],'personal_fact_ids':[]})
             code=bool(re.search(r'\b(?:write|show|provide)\b.{0,30}\b(?:code|function|query|sql)\b',obj['current_request'],re.I))
             return json.dumps({'lead':'Check the input contract, then explain the invariant before implementing.','points':['Discuss '+task['stage']+' and the supplied constraints.','Check empty input and boundary cases.'],'detail':{'kind':'code','language':'python','text':'def first_or_none(items):\n    return items[0] if items else None\n'} if code else None,'assumptions':['This is injected synthetic output for offline transport checks.'],'coverage':['current_request'],'personal_fact_ids':[]})
     from .profile_bridge import ProfileBridge
-    host=SessionHost(complete=complete,emit=emit,role=args.role)
+    host=SessionHost(complete=complete,emit=emit,role=args.role,visual_transport=visual_transport)
     profile=ProfileBridge(on_change=host.personal_context_changed)
     host.provider=profile
     from .supplemental_context import SupplementalContextProvider
@@ -407,7 +457,9 @@ async def run_stdio(args):
             chunk=await (asyncio.wait_for(reader.read(4096),3) if decoder.buffer or decoder.length else reader.read(4096))
             if not chunk: decoder.finish();host.close();break
             for value in decoder.feed(chunk):
-                if isinstance(value,dict) and value.get('kind')=='profile_request':
+                if isinstance(value,dict) and value.get('kind')=='visual_input_request':
+                    host.handle_visual_control(value)
+                elif isinstance(value,dict) and value.get('kind')=='profile_request':
                     from .panel_wire import exact,uuid_string
                     exact(value,('schemaVersion','kind','requestID','payload'))
                     if value['schemaVersion']!=1: raise WireError('profile_schema')
@@ -427,6 +479,9 @@ async def run_stdio(args):
                 elif isinstance(value,dict) and value.get('kind') in ('screen_context','selected_text_context'):
                     raw=json.dumps(value,ensure_ascii=False,separators=(',',':'),allow_nan=False).encode()
                     if not supplemental.stage(raw):raise WireError('supplemental_frame')
+                elif isinstance(value,dict) and value.get('kind') in ('screen_image_begin','screen_image_chunk','screen_image_end'):
+                    raw=json.dumps(value,ensure_ascii=False,separators=(',',':'),allow_nan=False).encode()
+                    if not supplemental.stage_image(raw):raise WireError('supplemental_image')
                 elif isinstance(value,dict) and value.get('kind')=='session_quiescence_request':
                     from .panel_wire import exact,uuid_string,u64
                     exact(value,('schemaVersion','kind','requestID','captureSessionID','sessionEpoch'))
@@ -441,14 +496,7 @@ async def run_stdio(args):
                 elif isinstance(value,dict) and value.get('kind')=='manual_help_request':
                     await host.handle_manual_help(value)
                 elif isinstance(value,dict) and value.get('kind')=='supplemental_context_retired':
-                    from .panel_wire import exact,uuid_string,u64
-                    exact(value,('schemaVersion','kind','captureSessionID','sessionEpoch','presentationGeneration','requestID','reasonCode'))
-                    if type(value['schemaVersion']) is not int or value['schemaVersion']!=1 or value['reasonCode']!='context_changed':raise WireError('supplemental_retirement')
-                    uuid_string(value['captureSessionID']);uuid_string(value['requestID']);u64(value['sessionEpoch'],True);u64(value['presentationGeneration'],True)
-                    current=host.active
-                    if current and all(value[key]==current.native[key] for key in ('captureSessionID','sessionEpoch','presentationGeneration','requestID')):
-                        if current.native['requestID'] in host._supplemental:supplemental.invalidate()
-                        else:supplemental.discard_staged()
+                    host.handle_supplemental_retirement(value)
                 else: await host.handle(value)
             if output_task.done(): await output_task
         await host.drain()

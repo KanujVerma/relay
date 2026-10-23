@@ -176,6 +176,15 @@ class SupplementalScreenProvider:
         with self._lock:
             return snippet is not None and snippet is self._snippet and self._current(native)
 
+    def current_observation(self, native):
+        """Read-only original issued identity, never a copy or permission grant."""
+        with self._lock:
+            return self._observation if self._current(native) else None
+
+    def owns_observation(self, observation, native) -> bool:
+        with self._lock:
+            return observation is not None and observation is self._observation and self._current(native)
+
     def invalidate(self, *, require_new_authority=True):
         with self._lock:
             if require_new_authority and self._high_water:

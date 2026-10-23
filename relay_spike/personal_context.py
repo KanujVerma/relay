@@ -104,7 +104,7 @@ class BrainContextProvider:
             "SELECT j.text FROM profile_job_context j JOIN source s ON s.id=j.source_id "
             "JOIN profile_source p ON p.source_id=j.source_id "
             "WHERE s.revoked_at IS NULL AND s.consent_scope='personal_brain' AND p.role=? "
-            "AND j.text IS NOT NULL ORDER BY j.rowid DESC LIMIT 1", (role,)
+            "AND j.text IS NOT NULL AND j.confirmed_at IS NOT NULL ORDER BY j.rowid DESC LIMIT 1", (role,)
         ).fetchone()
         return rows[0] if rows else None
 

@@ -141,7 +141,12 @@ class UserQuestionCoordinator:
         h=self.host;target=n['targetRequestID'].lower()
         keys=[key for key in self.retired if key[3]==target]
         active=h.active
-        if active is not None and active.native['requestID'].lower()==target:
+        current_target=active is not None and active.native['requestID'].lower()==target
+        target_generation=active.native['presentationGeneration'] if current_target else (keys[-1][2] if keys else None)
+        # The native issuer advances exactly the actual target's lease once.
+        # A known old tombstone cannot withdraw a newer request's generation.
+        if target_generation!=h.presentation or n['presentationGeneration']!=target_generation+1:return False
+        if current_target:
             self.retire({**{k:active.native[k] for k in _IDENTITY},'schemaVersion':1,
                 'kind':'answer_request_retired','reasonCode':'request_retired'})
             keys=[self.key(active.native)]

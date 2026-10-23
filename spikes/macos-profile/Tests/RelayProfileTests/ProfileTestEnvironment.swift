@@ -19,7 +19,14 @@ enum ProfileTestEnvironment {
         check.arguments = ["-c", "import sqlite3,sys; sys.exit(0 if sys.version_info >= (3,11) and hasattr(sqlite3.Connection,'serialize') and hasattr(sqlite3.Connection,'deserialize') else 1)"]
         check.standardOutput = FileHandle.nullDevice
         check.standardError = FileHandle.nullDevice
-        try check.run(); check.waitUntilExit()
+        let exited = DispatchSemaphore(value: 0)
+        check.terminationHandler = { _ in exited.signal() }
+        try check.run()
+        guard exited.wait(timeout: .now() + 5) == .success else {
+            if check.isRunning { check.terminate() }
+            throw NSError(domain: "RelayProfileTests", code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "Python capability check exceeded its five-second deadline."])
+        }
         guard check.terminationStatus == 0 else {
             throw NSError(domain: "RelayProfileTests", code: 2,
                 userInfo: [NSLocalizedDescriptionKey: "Native child tests require Python 3.11+ with SQLite serialization."])

@@ -6,7 +6,7 @@ import XCTest
         let file = URL(fileURLWithPath: #filePath)
         let repo = file.deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let port = PipeProfilePort(python: URL(fileURLWithPath: "/opt/homebrew/bin/python3"), repository: repo)
+        let port = PipeProfilePort(python: try ProfileTestEnvironment.python(), repository: repo)
         let before = await port.isRunning
         XCTAssertFalse(before)
         let client = ProfileClient(port: port)
@@ -45,12 +45,14 @@ import XCTest
     func testSharedPortCloseLocksProfileWithoutStoppingConversationHelper() async throws {
         let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let helper = PipeProfilePort(python: URL(fileURLWithPath: "/opt/homebrew/bin/python3"), repository: repo)
-        let shared = ClosureProfilePort(request: { try await helper.request($0) }, close: {})
+        let helper = PipeProfilePort(python: try ProfileTestEnvironment.python(), repository: repo)
+        let shared = ClosureProfilePort(request: { try await helper.request($0) },
+                                       emergencyShutdown: { await helper.emergencyShutdown() }, close: {})
         let client = ProfileClient(port: shared)
         _ = try await client.command(["command": "new"])
         let snapshot = try await client.snapshot()
-        await client.close()
+        let outcome = await client.close()
+        XCTAssertEqual(outcome, .locked)
         let running = await helper.isRunning
         XCTAssertTrue(running)
         do {

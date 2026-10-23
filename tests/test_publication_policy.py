@@ -261,6 +261,60 @@ class PublicationPolicyTests(unittest.TestCase):
             with self.subTest(count=len(invalid)), self.assertRaises(ValueError):
                 evaluate_evaluation_rows(invalid)
 
+    def test_decision_rejects_untrusted_or_state_mismatched_reason_strings(self):
+        ref = _REFERENCES[0]
+        for reason in (
+            "raw model text", "I wrote this service at Epic",
+            "some-user-reported-source-id", "", "independent_review_required",
+            "permission_not_confirmed",
+        ):
+            with self.subTest(reason=reason), self.assertRaises(ValueError):
+                PublicationDecision(
+                    "reviewed_reference", ref.answer, ref.reference_id,
+                    reason, reviewed_source_ref=ref.source_ref,
+                )
+        with self.assertRaises(ValueError):
+            PublicationDecision(
+                "unavailable", None, None, "reviewed_full_question"
+            )
+        with self.assertRaises(ValueError):
+            PublicationDecision(
+                "model_suggestion_unverified", None, None, "some private source id"
+            )
+
+    def test_evaluation_requires_each_actual_base_question_not_just_row_ids(self):
+        rows = load_evaluation_fixtures()
+        self.assertEqual(
+            {r["input"]["question_ref"] for r in rows if r["id"].startswith("BASE-")},
+            {f"{role}{i:02d}" for role in ("E", "D") for i in range(1, 14)},
+        )
+        for tamper in ("removed", "duplicate_question_under_same_row_id"):
+            modified = [dict(r) for r in rows]
+            idx = next(i for i, r in enumerate(modified) if r["id"] == "BASE-E01")
+            if tamper == "removed":
+                del modified[idx]
+            else:
+                modified[idx]["input"] = {"question_ref": "E02"}
+            with self.subTest(tamper=tamper), self.assertRaises(ValueError):
+                evaluate_evaluation_rows(modified)
+
+    def test_unsafe_metric_catches_contradictory_correctness_or_coverage_labels(self):
+        original = load_evaluation_fixtures()
+        index = next(i for i, r in enumerate(original) if r["id"] == "BASE-D02")
+        for changed_field, value in (
+            ("technical_correctness", "incorrect"),
+            ("coverage_label", "partial"),
+            ("annotated_useful", False),
+        ):
+            rows = [dict(r) for r in original]
+            rows[index][changed_field] = value
+            # Deliberately retain the original publish expectation and state.
+            with self.subTest(field=changed_field):
+                report = evaluate_evaluation_rows(rows)
+                self.assertEqual(report["state_mismatches"], 0)
+                self.assertGreaterEqual(report["unsafe_published"], 1)
+                self.assertFalse(report["all_guards_met"])
+
     def test_fail_closed_metric_cannot_pass_with_wrong_state(self):
         rows = load_evaluation_fixtures()
         modified = [dict(row) for row in rows]

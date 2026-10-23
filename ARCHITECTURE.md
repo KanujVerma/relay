@@ -1,6 +1,6 @@
 # Relay architecture overview
 
-Status: proposed, no working macOS application as of 2026-10-22. This file is the index; exact rationale is in docs/DECISIONS.md, flows in docs/WORKFLOWS.md, knowledge schema in docs/MEMORY_AND_EVALUATION.md, OAuth contract in docs/INFERENCE_AUTH.md and execution gates in docs/SLICES.md.
+Status: target architecture, with separate implemented prototypes but no integrated working macOS application at the 2026-10-23 snapshot. This file is the index; exact rationale is in docs/DECISIONS.md, flows in docs/WORKFLOWS.md, knowledge schema in docs/MEMORY_AND_EVALUATION.md, OAuth contract in docs/INFERENCE_AUTH.md and execution gates in docs/SLICES.md.
 
 ## Target components
 1. SwiftUI native macOS app with compact user-controlled panel and clear authorization state.
@@ -27,3 +27,7 @@ Authorized local audio -> local transcript segments -> question/turn state -> Ro
 First useful answer target approximately 2 to 4 seconds after a completed question, not a measured result. Keep RAM/CPU lean for M2 Pro 16 GB. Validate with p50/p95 timing, factual accuracy, missing-context cases, and source fidelity. Prefer minimal offline Linux CI to preserve future private-repo Actions allowance.
 
 See HANDOFF.md for actual current implementation state. Design does not imply delivered functionality.
+
+## Current integration design
+
+The owner approved automatic routing with both reviewed technical references and open-ended model answers. See [PARALLEL_PLAN](docs/PARALLEL_PLAN.md) for the proposed native-session/local-helper/display split and [UPSTREAM_REUSE](docs/research/UPSTREAM_REUSE.md) for source research. These detailed contracts are proposed; HANDOFF records actual delivered state.

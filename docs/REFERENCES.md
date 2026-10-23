@@ -2,6 +2,8 @@
 
 Verified/reviewed on 2026-10-22 unless otherwise noted. External projects are CANDIDATES/REFERENCES, not adopted dependencies. Recheck upstream licensing and current releases before using code.
 
+The integrated-session source/test review and exact pins are recorded in [UPSTREAM_REUSE](research/UPSTREAM_REUSE.md). That registry distinguishes actual adoption from proposed adaptation.
+
 ## Primary platform sources
 - https://developers.openai.com/siwc/token-sharing-open-source
 - https://developers.openai.com/siwc/token-sharing-open-source/sign-in

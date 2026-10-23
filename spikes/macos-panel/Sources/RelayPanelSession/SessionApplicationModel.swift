@@ -88,6 +88,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     private let ingressEnqueued:(@MainActor (SessionIngress)->Void)?
     let screen=ScreenContextModel()
     let visual=VisualInputSetupState()
+    let speechSetup:SpeechSetupCoordinator
     private var hasSelectedText=false
     lazy var selectedText:SelectedTextService = {
         hasSelectedText=true
@@ -190,7 +191,9 @@ private actor FixtureRecognizer: ActivityRecognizer {
 
     init(arguments:[String]=CommandLine.arguments,contextCoordinator:ScreenContextCoordinator?=nil,
          contextWriteAcknowledged:(@MainActor (Data,PanelRequestBinding) async ->Void)?=nil,
-         ingressEnqueued:(@MainActor (SessionIngress)->Void)?=nil) {
+         ingressEnqueued:(@MainActor (SessionIngress)->Void)?=nil,
+         speechSetup:SpeechSetupCoordinator?=nil) {
+        self.speechSetup=speechSetup ?? SpeechSetupCoordinator()
         self.contextCoordinatorOverride=contextCoordinator
         self.contextWriteAcknowledged=contextWriteAcknowledged;self.ingressEnqueued=ingressEnqueued
         fixture=arguments.contains("--fixture-suite")
@@ -387,6 +390,11 @@ private actor FixtureRecognizer: ActivityRecognizer {
         await task.value
         if startIdentity==identity { startTask=nil }
     }
+    func cancelPreparation(){
+        speechSetup.cancel();startTask?.cancel()
+        if starting{beginRetirement(end:false)}
+    }
+    func retryPreparation()async{await start()}
     private func startOwned() async {
         defer { starting=false }
         guard !running,!stopping else { return };error=nil

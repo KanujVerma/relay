@@ -11,6 +11,7 @@ public struct SessionPanelSnapshot: Sendable {
 @MainActor public final class SessionPanelController {
     public private(set) var snapshot=SessionPanelSnapshot()
     private let authority:SessionPresentationAuthority
+    private var session:(UUID,UInt64)?
     private var bound:NativeSessionEvent?;private var identity:(PythonTurnIdentity,String)?
     private var terminal=false;private var pending=false
     private var deadline:UInt64=0
@@ -22,6 +23,7 @@ public struct SessionPanelSnapshot: Sendable {
         case .eou:
             guard event.requestID != nil else { return }
             _=authority.withCurrentLease(event.lease) {
+                session=(event.captureSessionID,event.sessionEpoch)
                 bound=event;identity=nil;terminal=false;pending=false
                 deadline=DispatchTime.now().uptimeNanoseconds+15_000_000_000
                 snapshot.question=nil;snapshot.card=nil;snapshot.status="Thinking";snapshot.replacement &+= 1;onChange?()
@@ -30,9 +32,13 @@ public struct SessionPanelSnapshot: Sendable {
                 try? await Task.sleep(for:.seconds(15))
                 self?.expire(requestID:event.requestID!)
             }
-        case .speechStarted,.sourceUnavailable,.discontinuity,.stopping,.stopped:
-            clear(status:event.kind == .speechStarted ? "Listening" : "Stopped")
-        case .sessionStarted: clear(status:"Listening")
+        case .speechStarted,.sessionStarted:
+            _=authority.withCurrentLease(event.lease) {
+                session=(event.captureSessionID,event.sessionEpoch);clear(status:"Listening")
+            }
+        case .sourceUnavailable,.discontinuity,.stopping,.stopped:
+            guard let session,session.0==event.captureSessionID,session.1==event.sessionEpoch else { return }
+            clear(status:"Stopped")
         case .speechEnded: break
         }
     }

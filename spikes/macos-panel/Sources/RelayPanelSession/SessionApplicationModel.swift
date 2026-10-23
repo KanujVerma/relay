@@ -52,8 +52,10 @@ private actor FixtureRecognizer: ActivityRecognizer {
     private let pythonArguments:[String]
     private let authority=SessionPresentationAuthority()
     private let events=MainEventQueue()
+    private let answers=BoundedMainDelivery<Data>()
     private var helper:HelperTransport?
     private var helperIdentity=UUID()
+    private let helperFailures=HelperFailureGate()
     private lazy var panel:SessionPanelController = {
         let panel=SessionPanelController(authority:authority)
         panel.onChange={ [weak self,weak panel] in if let panel { self?.snapshot=panel.snapshot } }
@@ -102,14 +104,15 @@ private actor FixtureRecognizer: ActivityRecognizer {
     private static func argument(_ key:String,_ args:[String]) -> String? { guard let i=args.firstIndex(of:key),args.indices.contains(i+1) else { return nil };return args[i+1] }
     func ensureHelper() throws -> HelperTransport {
         if let helper { return helper }
-        let identity=UUID();helperIdentity=identity;let nativeAuthority=authority
+        let identity=UUID();helperIdentity=identity;helperFailures.activate(identity)
+        let nativeAuthority=authority;let failures=helperFailures;let delivery=answers
         let helper=HelperTransport(root:root,python:python,pythonArguments:pythonArguments,mode:fixture ? .fixture:oauth ? .oauth:.noInference,role:role,onFrame:{ [weak self] data in
-            Task { @MainActor in
+            try delivery.enqueue(data,byteCount:data.count) { [weak self] data in
                 guard let self,self.helperIdentity==identity else { return }
                 do { _=try self.panel.accept(data) } catch { self.failSession() }
             }
         },onFailure:{ [weak self] in
-            nativeAuthority.stop()
+            guard failures.withCurrent(identity,perform:{ nativeAuthority.stop() }) else { return }
             Task { @MainActor in guard let self,self.helperIdentity==identity else { return };self.failSession() }
         })
         try helper.start();self.helper=helper;return helper
@@ -121,6 +124,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     func start() async {
         guard !running,!starting else { return };error=nil;starting=true;defer { starting=false }
         do {
+            if !fixture && capture.phase != .idle { error="Waiting for capture to finish stopping.";return }
             _=try ensureHelper()
             if fixture { try startFixture();return }
             guard authorizedConversation,modelLicensesAcknowledged,!asrFolder.isEmpty,!vadFolder.isEmpty else {
@@ -144,14 +148,14 @@ private actor FixtureRecognizer: ActivityRecognizer {
         }
     }
     func stop() async {
-        if fixture { native.beginStop();panel.clear(status:"Stopped");running=false;native.finishStop(quiesced:true) }
+        if fixture { native.beginStop();panel.clear(status:"Stopped");running=false;await native.waitForQuiescence();native.finishStop(quiesced:true) }
         else { panel.clear(status:"Stopped");running=false;await capture.stop(reason:.userStop) }
     }
     func failSession() {
         authority.stop()
         if fixture { native.retire() } else { capture.controller.retire();Task { await capture.stop(reason:.transportClosed) } }
         panel.clear(status:"Session unavailable");running=false;error="The session ended. Restart when you are ready."
-        helper?.stop();helper=nil;helperIdentity=UUID()
+        helper?.stop();helper=nil;helperIdentity=UUID();helperFailures.activate(helperIdentity)
         if profileWasCreated { Task { await profile.close() } }
     }
 }

@@ -121,3 +121,56 @@ extension HelperTransportTests {
         XCTAssertEqual((try JSONSerialization.jsonObject(with:reopened) as? [String:Any])?["ready"] as? Bool,true)
     }
 }
+
+final class HelperFailureGateTests: XCTestCase {
+    func test_old_child_failure_cannot_retire_new_session_authority() throws {
+        let authority=SessionPresentationAuthority();let gate=HelperFailureGate();let old=UUID(),fresh=UUID()
+        gate.activate(old);try authority.start();authority.stop();let current=try authority.start();gate.activate(fresh)
+        XCTAssertFalse(gate.withCurrent(old) { authority.stop() })
+        XCTAssertEqual(authority.snapshot(),current)
+        XCTAssertTrue(gate.withCurrent(fresh) { authority.stop() });XCTAssertNil(authority.snapshot())
+    }
+}
+
+extension SessionPanelTests {
+    @MainActor func test_queued_old_session_stop_cannot_clear_a_restarted_answer() throws {
+        let authority=SessionPresentationAuthority();try authority.start();let panel=SessionPanelController(authority:authority)
+        let old=try event(authority);panel.observe(old);XCTAssertTrue(try panel.accept(result(old)))
+        authority.stop();try authority.start();let fresh=try event(authority);panel.observe(fresh);XCTAssertTrue(try panel.accept(result(fresh)))
+        let delayed=NativeSessionEvent(captureSessionID:old.captureSessionID,sessionEpoch:old.sessionEpoch,eventSequence:5,presentationGeneration:old.presentationGeneration,kind:.stopping,sourceCode:nil,streamGeneration:nil,emittedUptimeNanoseconds:5_000_000_000,payload:["reasonCode":.string("user_stop")])
+        panel.observe(delayed)
+        XCTAssertEqual(panel.snapshot.card?.lead,"Use FIFO ordering.")
+    }
+}
+
+final class MainDeliveryTests: XCTestCase {
+    @MainActor func test_queued_main_actor_frames_have_count_and_byte_budgets() throws {
+        let delivery=BoundedMainDelivery<Data>()
+        for _ in 0..<16 { try delivery.enqueue(Data(),byteCount:16384) { _ in } }
+        XCTAssertThrowsError(try delivery.enqueue(Data(),byteCount:1) { _ in })
+        let counted=BoundedMainDelivery<Data>()
+        for _ in 0..<32 { try counted.enqueue(Data(),byteCount:1) { _ in } }
+        XCTAssertThrowsError(try counted.enqueue(Data(),byteCount:1) { _ in })
+    }
+}
+
+final class SharedGoldenJSONTests: XCTestCase {
+    func test_controller_goldens_preserve_nulls_and_unsigned_native_counters() throws {
+        let root=URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let data=try Data(contentsOf:root.appendingPathComponent("contracts/session-v1-golden.json"))
+        let document=try XCTUnwrap(JSONSerialization.jsonObject(with:data) as? [String:Any]);let cases=try XCTUnwrap(document["cases"] as? [[String:Any]])
+        for item in cases {
+            for event in try XCTUnwrap(item["events"] as? [[String:Any]]) {
+                let encoded=try JSONSerialization.data(withJSONObject:event)
+                let fields=try StrictJSON.decode(encoded).object(["schemaVersion","captureSessionID","sessionEpoch","eventSequence","presentationGeneration","requestID","kind","sourceCode","streamGeneration","emittedUptimeNanoseconds","payload"])
+                XCTAssertEqual(try fields["schemaVersion"]!.uint(),1)
+                _=try fields["sessionEpoch"]!.uint();_=try fields["eventSequence"]!.uint();_=try fields["presentationGeneration"]!.uint()
+                if try fields["kind"]!.string()=="eou" {
+                    guard case .object(let payload)=fields["payload"]!,case .object(let inner)?=payload["event"] else { return XCTFail("missing exact inner EOU") }
+                    XCTAssertEqual(inner.count,13);XCTAssertTrue(inner["confidence"]!.isNull)
+                    if try fields["sourceCode"]!.uint()==1 { XCTAssertTrue(fields["requestID"]!.isNull) }
+                }
+            }
+        }
+    }
+}

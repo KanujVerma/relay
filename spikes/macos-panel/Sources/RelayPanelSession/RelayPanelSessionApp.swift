@@ -71,6 +71,7 @@ import RelaySessionPanel
         }.padding(22).frame(minWidth:480,minHeight:430)
         .onChange(of:model.snapshot.replacement) { _,_ in expanded=false }
         .task { if model.fixture { await model.start() } }
+        .onDisappear { Task { await model.stop() } }
         .sheet(isPresented:$preparing) { ProfilePreparationView(controller:model.profile,role:model.role).frame(minWidth:620,minHeight:650).padding().toolbar { Button("Done") { preparing=false } } }
         .fileImporter(isPresented:$selectingASR,allowedContentTypes:[.folder]) { if case .success(let url)=$0 { model.asrFolder=url.path } }
         .fileImporter(isPresented:$selectingVAD,allowedContentTypes:[.folder]) { if case .success(let url)=$0 { model.vadFolder=url.path } }

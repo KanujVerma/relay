@@ -1,6 +1,6 @@
 # Answers lane checkpoint
 
-Branch feature/contextual-answer-panel-2026-10-23, issue #62. Original base3e0eb379fdc8a710dd9ebee51bc93b8c6004e02d; foundationa8f8359 merged. Published earlier answer checkpointc5394bf; this next checkpoint adds the actual ordinary application assembly and is ready for controller review. See Git log for its source head; draft PR follows publication.
+Branch feature/contextual-answer-panel-2026-10-23, issue #62. Original base3e0eb379fdc8a710dd9ebee51bc93b8c6004e02d; foundationa8f8359 merged. Draft PR #67: https://github.com/KanujVerma/relay/pull/67. Published application checkpoint cbe68c2; final restart/queue/feedback fixes follow in the current source checkpoint. Controller independent review is pending.
 
 ## Implemented
 
@@ -14,20 +14,22 @@ Reserved supplemental port includes bounded task text and original session/gener
 
 ## Peer ancestry
 
-Imported personal577dc56(original8d54b67), b154b95(originald1f367b),661e3cb(original2a3e152),1fd5bb2(original4c2faa1); native17a64f5(originale091e55),6310eee(original8500f76),abc1590(originalaea5122). No peer-owned production source was edited after import. Parent owns joined integration and independent review. GlobalHANDOFF/ADRs untouched by this lane.
+Imported personal577dc56(original8d54b67), b154b95(originald1f367b),661e3cb(original2a3e152),1fd5bb2(original4c2faa1); native17a64f5(originale091e55),6310eee(original8500f76),abc1590(originalaea5122),f1c9b34(original08fc667),d7f3522(originala26181e). No peer-owned production source was edited after import. Parent owns joined integration and independent review. GlobalHANDOFF/ADRs untouched by this lane.
 
 ## Fresh verification
 
-- Full Python446tests passed,23optional skips:21converter integrations and2HTTPX socket tests because HTTPX is optional in the ordinary interpreter. Existing tests emit ResourceWarnings and expected negative CLI messages; no failures.
+- Full Python449tests passed,23optional skips:21converter integrations and2HTTPX socket tests because HTTPX is optional in the ordinary interpreter. Existing tests emit ResourceWarnings and expected negative CLI messages; no failures.
 - Isolated HTTPX environment:3tests passed, including actual stalled loopback socket cancellation and a small completed SSE response on a socket kept open. No account call or credentials used.
-- Native panel19tests passed:11legacy reducer+8new lease/strict-wire/deadline/null-terminal/provenance/UInt64/real-child/profile-multiplex checks. Real production capture/profile/answer app compiles.
+- Native panel23tests passed:11legacy reducer+12new lease/strict-wire/deadline/null-terminal/provenance/UInt64/real-child/profile-multiplex checks. Real production capture/profile/answer app compiles.
 - EVALS26synthetic questions and20documentation checks passed; diff whitespace check passed.
 - Additional multi-turn coding/case/missing-context scenarios pass. Static reviewed LRU fixture has an executable boundary/update/eviction oracle. Arbitrary model code is never executed; AST success is syntax only. This is not independently held-out release quality.
-- Root-owned golden schema events and4invalid cases were read from controller checkout: Python decoder accepted all schema positives/rejected negatives. Durable shared-fixture import and cross-language tests wait for controller fixture commit.
+- Controller goldens imported unchanged ONLY from contracts/ at ec2f1094caaae5415039bf95fbf8509459ea0333. Python canonical schema/routing/history and invalid-envelope tests pass; Swift reads the same canonical positives for strict JSON/UInt64/null-confidence compatibility. Golden data does not grant capture permission.
 - Actual ordinary window launched with --fixture-suite coding: CUA observed current novel coding question, two talking points and expanded multiline Python. Stop visibly removed question/card/code and returned to Ready/Stopped. Synthetic label visible; no capture/models/Keychain/private imports/account inference exercised.
 
 ## Current boundaries and next action
 
 Default launch is idle and no-inference; --oauth explicitly enables the existing plan transport, while --python selects the approved Python>=3.11 environment. The development .app still needs the repository/helper path; it is not a standalone packaged installer. Production capture/model code compiles, but real device/model/account quality, entitlement, latency and permission-denial coverage are not claimed.
 
-Next: publish this verified checkpoint/draft PR against frozen foundation, import committed controller golden fixtures for durable compatibility tests, take independent review fixes, then let controller assemble newer native stop/cancellation changes and optional screen/controls. Main merge and live hardware/model acceptance remain separate gates.
+Final self-review fixes: helper-generation failure gate prevents an old child callback retiring replacement authority; old-session lifecycle messages cannot clear restarted cards; decoded-to-MainActor delivery has32frame/256KiB budgets; closing the window stops capture; fixture Stop awaits actual quiescence; spoken engineer statements remain context for natural follow-ups without triggering requests.
+
+Next: controller review the exact pushed source head of draft PR67, assemble optional screen/controls through reserved ports, and run joined acceptance. Native published lifecycle head a26181e is already included. Main merge and live hardware/model acceptance remain separate gates.

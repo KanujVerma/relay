@@ -217,3 +217,15 @@ class ScreenPortTests(unittest.IsolatedAsyncioTestCase):
         await h.handle(start());await h.handle(speech(2));await h.handle(end(3));await h.handle(final(4,'How should we improve this function?'))
         await entered.wait();provider.current=False;release.set();await h.drain()
         self.assertFalse(any(v['disposition']=='answer' for v in out))
+
+class SpokenFeedbackTests(unittest.IsolatedAsyncioTestCase):
+    async def test_engineer_statement_and_natural_followup_retain_new_constraint(self):
+        prompts=[];out=[]
+        async def complete(prompt,instructions):
+            prompts.append(json.loads(prompt));return json.dumps(dict(lead='Discuss the supplied constraints before implementation.',points=[],detail=None,assumptions=[],coverage=['approach'],personal_fact_ids=[]))
+        h=SessionHost(complete=complete,emit=out.append)
+        await h.handle(start())
+        for sequence,activity,text in ((2,1,'Let us implement an LRU cache. What should we clarify?'),(5,2,'Capacity is three and keys are strings.'),(8,3,'And if callers can be concurrent?')):
+            await h.handle(speech(sequence,activity,activity+1));await h.handle(end(sequence+1,activity,activity+1));await h.handle(final(sequence+2,text,activity,activity+1));await h.drain()
+        self.assertEqual(len(prompts),2)
+        self.assertIn('Capacity is three',str(prompts[-1]['conversation']['task']['constraints']))

@@ -9,7 +9,7 @@ public enum HelperMode: Sendable { case noInference, fixture, oauth }
 /// bounded queue overflow/EOF/malformed input retires native admission.
 public final class HelperTransport: @unchecked Sendable {
     private let root:URL;private let python:URL;private let pythonArguments:[String];private let mode:HelperMode;private let role:String
-    private let onFrame:@Sendable(Data)->Void;private let onFailure:@Sendable()->Void
+    private let onFrame:@Sendable(Data)throws->Void;private let onFailure:@Sendable()->Void
     private let io=DispatchQueue(label:"relay.helper.read");private let writes=DispatchQueue(label:"relay.helper.write")
     private let lock=NSLock();private var process:Process?;private var input:FileHandle?;private var output:FileHandle?;private var errors:FileHandle?
     private var source:DispatchSourceRead?;private var stderrSource:DispatchSourceRead?;private var timer:DispatchSourceTimer?
@@ -17,7 +17,7 @@ public final class HelperTransport: @unchecked Sendable {
     private var queuedFrames=0;private var queuedBytes=0;private var failed=false
     private let decoder=AnswerFrameDecoder();private var partialSince:UInt64?
     public init(root:URL,python:URL,pythonArguments:[String]=[],mode:HelperMode,role:String="analytics",
-                onFrame:@escaping @Sendable(Data)->Void,onFailure:@escaping @Sendable()->Void) {
+                onFrame:@escaping @Sendable(Data)throws->Void,onFailure:@escaping @Sendable()->Void) {
         self.root=root;self.python=python;self.pythonArguments=pythonArguments;self.mode=mode;self.role=role;self.onFrame=onFrame;self.onFailure=onFailure
     }
     public func start() throws {
@@ -113,7 +113,7 @@ public final class HelperTransport: @unchecked Sendable {
                         guard let continuation else { throw PanelBridgeError.malformed }
                         let decoded=try JSONSerialization.jsonObject(with:frame) as! [String:Any]
                         continuation.resume(returning:try JSONSerialization.data(withJSONObject:decoded["payload"]!))
-                    } else { _=try SessionAnswerDecision(data:frame);onFrame(frame) }
+                    } else { _=try SessionAnswerDecision(data:frame);try onFrame(frame) }
                 }
                 if decoder.hasPartial { if partialSince==nil { partialSince=DispatchTime.now().uptimeNanoseconds } } else { partialSince=nil }
             } catch { fail();return }

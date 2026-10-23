@@ -26,9 +26,13 @@ from .publication_policy import PolicyInput
 class CompositeEligibility:
     """Tentative evaluated syntax policy, not a confidence/speaker assertion."""
     version='contextual-intent-v1'
+    def __init__(self,dialogue=None):self.dialogue=dialogue
     def assess(self,event,*,has_current_question):
         if event.confidence is not None and event.confidence < .8: return 'unknown'
         intent=classify_question_intent(event.text,has_current_question=has_current_question)
+        prior=self.dialogue.snapshot().dialogue[:-1] if self.dialogue is not None else ()
+        if intent=='unknown' and any(channel=='remote' for channel,_ in prior) and re.match(r'^(?:and if|and then|what about|how about|and what about|and how about)\b',event.text,re.I):
+            intent='question'
         if intent=='unknown' and re.match(r"^(?:let(?:'s| us)|case study|now |given |suppose |design |discuss |improve |optimi[sz]e )",event.text,re.I):
             intent='question'
         if intent=='unknown' and re.search(r'(?:^|[.!?]\s+)(?:write|show|provide|implement|design|explain|describe|discuss|compare|optimi[sz]e)\b',event.text,re.I):
@@ -52,10 +56,10 @@ class Request:
 
 class SessionHost:
     def __init__(self,*,complete=None,emit=None,personal_provider=None,supplemental_provider=None,role='analytics',deadline=15):
-        self.machine=QuestionTurnMachine()
-        self.bridge=SyntheticEOUBridge(self.machine,eligibility_strategy=CompositeEligibility())
-        self.permission=ReferencePermission(self.machine.turns)
         self.context=ConversationContext()
+        self.machine=QuestionTurnMachine()
+        self.bridge=SyntheticEOUBridge(self.machine,eligibility_strategy=CompositeEligibility(self.context))
+        self.permission=ReferencePermission(self.machine.turns)
         self.complete,self.emit,self.provider,self.role=complete,emit or (lambda _:None),personal_provider,role
         self.deadline=deadline
         self.supplemental_provider=supplemental_provider
@@ -130,7 +134,7 @@ class SessionHost:
             # Fresh native UUID permits source counters to restart. Old worker
             # results still fail request-object/session identity checks.
             self.machine=QuestionTurnMachine()
-            self.bridge=SyntheticEOUBridge(self.machine,eligibility_strategy=CompositeEligibility())
+            self.bridge=SyntheticEOUBridge(self.machine,eligibility_strategy=CompositeEligibility(self.context))
             self.permission=ReferencePermission(self.machine.turns)
             self.session=identity;self.sequence=1;self.presentation=n['presentationGeneration'];self.live=True
             self.bridge.resume_after_host_authorization(CaptureContext('authorized',True));self.permission.grant()
@@ -188,13 +192,13 @@ class SessionHost:
         if request_id in self.used_requests: return
         if len(self.used_requests)>=512: self.close();raise WireError('request_ledger_budget')
         self.used_requests.add(request_id)
+        if inner.text: self.context.observe('remote',inner.text,order=inner.start_ms)
         observation=FinalizedASRObservation('remote',inner.stream_generation,logical,inner.revision,inner.start_ms,inner.end_ms,inner.received_ms,'final',inner.text or '',inner.finalized_ms,inner.confidence)
         result=self.bridge.ingest(observation,context=CaptureContext('authorized',True))
         if result.disposition!='ready' or result.token is None:
             if result.disposition!='ignored': self._withhold_native(n,'blank_question' if not inner.text else 'no_question')
             return
         snap=result.question.snapshot
-        self.context.observe('remote',inner.text,order=inner.start_ms)
         question=snap.prompt if snap.current_utterance!=snap.root_question else snap.current_utterance
         # UI question has its own strict bound; never rewrite semantic content.
         if len(question.encode())>500:

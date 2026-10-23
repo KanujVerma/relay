@@ -24,6 +24,9 @@ MAX_EVENT_CHARS = 1200
 MAX_SEEN_SEGMENTS = 128
 MAX_CONTEXT_CHARS = 2400
 MAX_DEPENDENT_SEGMENTS = 16
+# Native event identifiers/timestamps are UInt64. Bound Python integers before
+# any JSON fingerprinting to avoid huge-int serialization exceptions.
+MAX_EVENT_INTEGER = (1 << 64) - 1
 MIN_QUESTION_CONFIDENCE = 0.60
 
 # Hints only, the authoritative question always remains verbatim.
@@ -106,10 +109,11 @@ def _validate(event: TranscriptEvent) -> None:
     if (not isinstance(event.segment_id, str) or not event.segment_id.strip()
             or len(event.segment_id) > 128):
         raise InvalidTranscript("Invalid segment ID.")
-    if (type(event.stream_generation) is not int or event.stream_generation < 0
-            or type(event.revision) is not int or event.revision < 0
-            or type(event.start_ms) is not int or type(event.end_ms) is not int
-            or event.start_ms < 0 or event.end_ms < event.start_ms):
+    for field in ("stream_generation", "revision", "start_ms", "end_ms"):
+        value = getattr(event, field)
+        if type(value) is not int or not 0 <= value <= MAX_EVENT_INTEGER:
+            raise InvalidTranscript("Invalid revision or timing.")
+    if event.end_ms < event.start_ms:
         raise InvalidTranscript("Invalid revision or timing.")
     if (not isinstance(event.text, str) or len(event.text) > MAX_EVENT_CHARS
             or "\x00" in event.text):
@@ -272,7 +276,21 @@ class QuestionTurnMachine:
         It does not establish speaker identity, actual authorization,
         correctness, or permission to skip later deterministic answer QA.
         """
-        _validate(event)
+        try:
+            _validate(event)
+        except (InvalidTranscript, TypeError):
+            # A malformed remote onset/correction must not leave a previous
+            # response publishable. Invalidate even when validation fails
+            # before hashing, and never include event content in the error.
+            if (isinstance(event, TranscriptEvent)
+                    and event.source_channel == "remote"):
+                with self._lock:
+                    self.turns.cancel()
+                    self._active = None
+                    self._interrupted = None
+                    self._leading_partial = None
+                    self._reopened.clear()
+            raise
         if event.source_channel != "remote":
             return TurnDecision("ignored", "not_confirmed_remote_source")
         with self._lock:

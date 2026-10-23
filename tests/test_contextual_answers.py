@@ -79,3 +79,37 @@ class AssemblyTests(unittest.TestCase):
             a=ResponseAssembler()
             a.feed({'type':'response.created','sequence_number':0,'response':{'id':'r','status':'in_progress'}})
             with self.subTest(event=event), self.assertRaises(ResponseProtocolError): a.feed(event)
+
+class SupplementalContextTests(unittest.TestCase):
+    def test_bounded_fresh_screen_or_pasted_text_cannot_grant_personal_authority(self):
+        from relay_spike.conversation_context import ContextSnippet
+        snippet=ContextSnippet(kind='screen_text',text='Implement LRUCache(capacity).',source='selected IDE',captured_uptime_ns=100,session_id='session',presentation_generation=2,provenance='local_ocr')
+        self.assertTrue(snippet.current(session_id='session',presentation_generation=2,now_ns=101))
+        self.assertFalse(snippet.current(session_id='session',presentation_generation=3,now_ns=101))
+        self.assertFalse(snippet.current(session_id='session',presentation_generation=2,now_ns=20_000_000_101))
+        with self.assertRaises(ValueError):
+            ContextSnippet(kind='screen_text',text='x'*8193,source='IDE',captured_uptime_ns=1,session_id='session',presentation_generation=1,provenance='local_ocr')
+
+class SDKLifecycleRegressions(unittest.TestCase):
+    def test_null_completed_output_recovers_only_finished_indexed_items(self):
+        a=ResponseAssembler();a.feed({'type':'response.created','sequence_number':0,'response':{'id':'r','status':'in_progress'}})
+        a.feed({'type':'response.output_item.added','sequence_number':1,'output_index':3,'item':{'id':'m','type':'message','status':'in_progress','content':[]}})
+        item={'id':'m','type':'message','status':'completed','content':[{'type':'output_text','text':'done'}]}
+        a.feed({'type':'response.output_item.done','sequence_number':2,'output_index':3,'item':item})
+        self.assertEqual(a.feed({'type':'response.completed','sequence_number':3,'response':{'id':'r','status':'completed','output':None}}),'done')
+
+    def test_duplicate_created_and_duplicate_item_identity_reject(self):
+        a=ResponseAssembler();created={'type':'response.created','sequence_number':0,'response':{'id':'r','status':'in_progress'}};a.feed(created)
+        with self.assertRaises(ResponseProtocolError): a.feed({**created,'sequence_number':1})
+        a=ResponseAssembler();a.feed(created)
+        for index in (0,1):
+            item={'type':'response.output_item.added','sequence_number':index+1,'output_index':index,'item':{'id':'same','type':'message','status':'in_progress','content':[]}}
+            if index==0: a.feed(item)
+            else:
+                with self.assertRaises(ResponseProtocolError): a.feed(item)
+
+class UnicodeControlTests(unittest.TestCase):
+    def test_format_controls_and_escaped_surrogates_rejected(self):
+        for lead in ('safe\u202eevil','safe\u200bevil','safe\u2028evil','\ud800'):
+            with self.subTest(lead=repr(lead)),self.assertRaises(CardError):
+                parse_generated_card(candidate(lead=lead))

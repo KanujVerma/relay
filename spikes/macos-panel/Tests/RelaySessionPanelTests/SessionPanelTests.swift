@@ -71,3 +71,53 @@ final class HelperTransportTests: XCTestCase {
         wait(for:[answered],timeout:4);helper.stop()
     }
 }
+
+extension SessionPanelTests {
+    @MainActor func test_native_deadline_latches_without_helper_and_old_deadline_cannot_clear_new_card() throws {
+        let authority=SessionPresentationAuthority();try authority.start()
+        let panel=SessionPanelController(authority:authority);let old=try event(authority)
+        panel.observe(old);panel.expire(requestID:old.requestID!)
+        XCTAssertFalse(try panel.accept(result(old)))
+        authority.invalidate();let next=try event(authority,sequence:9)
+        panel.observe(next);XCTAssertTrue(try panel.accept(result(next)))
+        panel.expire(requestID:old.requestID!);XCTAssertNotNil(panel.snapshot.card)
+    }
+}
+
+extension SessionPanelTests {
+    @MainActor func test_statement_terminal_clears_immediately_and_never_mints_a_turn() throws {
+        let authority=SessionPresentationAuthority();try authority.start();let panel=SessionPanelController(authority:authority)
+        let e=try event(authority);panel.observe(e)
+        var value=try JSONSerialization.jsonObject(with:result(e,disposition:"abstain")) as! [String:Any]
+        value["pythonToken"]=NSNull();value["displayID"]=NSNull();value["question"]="";value["reasonCode"]="no_question"
+        XCTAssertTrue(try panel.accept(JSONSerialization.data(withJSONObject:value)))
+        XCTAssertEqual(panel.snapshot.status,"Listening");XCTAssertNil(panel.snapshot.card)
+        XCTAssertFalse(try panel.accept(result(e)))
+        value["disposition"]="answer"
+        XCTAssertThrowsError(try SessionAnswerDecision(data:JSONSerialization.data(withJSONObject:value)))
+    }
+    func test_reviewed_generated_provenance_controls_and_full_uint64() throws {
+        let authority=SessionPresentationAuthority();try authority.start();let e=try event(authority,sequence:UInt64.max)
+        let valid=try result(e);let decoded=try SessionAnswerDecision(data:valid)
+        XCTAssertEqual(decoded.eventSequence,UInt64.max)
+        var value=try JSONSerialization.jsonObject(with:valid) as! [String:Any]
+        value["answerKind"]="reviewed_reference"
+        XCTAssertThrowsError(try SessionAnswerDecision(data:JSONSerialization.data(withJSONObject:value)))
+        value["answerKind"]="generated_suggestion";var card=value["card"] as! [String:Any];card["lead"]="safe\u{202e}evil";value["card"]=card
+        XCTAssertThrowsError(try SessionAnswerDecision(data:JSONSerialization.data(withJSONObject:value)))
+    }
+}
+
+extension HelperTransportTests {
+    @MainActor func test_profile_preparation_uses_the_same_answer_helper_process() async throws {
+        let root=URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let helper=HelperTransport(root:root,python:URL(fileURLWithPath:"/usr/bin/env"),pythonArguments:["python3"],mode:.fixture,onFrame:{ _ in },onFailure:{})
+        try helper.start();defer { helper.stop() }
+        let opened=try await helper.requestProfile(Data("{\"command\":\"new\"}".utf8))
+        let state=try JSONSerialization.jsonObject(with:opened) as! [String:Any]
+        XCTAssertEqual(state["ready"] as? Bool,true)
+        _=try await helper.requestProfile(Data("{\"command\":\"lock\"}".utf8))
+        let reopened=try await helper.requestProfile(Data("{\"command\":\"new\"}".utf8))
+        XCTAssertEqual((try JSONSerialization.jsonObject(with:reopened) as? [String:Any])?["ready"] as? Bool,true)
+    }
+}

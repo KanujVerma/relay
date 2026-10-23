@@ -87,7 +87,10 @@ class OAuthAnswerStream:
                         if response.status_code != 200: raise AnswerTransportError('request_rejected')
                         if not response.headers.get('content-type','').lower().startswith('text/event-stream'): raise AnswerTransportError('stream_invalid')
                         decoder,assembler=SSEDecoder(),ResponseAssembler()
-                        async for chunk in response.aiter_raw(chunk_size=4096):
+                        async for chunk in response.aiter_raw():
+                            # HTTP core reads <=64KiB. Do not coalesce small SSE
+                            # completions into an artificial 4KiB output chunk.
+                            if len(chunk)>65536: raise AnswerTransportError('stream_budget')
                             for event in decoder.feed(chunk):
                                 answer=assembler.feed(event)
                                 if answer is not None: return answer

@@ -11,11 +11,11 @@ let package = Package(
         .executable(name: "relay-panel-session", targets: ["RelayPanelSession"]),
         .executable(name: "relay-panel-demo", targets: ["RelayPanelDemo"]),
     ],
-    dependencies: [.package(path: "../macos-session")],
+    dependencies: [.package(path: "../macos-session"), .package(path: "../macos-profile"), .package(path: "../macos-audio")],
     targets: [
         .target(name: "RelayPanelState"),
         .target(name: "RelaySessionPanel", dependencies: [.product(name: "RelayNativeSession", package: "macos-session")]),
-        .executableTarget(name: "RelayPanelSession", dependencies: ["RelaySessionPanel"]),
+        .executableTarget(name: "RelayPanelSession", dependencies: ["RelaySessionPanel", .product(name:"RelaySessionCapture",package:"macos-session"), .product(name:"RelayProfile",package:"macos-profile"), .product(name:"RelayAudioBuffer",package:"macos-audio")]),
         .testTarget(name: "RelaySessionPanelTests", dependencies: ["RelaySessionPanel"]),
         .executableTarget(name: "RelayPanelDemo", dependencies: ["RelayPanelState"]),
         .testTarget(name: "RelayPanelStateTests", dependencies: ["RelayPanelState"]),

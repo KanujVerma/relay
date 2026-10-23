@@ -15,6 +15,7 @@ class ResponseProtocolError(ValueError):
 class ResponseAssembler:
     def __init__(self):
         self.response_id = None
+        self.created = False
         self.sequence = -1
         self.items = {}
         self.parts = {}
@@ -42,11 +43,12 @@ class ResponseAssembler:
             if response['id'] != self.response_id: reject()
         if self.response_id is None: reject()
         if typ == 'response.created':
-            if self.sequence != seq or response.get('status') != 'in_progress' or self.items: reject()
+            if self.created or response.get('status') != 'in_progress' or self.items: reject()
+            self.created=True
         elif typ == 'response.output_item.added':
             index, item = event.get('output_index'), event.get('item')
             if type(index) is not int or not 0 <= index < 32 or index in self.items or not isinstance(item,dict): reject()
-            if not isinstance(item.get('id'),str) or item.get('type') not in ('message','reasoning'): reject()
+            if not isinstance(item.get('id'),str) or item.get('type') not in ('message','reasoning') or any(v['id']==item['id'] for v in self.items.values()): reject()
             self.items[index] = item
         elif typ in ('response.content_part.added','response.output_text.delta','response.output_text.done','response.content_part.done'):
             index, part = event.get('output_index'), event.get('content_index')
@@ -79,6 +81,7 @@ class ResponseAssembler:
         elif typ == 'response.completed':
             if response.get('status') != 'completed' or not self.items or self.finished != set(self.items): reject()
             output=response.get('output')
+            if output is None: output=[self.items[i] for i in sorted(self.items)]
             if not isinstance(output,list) or output != [self.items[i] for i in sorted(self.items)]: reject()
             result=''.join(part.get('text','') for item in output if item.get('type')=='message' for part in item.get('content',[]))
             if not result or len(result.encode()) > 8192: reject()

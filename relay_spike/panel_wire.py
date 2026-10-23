@@ -69,7 +69,7 @@ def decode_event(value):
     elif value['requestID'] is not None: raise WireError('request_scope')
     if kind=='session_started':
         exact(p,('selectedBundleID','microphoneEnabled'))
-        if not isinstance(p['selectedBundleID'],str) or not 0<len(p['selectedBundleID'].encode())<=255 or type(p['microphoneEnabled']) is not bool: raise WireError('session_config')
+        if (p['selectedBundleID'] is not None and (not isinstance(p['selectedBundleID'],str) or not 0<len(p['selectedBundleID'].encode())<=255)) or type(p['microphoneEnabled']) is not bool: raise WireError('session_config')
     elif kind=='speech_started':
         exact(p,('activityID','startHostTime','detectedUptimeNanoseconds','timebase'))
         for key in ('activityID','startHostTime','detectedUptimeNanoseconds'): u64(p[key])

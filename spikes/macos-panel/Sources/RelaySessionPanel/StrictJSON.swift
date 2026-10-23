@@ -1,5 +1,13 @@
 import Foundation
 
+func disallowedTextScalar(_ scalar:Unicode.Scalar,code:Bool=false) -> Bool {
+    if code && [9,10].contains(scalar.value) { return false }
+    switch scalar.properties.generalCategory {
+    case .control,.format,.surrogate,.lineSeparator,.paragraphSeparator:return true
+    default:return false
+    }
+}
+
 public enum PanelBridgeError: Error { case malformed, overflow, closed, timedOut }
 public indirect enum JSONNode: Sendable {
     case object([String:JSONNode]), array([JSONNode]), string(String), number(String), bool(Bool), null
@@ -8,7 +16,7 @@ public indirect enum JSONNode: Sendable {
     }
     func string(_ limit: Int=512) throws -> String {
         guard case .string(let v)=self, !v.isEmpty, v.utf8.count<=limit,
-              !v.unicodeScalars.contains(where: { $0.value<32 || (127...159).contains($0.value) }) else { throw PanelBridgeError.malformed };return v
+              !v.unicodeScalars.contains(where: { disallowedTextScalar($0) }) else { throw PanelBridgeError.malformed };return v
     }
     func uint(_ positive: Bool=true) throws -> UInt64 {
         guard case .number(let text)=self, !text.isEmpty, text.utf8.allSatisfy({ (48...57).contains($0) }),

@@ -14,7 +14,7 @@ public struct SessionCard: Equatable, Sendable {
         let language=d["language"]!.isNull ? nil : try d["language"]!.string()
         guard (kind=="prose" && language==nil) || (kind=="code" && ["python","sql"].contains(language)) else { throw PanelBridgeError.malformed }
         guard case .string(let text)=d["text"]!, !text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,text.utf8.count<=4096,
-              !text.unicodeScalars.contains(where: { ($0.value<32 || (127...159).contains($0.value)) && !(kind=="code" && [9,10].contains($0.value)) }) else { throw PanelBridgeError.malformed }
+              !text.unicodeScalars.contains(where: { disallowedTextScalar($0,code:kind=="code") }) else { throw PanelBridgeError.malformed }
         detail=SessionCardDetail(kind:kind,language:language,text:text)
     }
 }
@@ -23,8 +23,8 @@ public struct PythonTurnIdentity: Equatable, Sendable {
 }
 public struct SessionAnswerDecision: Sendable {
     public let sessionID:UUID;public let epoch:UInt64;public let generation:UInt64;public let requestID:UUID;public let eventSequence:UInt64
-    public let resultRevision:UInt64;public let disposition:String;public let reason:String;public let token:PythonTurnIdentity
-    public let displayID:String;public let question:String;public let answerID:String?;public let answerKind:String?;public let card:SessionCard?
+    public let resultRevision:UInt64;public let disposition:String;public let reason:String;public let token:PythonTurnIdentity?
+    public let displayID:String?;public let question:String;public let answerID:String?;public let answerKind:String?;public let card:SessionCard?
     public init(data:Data) throws {
         let o=try StrictJSON.decode(data).object(["schemaVersion","captureSessionID","sessionEpoch","presentationGeneration","requestID","eventSequence","resultRevision","disposition","reasonCode","pythonToken","displayID","question","answerID","answerKind","card","provenance"])
         guard try o["schemaVersion"]!.uint()==1,
@@ -32,10 +32,16 @@ public struct SessionAnswerDecision: Sendable {
         sessionID=session;requestID=request;epoch=try o["sessionEpoch"]!.uint();generation=try o["presentationGeneration"]!.uint();eventSequence=try o["eventSequence"]!.uint()
         resultRevision=try o["resultRevision"]!.uint();disposition=try o["disposition"]!.string();reason=try o["reasonCode"]!.string(80)
         guard ["pending","answer","clarify","abstain","error"].contains(disposition),resultRevision==(disposition=="pending" ? 1:2) else { throw PanelBridgeError.malformed }
-        let t=try o["pythonToken"]!.object(["turnID","version","generation"])
-        token=PythonTurnIdentity(identifier:try t["turnID"]!.string(256),version:try t["version"]!.uint(false),generation:try t["generation"]!.uint())
-        displayID=try o["displayID"]!.string(64);question=try o["question"]!.string(500)
-        guard displayID.utf8.allSatisfy({ (48...57).contains($0)||(65...90).contains($0)||(97...122).contains($0)||[45,46,95].contains($0) }) else { throw PanelBridgeError.malformed }
+        let noTurn=o["pythonToken"]!.isNull
+        if noTurn {
+            guard disposition=="abstain",o["displayID"]!.isNull,case .string("")=o["question"]! else { throw PanelBridgeError.malformed }
+            token=nil;displayID=nil;question=""
+        } else {
+            let t=try o["pythonToken"]!.object(["turnID","version","generation"])
+            token=PythonTurnIdentity(identifier:try t["turnID"]!.string(256),version:try t["version"]!.uint(false),generation:try t["generation"]!.uint())
+            let display=try o["displayID"]!.string(64);displayID=display;question=try o["question"]!.string(500)
+            guard display.utf8.allSatisfy({ (48...57).contains($0)||(65...90).contains($0)||(97...122).contains($0)||[45,46,95].contains($0) }) else { throw PanelBridgeError.malformed }
+        }
         if disposition != "answer" {
             guard o["answerID"]!.isNull,o["answerKind"]!.isNull,o["card"]!.isNull,o["provenance"]!.isNull else { throw PanelBridgeError.malformed }
             answerID=nil;answerKind=nil;card=nil;return

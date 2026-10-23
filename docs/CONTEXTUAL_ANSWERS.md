@@ -1,0 +1,57 @@
+# Contextual answers and the ordinary native panel
+
+This feature adds an actual contextual answer path and ordinary SwiftUI window. It reuses the existing question machine and reviewed publisher. It does not turn the reviewed fixture catalog into general model authority. Live hardware, account inference, usefulness and latency acceptance remain separate checks.
+
+## One session and one publication owner
+
+`python3 -m relay_spike.session_host` owns one QuestionTurnMachine/ActiveTurns, conversation history, ProfileBridge, reviewed-first router and terminal ledger. The ASR adapter's new optional eligibility strategy runs after its existing final/source/replay/tombstone guards. Legacy callers keep their confidence-based withholding behavior. The contextual strategy uses tentative question/imperative syntax and evaluated dialogue state; it preserves absent ASR confidence as null.
+
+A complete D02 match uses the actual ReferenceCard publisher and identity check before serialization with zero model requests. Other eligible requests use one configured async transport. A separate GeneratedCard requires a completed coherent response, strict JSON, bounded fields and local structural checks. The canonical-only policy and synthetic legacy CLI are unchanged.
+
+There is one active model worker and one replaceable newest waiting request. Superseding speech cancels the worker and seals the old request before the next can publish. The next request waits for old cleanup, rather than creating concurrent inference. The original accepted-question deadline includes waiting. The production OAuth adapter additionally allows at most ten requests per minute and sixty per helper. Local cancellation/disconnect does not certify provider token work has stopped.
+
+`ConversationContext` retains labeled microphone and selected-app observations within count/byte limits. Its task record keeps the supplied problem, constraints, current stage, user attempt, engineer feedback, unresolved assumptions and next step. These are attributed dialogue observations, not newly verified requirements or personal history. Coding discussions can clarify, propose an approach, provide code when asked and discuss improvements. Case studies can move through users/problem, requirements, flows, design, tradeoffs and validation. A late validated closed remote final enters history in source-time order only; it cannot launch a request, cancel a newer turn or acquire newer presentation authority.
+
+## Personal grounding and preparation
+
+The same helper owns the personal lane's ProfileBridge. Native `ProfilePreparationView` uses `ClosureProfilePort` over that helper; encrypted SQLite snapshots remain native-owned and protected by the existing profile vault. No second persistent plaintext store or automatic private import is added. The active interview role is supplied to both preparation and answer retrieval.
+
+Personal questions render exact approved provider facts with individual/team/teammate attribution. The model cannot supply fact IDs or factual authority. Generated general prompts contain dialogue, role/job context and background availability; approved biographical fact text is rendered separately by the host. Empty or conflicting evidence produces a clarification status. The retained issued bundle must still pass `validate_current` immediately before publication. Native profile mutations synchronously clear presentation authority before the helper command; the helper invalidates its current request before changing the ledger.
+
+Profile commands use `{schemaVersion:1,kind:profile_request,requestID,payload}`; replies use `profile_response` with the same UUID and bounded payload. UUID/digest replay tracking prevents repeated mutations. Bulk transfer stays in the personal port's bounded chunks. The same helper stays alive across profile lock/reopen and native session stop/start.
+
+## Frozen wire and native commit
+
+The [shared build contract](BUILD_CONTRACT.md) owns the native envelope. Both directions use a four-byte big-endian length and a strict UTF-8 JSON object, at most 16 KiB per frame. Queues permit at most 32 frames and 256 KiB. Duplicate/unknown keys, invalid counters/UUIDs, malformed UTF-8, overflow, incomplete frames, stalled writes or EOF fail closed. No raw errors or transcript diagnostics are printed. Swift preserves UInt64 decimal values without a floating conversion.
+
+A decision echoes `captureSessionID`, `sessionEpoch`, `presentationGeneration`, `requestID`, `eventSequence` plus `schemaVersion`, `resultRevision`, `disposition`, `reasonCode`, `pythonToken`, `displayID`, `question`, `answerID`, `answerKind`, `card` and `provenance`. The actual Python token includes its original colon-containing ID; the display ID is an opaque UUID mapping. Pending revision1 is optional; terminal revision2 is immutable. A terminal timeout/error cannot reopen, and an old error cannot clear a newer card.
+
+Before a logical question exists, a blank/statement/uncertain terminal may use null pythonToken/displayID, empty question and no answer fields. It seals only the original current native request, immediately returning the panel to listening. It does not mint a fake turn token. Every answer requires its actual non-null Python token and mapped display ID.
+
+Cards have a lead of at most 280 UTF-8 bytes, zero to two points of at most 180 bytes each, and optional `{kind,language,text}` detail up to 4096 bytes. Only code permits LF/tab; Unicode control/format characters are rejected. Candidate JSON is at most 8192 bytes and input prompts at most 32768 bytes. Overflow rejects the whole candidate; authority, prose and code are never silently clipped. Python detail receives an AST syntax check only. SQL is not executed against user data. Generated provenance reports structural checks, not correctness, executed tests or independent review.
+
+`SessionPanelController` receives the original native EOU before the helper write. It commits decoded results on MainActor inside the same `SessionPresentationAuthority.withCurrentLease` used by native invalidation. A native deadline seals hanging requests even if the helper never replies. Remote onset, stop and source loss retire authority before asynchronous helper work. Microphone speech updates context without replacing the remote card. Transport failure clears presentation; no delayed callback can acquire the current lease simply by arriving later.
+
+## Build and offline exercise
+
+Build the development bundle with `spikes/macos-panel/scripts/build-session-app.sh`. This compiles the real production capture/profile adapters and locally signs an ordinary `.app`; it is not a standalone installer or bundled Python distribution.
+
+From the repository, launch `.build/Relay.app` with `--repository /absolute/relay/path --fixture-suite coding` (also `reviewed` or `case`). This automatically drives synthetic native PCM through the actual native VAD/ASR ports, framed Python helper, contextual engine and visible window. It does not touch devices, speech models, private profiles, Keychain or account inference. The synthetic label remains visible. Expand Code and detail to inspect preserved whitespace; Stop clears the card.
+
+Ordinary launch remains idle. The setup selects an interview app and microphone, local speech-model folders and permitted-session acknowledgments. Start calls the actual NativeCaptureSession; Stop awaits its producer teardown after closing admission. No speech model download is performed. `--python /absolute/python3.11-or-newer` selects an interpreter containing the optional answer transport dependency. Production model requests additionally require explicit `--oauth`; they use the existing plan OAuth route/payload and no API-key fallback. Do not use live capture/account inference as an ordinary automated test.
+
+The screen lane can inject `ContextSnippet` through `SessionHost(supplemental_provider=...)`. It carries bounded OCR/pasted task text, source, original session/presentation generation, capture time and provenance. Screen text additionally requires the provider's `validate_current(snippet,native_request)` at prompt admission and final publication. `supplemental_context_changed()` cancels affected pending work. Age alone is not proof that code or screen content is unchanged; the screen provider owns request/epoch/selection/content revision and native revalidation. This feature adds no screen capture, accessibility collection or image upload.
+
+## Verification boundaries
+
+Tests cover real helper processes, reviewed zero-request routing, novel technical requests, coding/case multi-turn state, microphone context only, exact personal facts/revocation, malformed/refused/unfinished response lifecycles, bounds, source association, stale results, deadlines and terminal latches. An injected static LRU fixture has its own executable boundary/eviction oracle; arbitrary model code is never executed. These scenarios test transport/context/shape behavior. They do not establish generated factual correctness, independent held-out release quality, real ASR accuracy or interview usefulness. The controller owns independent review and joined live acceptance.
+
+## Upstream reuse
+
+No third-party source was copied in this lane. Direct reuse is Relay's existing question state, reference publisher and ordinary SwiftUI view conventions. Exact source/test inspections informed narrow independently written components:
+
+- [OpenAI Python SDK v3.37.0 Responses state](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/src/openai/lib/streaming/responses/_responses.py), [null/output identity regressions](https://github.com/openai/openai-python/blob/e8a0fd28bbdc1699c97ff0f602b1af3dd378382d/tests/lib/responses/test_null_output_items.py), Apache-2.0: indexed items, terminal identity and completed-item recovery. Relay adds stricter replay/refusal/byte bounds and never displays partial text.
+- [HTTPX0.28.1 AsyncClient](https://github.com/encode/httpx/blob/26d48e0634e6ee9cdc0533996db289ce4b430177/httpx/_client.py), [async cancellation tests](https://github.com/encode/httpx/blob/26d48e0634e6ee9cdc0533996db289ce4b430177/tests/client/test_async_client.py), BSD-3-Clause: invoked as the optional pinned dependency in requirements-answers.txt. Local real-socket tests add cancellation and small completed SSE frames on an open socket. There are no redirects/retries or alternate auth endpoints.
+- [MCP SDK lifecycle tests](https://github.com/modelcontextprotocol/python-sdk/blob/2af9e3089ac66b35c1550c500aae86a82efb1e17/tests/transports/stdio/test_lifecycle.py), MIT: owned-child/EOF/stderr/blocked-pipe failure scenarios. Relay does not import MCP/AnyIO or its line framing. Native uses bounded nonblocking binary pipes and never recycles the writer descriptor while queued writes may hold it.
+
+No Muesli UI, JSON-schema package, provider SDK or mandatory second critic is adopted. Format checks and source research do not become answer review authority.

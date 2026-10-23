@@ -8,21 +8,22 @@ public enum HelperMode: Sendable { case noInference, fixture, oauth }
 /// One child and owned binary pipes. Writes are nonblocking with a deadline;
 /// bounded queue overflow/EOF/malformed input retires native admission.
 public final class HelperTransport: @unchecked Sendable {
-    private let root:URL;private let python:URL;private let pythonArguments:[String];private let mode:HelperMode
+    private let root:URL;private let python:URL;private let pythonArguments:[String];private let mode:HelperMode;private let role:String
     private let onFrame:@Sendable(Data)->Void;private let onFailure:@Sendable()->Void
     private let io=DispatchQueue(label:"relay.helper.read");private let writes=DispatchQueue(label:"relay.helper.write")
     private let lock=NSLock();private var process:Process?;private var input:FileHandle?;private var output:FileHandle?;private var errors:FileHandle?
     private var source:DispatchSourceRead?;private var stderrSource:DispatchSourceRead?;private var timer:DispatchSourceTimer?
+    private var profileRequests:[UUID:CheckedContinuation<Data,any Error>]=[:]
     private var queuedFrames=0;private var queuedBytes=0;private var failed=false
     private let decoder=AnswerFrameDecoder();private var partialSince:UInt64?
-    public init(root:URL,python:URL,pythonArguments:[String]=[],mode:HelperMode,
+    public init(root:URL,python:URL,pythonArguments:[String]=[],mode:HelperMode,role:String="analytics",
                 onFrame:@escaping @Sendable(Data)->Void,onFailure:@escaping @Sendable()->Void) {
-        self.root=root;self.python=python;self.pythonArguments=pythonArguments;self.mode=mode;self.onFrame=onFrame;self.onFailure=onFailure
+        self.root=root;self.python=python;self.pythonArguments=pythonArguments;self.mode=mode;self.role=role;self.onFrame=onFrame;self.onFailure=onFailure
     }
     public func start() throws {
         let child=Process();let stdin=Pipe(),stdout=Pipe(),stderr=Pipe()
         child.executableURL=python;child.currentDirectoryURL=root
-        child.arguments=pythonArguments+["-m","relay_spike.session_host"]+(mode == .fixture ? ["--fixture-model"] : mode == .oauth ? ["--oauth"]:[])
+        child.arguments=pythonArguments+["-m","relay_spike.session_host","--role",role]+(mode == .fixture ? ["--fixture-model"] : mode == .oauth ? ["--oauth"]:[])
         child.standardInput=stdin;child.standardOutput=stdout;child.standardError=stderr
         child.terminationHandler={ [weak self] _ in self?.fail() }
         try lock.withLock {
@@ -45,6 +46,28 @@ public final class HelperTransport: @unchecked Sendable {
     public func sendJSON(_ data:Data) throws {
         _=try StrictJSON.decode(data);var n=UInt32(data.count).bigEndian
         var frame=withUnsafeBytes(of:&n) { Data($0) };frame.append(data);try enqueue(frame)
+    }
+    public func requestProfile(_ command:Data) async throws -> Data {
+        _=try StrictJSON.decode(command)
+        let payload=try JSONSerialization.jsonObject(with:command)
+        let id=UUID()
+        let envelope=try JSONSerialization.data(withJSONObject:["schemaVersion":1,"kind":"profile_request","requestID":id.uuidString.lowercased(),"payload":payload])
+        return try await withCheckedThrowingContinuation { continuation in
+            let admitted=lock.withLock {
+                guard !failed,profileRequests.count<4 else { return false }
+                profileRequests[id]=continuation;return true
+            }
+            guard admitted else { continuation.resume(throwing:PanelBridgeError.closed);return }
+            do { try sendJSON(envelope) } catch {
+                let pending=lock.withLock { profileRequests.removeValue(forKey:id) }
+                pending?.resume(throwing:PanelBridgeError.closed);return
+            }
+            io.asyncAfter(deadline:.now() + .seconds(15)) { [weak self] in
+                guard let self else { return }
+                let pending=self.lock.withLock { self.profileRequests.removeValue(forKey:id) }
+                if let pending { pending.resume(throwing:PanelBridgeError.timedOut);self.fail() }
+            }
+        }
     }
     private func enqueue(_ frame:Data) throws {
         try lock.withLock {
@@ -81,7 +104,17 @@ public final class HelperTransport: @unchecked Sendable {
             if count==0 { fail();return }
             if count<0 { if errno==EAGAIN || errno==EWOULDBLOCK { return };if errno==EINTR { continue };fail();return }
             do {
-                for frame in try decoder.feed(Data(bytes.prefix(count))) { _=try SessionAnswerDecision(data:frame);onFrame(frame) }
+                for frame in try decoder.feed(Data(bytes.prefix(count))) {
+                    let node=try StrictJSON.decode(frame)
+                    if case .object(let fields)=node,case .string("profile_response")?=fields["kind"] {
+                        let fields=try node.object(["schemaVersion","kind","requestID","payload"])
+                        guard try fields["schemaVersion"]!.uint()==1,let id=UUID(uuidString:try fields["requestID"]!.string()) else { throw PanelBridgeError.malformed }
+                        let continuation=lock.withLock { profileRequests.removeValue(forKey:id) }
+                        guard let continuation else { throw PanelBridgeError.malformed }
+                        let decoded=try JSONSerialization.jsonObject(with:frame) as! [String:Any]
+                        continuation.resume(returning:try JSONSerialization.data(withJSONObject:decoded["payload"]!))
+                    } else { _=try SessionAnswerDecision(data:frame);onFrame(frame) }
+                }
                 if decoder.hasPartial { if partialSince==nil { partialSince=DispatchTime.now().uptimeNanoseconds } } else { partialSince=nil }
             } catch { fail();return }
         }
@@ -97,7 +130,11 @@ public final class HelperTransport: @unchecked Sendable {
         guard first else { return };onFailure();stop()
     }
     public func stop() {
-        let child:Process?=lock.withLock { failed=true;return process }
+        let (child,pending)=lock.withLock {
+            failed=true;let pending=Array(profileRequests.values);profileRequests.removeAll()
+            return (process,pending)
+        }
+        pending.forEach { $0.resume(throwing:PanelBridgeError.closed) }
         io.async { [weak self] in
             guard let self else { return };self.source?.cancel();self.stderrSource?.cancel();self.timer?.cancel()
         }

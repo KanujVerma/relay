@@ -73,15 +73,33 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
         await h.handle(start());await h.handle(speech(2));await h.handle(end(3));e=final(4,'Explain queues.');e['payload']['activityClosed']=False
         await h.handle(e);await h.drain();self.assertEqual(calls,[])
 
+def run_interactive_child(payload,expected_frames):
+    import subprocess,sys,threading
+    child=subprocess.Popen([sys.executable,'-m','relay_spike.session_host','--fixture-model'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    watchdog=threading.Timer(5,child.kill);watchdog.start()
+    try:
+        child.stdin.write(payload);child.stdin.flush();rows=[]
+        for _ in range(expected_frames):
+            header=child.stdout.read(4)
+            if len(header)!=4:raise AssertionError('helper closed before expected decision')
+            body=child.stdout.read(int.from_bytes(header,'big'))
+            rows.append(json.loads(body))
+        child.stdin.close();child.stdin=None
+        rest,errors=child.communicate(timeout=5)
+        if rest:rows.extend(FrameDecoder().feed(rest))
+        return child.returncode,tuple(rows),errors
+    finally:
+        watchdog.cancel()
+        if child.poll() is None:child.kill();child.wait()
+
 class ChildTests(unittest.TestCase):
     def test_real_child_reviewed_and_novel_dynamic_route_and_clean_eof(self):
         import subprocess,sys
         payload=b''.join(encode_frame(e) for e in (start(),speech(2),end(3),final(4,'What is the difference between WHERE and HAVING?'),speech(5,2,3),end(6,2,3),final(7,'Discuss an LRU cache approach.',2,3)))
-        child=subprocess.run([sys.executable,'-m','relay_spike.session_host','--fixture-model'],input=payload,capture_output=True,timeout=5)
-        self.assertEqual(child.returncode,0,child.stderr)
-        decisions=FrameDecoder().feed(child.stdout)
+        code,decisions,errors=run_interactive_child(payload,3)
+        self.assertEqual(code,0,errors)
         self.assertEqual([d['answerKind'] for d in decisions if d['disposition']=='answer'],['reviewed_reference','generated_suggestion'])
-        self.assertEqual(child.stderr,b'')
+        self.assertEqual(errors,b'')
 
     def test_truncated_frame_exits_content_free(self):
         import subprocess,sys
@@ -107,3 +125,95 @@ class LateContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(h.active,active);self.assertTrue(h.live);self.assertEqual(len(calls),1)
         dialogue=h.context.snapshot().dialogue
         self.assertIn('earlier cache',dialogue[-2][1]);self.assertIn('queue',dialogue[-1][1])
+
+class SchedulerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_one_active_worker_and_only_newest_pending_after_slow_cancellation(self):
+        entered=asyncio.Event();release=asyncio.Event();calls=[];out=[]
+        async def complete(prompt,instructions):
+            calls.append(json.loads(prompt)['current_request'])
+            if len(calls)==1:
+                entered.set()
+                try: await release.wait()
+                except asyncio.CancelledError: await release.wait()
+            return json.dumps(dict(lead='Current explanation.',points=[],detail=None,assumptions=[],coverage=['current'],personal_fact_ids=[]))
+        h=SessionHost(complete=complete,emit=out.append)
+        await h.handle(start());await h.handle(speech(2));await h.handle(end(3));await h.handle(final(4,'Explain queues.'));await entered.wait()
+        for base,activity in ((5,2),(8,3)):
+            await h.handle(speech(base,activity,activity+1));await h.handle(end(base+1,activity,activity+1));await h.handle(final(base+2,'Explain cache '+str(activity)+'?',activity,activity+1))
+            barrier=asyncio.Event();asyncio.get_running_loop().call_soon(barrier.set);await barrier.wait()
+        self.assertEqual(len(calls),1)
+        release.set();await h.drain()
+        self.assertEqual(len(calls),2);self.assertIn('3',calls[-1])
+        self.assertEqual(len([d for d in out if d['disposition']=='answer']),1)
+
+class ProfileCompositionTests(unittest.TestCase):
+    def test_profile_port_and_answer_session_use_one_real_child(self):
+        import subprocess,sys
+        request={'schemaVersion':1,'kind':'profile_request','requestID':str(uuid.uuid4()),'payload':{'command':'new'}}
+        code,rows,errors=run_interactive_child(encode_frame(request)+b''.join(encode_frame(e) for e in (start(),speech(2),end(3),final(4,'Explain queues.'))),3)
+        self.assertEqual(code,0,errors)
+        self.assertEqual(rows[0]['kind'],'profile_response');self.assertTrue(rows[0]['payload']['ready'])
+        self.assertEqual(rows[-1]['answerKind'],'generated_suggestion')
+
+class GroundingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_exact_approved_self_and_team_points_and_revocation(self):
+        import base64
+        from hashlib import sha256
+        from relay_spike.profile_bridge import ProfileBridge
+        h=SessionHost(emit=lambda _:None,role='developer')
+        profile=ProfileBridge(on_change=h.personal_context_changed);profile.handle({'command':'new'});h.provider=profile
+        text=b'I implemented Atlas SQL tests.'
+        profile.handle({'command':'select_begin','size':len(text),'sha256':sha256(text).hexdigest(),'file_type':'txt','purpose':'project','label':'Atlas','role':'developer','project_hint':'Atlas'})
+        profile.handle({'command':'transfer_chunk','offset':0,'data':base64.b64encode(text).decode()})
+        card=profile.handle({'command':'select_commit'})['card']
+        profile.handle({'command':'decide','fact_id':card['fact_id'],'fingerprint':card['card_fingerprint'],'decision':'approve','actor':'self','claim_key':'atlas.tests'})
+        out=[];h.emit=out.append
+        await h.handle(start());await h.handle(speech(2));await h.handle(end(3));await h.handle(final(4,'What did you personally do on your Atlas project?'))
+        self.assertEqual(out[-1]['reasonCode'],'grounded_personal')
+        self.assertIn('I implemented Atlas SQL tests.',out[-1]['card']['points'][0])
+        self.assertEqual(out[-1]['provenance']['facts'][0]['actor'],'self')
+        profile.handle({'command':'revoke','source_id':card['source_id']})
+        self.assertIsNone(h.active)
+        await h.handle(speech(5,2,3));await h.handle(end(6,2,3));await h.handle(final(7,'What did you personally do on your Atlas project?',2,3))
+        self.assertEqual(out[-1]['disposition'],'clarify')
+        profile.close()
+
+class ProfileReplayTests(unittest.TestCase):
+    def test_profile_request_uuid_replay_never_repeats_mutation(self):
+        import subprocess,sys
+        ident=str(uuid.uuid4())
+        first={'schemaVersion':1,'kind':'profile_request','requestID':ident,'payload':{'command':'new'}}
+        conflicting={**first,'payload':{'command':'lock'}}
+        check={'schemaVersion':1,'kind':'profile_request','requestID':str(uuid.uuid4()),'payload':{'command':'state'}}
+        child=subprocess.run([sys.executable,'-m','relay_spike.session_host'],input=b''.join(encode_frame(v) for v in (first,first,conflicting,check)),capture_output=True,timeout=5)
+        rows=FrameDecoder().feed(child.stdout)
+        self.assertEqual(rows[0]['payload'],rows[1]['payload'])
+        self.assertFalse(rows[2]['payload']['ok']);self.assertTrue(rows[3]['payload']['ready'])
+
+class QuietWithholdTests(unittest.IsolatedAsyncioTestCase):
+    async def test_statement_and_blank_final_seal_immediately_without_fake_token(self):
+        for text,reason in (('Thanks for the explanation.','no_question'),('','blank_question')):
+            out=[];h=SessionHost(emit=out.append)
+            await h.handle(start());await h.handle(speech(2));await h.handle(end(3));await h.handle(final(4,'What is the difference between WHERE and HAVING?'))
+            await h.handle(speech(5,2,3));await h.handle(end(6,2,3));await h.handle(final(7,text,2,3))
+            self.assertEqual(out[-1]['disposition'],'abstain');self.assertEqual(out[-1]['reasonCode'],reason)
+            self.assertIsNone(out[-1]['pythonToken']);self.assertIsNone(out[-1]['displayID']);self.assertIsNone(out[-1]['card'])
+
+class ScreenPortTests(unittest.IsolatedAsyncioTestCase):
+    async def test_changed_screen_revision_vetoes_result_at_publication(self):
+        from relay_spike.conversation_context import ContextSnippet
+        import time
+        entered=asyncio.Event();release=asyncio.Event();out=[]
+        class Provider:
+            current=True
+            def __call__(self,n):
+                return ContextSnippet('screen_text','def existing(): return 1','selected IDE',time.monotonic_ns(),n['captureSessionID'],n['presentationGeneration'],'local_ocr')
+            def validate_current(self,snippet,n):return self.current
+        provider=Provider()
+        async def complete(prompt,instructions):
+            self.assertIn('def existing',prompt);entered.set();await release.wait()
+            return json.dumps(dict(lead='Explain the supplied function first.',points=[],detail=None,assumptions=[],coverage=['current'],personal_fact_ids=[]))
+        h=SessionHost(complete=complete,emit=out.append,supplemental_provider=provider)
+        await h.handle(start());await h.handle(speech(2));await h.handle(end(3));await h.handle(final(4,'How should we improve this function?'))
+        await entered.wait();provider.current=False;release.set();await h.drain()
+        self.assertFalse(any(v['disposition']=='answer' for v in out))

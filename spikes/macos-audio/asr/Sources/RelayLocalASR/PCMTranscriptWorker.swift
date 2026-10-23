@@ -296,9 +296,13 @@ public actor PCMTranscriptWorker {
                 return nil
             }
             segmentID &+= 1
-            let final = text.isEmpty ? nil : event(
-                .final, generation: generation, text: text
-            )
+            // A successful finish() with zero recognized words is NOT
+            // silence: the downstream turn adapter must receive an explicit
+            // terminal and invalidate any prior answer. Represent it as a
+            // final event whose text is exactly "" (never fabricated words).
+            // The native wire validator maps this to blank_final; no actual
+            // Swift -> Python transport is implemented by this slice.
+            let final = event(.final, generation: generation, text: text)
             pendingMono.removeAll(keepingCapacity: true)
             utteranceFrames = 0
             startHostTime = nil

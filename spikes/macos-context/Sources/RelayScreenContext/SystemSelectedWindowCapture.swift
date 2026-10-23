@@ -77,7 +77,8 @@ public enum ScreenCaptureDimensions {
         configuration.showsCursor = false
         configuration.capturesAudio = false
         configuration.ignoreShadowsSingleWindow = true
-        configuration.scalesToFit = true
+        // Downscale only if the selected window shrinks after its dimensions were measured.
+        configuration.scalesToFit = false
         captureActive = true
         defer { captureActive = false }
         let started = DispatchTime.now().uptimeNanoseconds

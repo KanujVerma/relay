@@ -25,7 +25,7 @@ extension RelayPreparationPresentation {
 extension SessionApplicationModel {
     var relayPresentation:RelaySessionPresentation {
         RelaySessionPresentation(running:running,starting:starting,paused:paused,stopping:stopping,preparing:speechSetup.snapshot.isBusy,visualBusy:visual.isBusy || visual.status == .busy,cancellingPreparation:speechSetup.snapshot.stage == .cancelled && speechSetup.snapshot.isBusy,
-            hasQuestion:snapshot.question != nil,hasAnswer:snapshot.card != nil,hasSelectedSource:fixture || !selectedBundleID.isEmpty,
+            hasQuestion:snapshot.question != nil,hasAnswer:snapshot.card != nil,hasSelectedSource:fixture || microphoneEnabled || !selectedBundleID.isEmpty,hasRemoteSource:fixture || !selectedBundleID.isEmpty,
             authorizedConversation:fixture || authorizedConversation,ownerCanStart:canStartSession,ownerCanResume:canResume)
     }
     var relayAnswer:RelayAnswerPresentation? {
@@ -35,6 +35,7 @@ extension SessionApplicationModel {
         if contextStatus.contains("selected text"){return "Selected text"}
         if contextStatus.contains("image and"){return "Viewed screen"}
         if contextStatus.contains("local OCR"){return "Viewed screen text"}
-        return screen.isEnabled ? "Window selected":"Screen off"
+        guard screen.isEnabled else{return "Screen off"}
+        return screen.selectedSource != nil ? "Window selected":"Choose a window"
     }
 }

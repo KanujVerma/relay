@@ -6,7 +6,7 @@ enum RelayUIAction:CaseIterable { case start,pause,resume,end,help,copy,expand,h
 struct RelaySessionPresentation {
     var running=false,starting=false,paused=false,stopping=false,preparing=false,visualBusy=false
     var cancellingPreparation=false
-    var hasQuestion=false,hasAnswer=false,hasSelectedSource=false,authorizedConversation=false
+    var hasQuestion=false,hasAnswer=false,hasSelectedSource=false,hasRemoteSource=false,authorizedConversation=false
     var ownerCanStart=false,ownerCanResume=false
     var status:String{stopping ? "Stopping":paused ? "Paused":running ? "Listening":starting || preparing ? "Preparing":visualBusy ? "Image setup busy":"Ready"}
     func allows(_ action:RelayUIAction)->Bool {

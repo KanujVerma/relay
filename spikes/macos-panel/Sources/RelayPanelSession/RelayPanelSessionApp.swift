@@ -62,7 +62,7 @@ private struct RelayAppCommands:Commands {
     var body:some View {
         VStack(alignment:.leading,spacing:14){
             HStack{
-                Picker("Conversation app",selection:$model.selectedBundleID){Text("Choose an app").tag("");ForEach(apps,id:\.processIdentifier){app in if let bundle=app.bundleIdentifier{Text(app.localizedName ?? bundle).tag(bundle)}}}.labelsHidden().frame(maxWidth:.infinity,alignment:.leading).accessibilityLabel("Conversation app")
+                Picker("Conversation app",selection:$model.selectedBundleID){Text(model.microphoneEnabled ? "Microphone only":"Choose an app").tag("");ForEach(apps,id:\.processIdentifier){app in if let bundle=app.bundleIdentifier{Text(app.localizedName ?? bundle).tag(bundle)}}}.labelsHidden().frame(maxWidth:.infinity,alignment:.leading).accessibilityLabel("Conversation app")
                 Toggle("My microphone",isOn:$model.microphoneEnabled).font(.system(size:12)).toggleStyle(.checkbox)
             }.disabled(model.running || model.starting || model.stopping || model.speechSetup.snapshot.isBusy)
             Toggle("This conversation permits recording and assistance",isOn:Binding(get:{model.authorizedConversation},set:{allowed in if !allowed && (model.running || model.starting){model.performWindowAction(.endSession)};model.authorizedConversation=allowed})).font(.system(size:12)).toggleStyle(.checkbox)

@@ -49,7 +49,7 @@ GRDB/SQLCipher and general memory frameworks were not adopted: whole encrypted s
 
 ## Verification and remaining acceptance
 
-At the native checkpoint: **414 Python tests passed with 21 optional converter skips**, and **9 native tests passed**. Synthetic Swift tests inject keys and a Security client; they exercise encryption/tampering, owner-only permissions, Keychain failure behavior, lazy startup, real Python child framing, review/save/reopen/revoke and failed-save admission retirement. No actual private imports, real Keychain reads/writes, permission dialogs, capture or model calls were exercised.
+At the native checkpoint: **414 Python tests passed with 21 optional converter skips**, and **10 native tests passed**. Synthetic Swift tests inject keys and a Security client; they exercise encryption/tampering, owner-only permissions, Keychain failure behavior, lazy startup, real Python child framing, review/save/reopen/revoke, shared-helper close-to-lock behavior and failed-save admission retirement. No actual private imports, real Keychain reads/writes, permission dialogs, capture or model calls were exercised.
 
 Run from the repository root:
 

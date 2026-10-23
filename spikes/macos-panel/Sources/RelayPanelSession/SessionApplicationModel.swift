@@ -83,6 +83,9 @@ private actor FixtureRecognizer: ActivityRecognizer {
     private let python:URL
     private let pythonArguments:[String]
     private let authority=SessionPresentationAuthority()
+    private let contextCoordinatorOverride:ScreenContextCoordinator?
+    private let contextWriteAcknowledged:(@MainActor (Data,PanelRequestBinding) async ->Void)?
+    private let ingressEnqueued:(@MainActor (SessionIngress)->Void)?
     let screen=ScreenContextModel()
     let visual=VisualInputSetupState()
     private var hasSelectedText=false
@@ -96,11 +99,12 @@ private actor FixtureRecognizer: ActivityRecognizer {
     private var hasContextComposer=false
     private lazy var contextComposer:QuestionContextComposer = {
         hasContextComposer=true
-        return QuestionContextComposer(authority:authority,screen:screen.coordinator,selection:selectedText)
+        return QuestionContextComposer(authority:authority,screen:contextCoordinatorOverride ?? screen.coordinator,selection:selectedText)
     }()
     private lazy var publication=ContextPublicationGate(authority:authority)
     private var forwarder:OrderedContextForwarder?
     private var currentBinding:PanelRequestBinding?
+    private var lastContextRetirement:(PanelRequestBinding,Bool)?
     private var acceptedQuestion:String?
     private var terminalObserved=false
     private var taskContextUsed=false
@@ -184,7 +188,11 @@ private actor FixtureRecognizer: ActivityRecognizer {
         if profileBinding === binding { profileBinding=nil;profileStorage=nil }
     }
 
-    init(arguments:[String]=CommandLine.arguments) {
+    init(arguments:[String]=CommandLine.arguments,contextCoordinator:ScreenContextCoordinator?=nil,
+         contextWriteAcknowledged:(@MainActor (Data,PanelRequestBinding) async ->Void)?=nil,
+         ingressEnqueued:(@MainActor (SessionIngress)->Void)?=nil) {
+        self.contextCoordinatorOverride=contextCoordinator
+        self.contextWriteAcknowledged=contextWriteAcknowledged;self.ingressEnqueued=ingressEnqueued
         fixture=arguments.contains("--fixture-suite")
         fixtureSuite=Self.argument("--fixture-suite",arguments) ?? "reviewed"
         role=Self.argument("--role",arguments) ?? (fixture ? "analytics":"developer")
@@ -198,6 +206,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
         visual.onRetireImages={ [weak self] in self?.retireVisualImages() }
         visual.onTransportFailure={ [weak self] in self?.failSession() }
         screen.onInvalidation={ [weak self] _ in self?.contextSourceChanged() }
+        contextCoordinator?.onInvalidation={ [weak self] _ in self?.contextSourceChanged() }
         focusObserver=NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.didActivateApplicationNotification,object:nil,queue:.main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self,self.hasContextComposer,self.contextComposer.contextUse?.provenance=="selected_accessibility_text" else { return }
@@ -260,7 +269,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
         if let forwarder { return forwarder }
         let created=OrderedContextForwarder(shouldCapture:{ [weak self] ingress in
             guard let self,let binding=ingress.binding,self.authority.snapshot()==binding.lease,self.running,!self.stopping else { return false }
-            if self.screen.isEnabled { return true }
+            if self.contextCoordinatorOverride?.isEnabled ?? self.screen.isEnabled { return true }
             if case .manual=ingress { return self.selectedText.isEnabled }
             return false
         },capture:{ [weak self] ingress in
@@ -276,6 +285,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
                         return self.helperIdentity==helperID && self.helper === helper && self.currentBinding==binding
                             && self.visual.ownsOfferGeneration(generation) && self.contextComposer.ownsCurrent(binding)
                     })
+                    await self?.contextWriteAcknowledged?(data,binding)
                 }
             }
             return await self.contextComposer.captureForForwarding(for:binding,readSelectedText:{if case .manual=ingress{return true};return false}(),imageWriter:writer)
@@ -284,7 +294,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     private func bind(_ request:PanelRequestBinding) {
         guard authority.snapshot()==request.lease,currentBinding != request else { return }
-        currentBinding=request;terminalObserved=false;taskContextUsed=false;imageContextUsed=false
+        currentBinding=request;lastContextRetirement=nil;terminalObserved=false;taskContextUsed=false;imageContextUsed=false
         publication.bind(request);panel.bind(request)
     }
     private func send(_ ingress:SessionIngress,context:[Data]) throws {
@@ -297,6 +307,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
             if event.kind != .eou { panel.observe(event) }
         case .manual(let request):try helper.sendJSON(request.encodedJSON())
         }
+        ingressEnqueued?(ingress)
     }
     private func acceptFrame(_ data:Data) throws {
         let decision=try SessionAnswerDecision(data:data)
@@ -337,19 +348,37 @@ private actor FixtureRecognizer: ActivityRecognizer {
         retireRequest(status:"Context changed. Ask again.")
     }
     private func retireOptionalWork() {
+        let notified = !hasContextComposer || contextComposer.binding.map(enqueueContextRetirement) != false
         currentBinding=nil;acceptedQuestion=nil;terminalObserved=true;taskContextUsed=false;imageContextUsed=false;manualRequestToShow=nil
         publication.retire();if hasContextComposer { contextComposer.retire() };if hasSelectedText { selectedText.invalidate() }
-        forwarder?.cancelOptionalWork()
+        if notified{forwarder?.cancelOptionalWork()}else{forwarder?.retire()}
     }
     private func retireRequest(status:String) { retireOptionalWork();panel.clear(status:status) }
     func contextSourceChanged() {
         guard hasContextComposer,let old=contextComposer.binding else { return }
         let used=taskContextUsed && currentBinding==old
+        let notified=enqueueContextRetirement(old)
         contextComposer.retire() // source/consent authority retires before helper callbacks
         if used { retireDependentRequest(old) }
+        else if notified{forwarder?.cancelOptionalWork()}
         contextStatus="Context changed. The next question can use a fresh observation."
+    }
+    /// The original staged identity must reach the same bounded writer before
+    /// a cancellation callback can release its held EOU. No native restamping.
+    @discardableResult private func enqueueContextRetirement(_ old:PanelRequestBinding)->Bool {
+        if let previous=lastContextRetirement,previous.0==old{return previous.1}
         let frame:WireValue = .object(["schemaVersion":.uint(1),"kind":.string("supplemental_context_retired"),"captureSessionID":.string(old.lease.captureSessionID.uuidString.lowercased()),"sessionEpoch":.uint(old.lease.sessionEpoch),"presentationGeneration":.uint(old.lease.presentationGeneration),"requestID":.string(old.requestID.uuidString.lowercased()),"reasonCode":.string("context_changed")])
-        do { try helper?.sendJSON(JSONEncoder().encode(frame)) } catch { failSession() }
+        do {
+            guard let helper else{throw PanelBridgeError.closed}
+            try helper.sendJSON(JSONEncoder().encode(frame));lastContextRetirement=(old,true);return true
+        } catch {
+            lastContextRetirement=(old,false)
+            // A failed retirement must never release EOU into that child.
+            if fixture{native.beginStop(reason:.transportClosed)}else{capture.retireAdmission(reason:.transportClosed)}
+            authority.stop();helper?.stop();forwarder?.retire()
+            Task{@MainActor [weak self] in self?.failSession()}
+            return false
+        }
     }
     func start() async {
         guard canStartSession else { return }
@@ -382,22 +411,24 @@ private actor FixtureRecognizer: ActivityRecognizer {
         let clock=NativeClockCalibration.now()
         let start=mach_absolute_time()-UInt64(2_000_000_000)*UInt64(clock.nsDenom)/UInt64(clock.nsNumer)
         for sequence:UInt64 in 1...2 {
-            native.ingest(SessionAudioPacket(source:.remoteAudio,streamGeneration:1,sequence:sequence,hostTime:start+(sequence-1)*UInt64(32_000_000)*UInt64(clock.nsDenom)/UInt64(clock.nsNumer),samples:Array(repeating:0.2,count:512)))
+            ingestFixturePacket(SessionAudioPacket(source:.remoteAudio,streamGeneration:1,sequence:sequence,hostTime:start+(sequence-1)*UInt64(32_000_000)*UInt64(clock.nsDenom)/UInt64(clock.nsNumer),samples:Array(repeating:0.2,count:512)))
         }
     }
+    func ingestFixturePacket(_ packet:SessionAudioPacket){guard fixture else{return};native.ingest(packet)}
     var currentSessionID:UUID? { authority.snapshot()?.captureSessionID ?? forwardedSessionID }
     var canStartSession:Bool { !running && !starting && !stopping && teardown==nil && !visual.isBusy && visual.status != .busy && (fixture || capture.phase == .idle) }
     var canResume:Bool { paused && canStartSession }
     func beginRetirement(end:Bool) {
         endRequested = endRequested || end
-        disableVisualInput() // The helper also revokes its receipt on native stop.
         if end { paused=false }
-        guard teardown==nil else { return }
+        guard teardown==nil else { disableVisualInput();return }
         let sessionID=forwardedSessionID;let oldHelper=helper
         startTask?.cancel()
         // Real source/ASR admission and native paint retire before any await.
         if fixture { native.beginStop() } else { capture.retireAdmission(reason:.userStop) }
         authority.stop();running=false;paused = !end;stopping=true
+        if hasContextComposer,let old=contextComposer.binding{enqueueContextRetirement(old)}
+        disableVisualInput() // Enqueue before its callback can release old EOU.
         retireRequest(status:end ? "Stopped":"Paused · recent conversation will reset on resume")
         teardown=Task { [weak self] in
             guard let self else{return}
@@ -432,9 +463,9 @@ private actor FixtureRecognizer: ActivityRecognizer {
     func failSession() {
         // Keep the same actual owner join/reap barrier as End. A failed source
         // or transport cannot be replaced merely because its output is hidden.
+        helper?.stop() // Fence the child before any local image-retirement callback.
         visual.retireForHelperChange()
         helperIdentity=UUID();helperFailures.activate(helperIdentity)
-        helper?.stop()
         beginRetirement(end:true)
         authority.stop();retireRequest(status:"Session unavailable")
         forwarder?.retire();forwarder=nil;running=false;paused=false
@@ -476,11 +507,23 @@ private actor FixtureRecognizer: ActivityRecognizer {
         guard canTestVisualInput else{return}
         do{visual.beginVerification(using:visualSender(try ensureHelper()))}catch{failSession()}
     }
-    func disableVisualInput(){visual.disable(using:helper.map(visualSender))}
+    func disableVisualInput(){
+        guard visual.needsDisable,!visual.hasPendingDisable,let helper else{visual.disable(using:nil);return}
+        do {
+            let response=try helper.issueVisualInput(.disable,onUpdate:{_ in})
+            visual.disable(using:{_,_ in try await response.value()})
+        }catch{
+            helper.stop()
+            // Register the failed join before local retirement callbacks;
+            // the existing state error path performs actual session teardown.
+            visual.disable(using:{_,_ in throw error})
+        }
+    }
     private func retireVisualImages() {
         guard hasContextComposer else{return}
         contextComposer.retireImageOffer()
         if imageContextUsed,let binding=currentBinding{retireDependentRequest(binding)}
+        else{forwarder?.cancelOptionalWork()}
     }
     var canChangeAIMode:Bool { !fixture && canStartSession && profileStorage?.busy != true }
     func setAIEnabled(_ enabled:Bool) async {

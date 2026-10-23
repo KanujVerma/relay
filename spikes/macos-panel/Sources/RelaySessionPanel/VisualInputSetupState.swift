@@ -19,6 +19,7 @@ public typealias VisualInputControlSender = @MainActor (VisualInputAction,@escap
     public init(){}
     public var needsDisable:Bool{consentAttempt || !pending.isEmpty || mayOfferImages}
     public var hasPendingVerification:Bool{pending.values.contains(.verify)}
+    public var hasPendingDisable:Bool{pending.values.contains(.disable)}
     public var offerGeneration:UUID?{mayOfferImages ? generation:nil}
     public func ownsOfferGeneration(_ candidate:UUID)->Bool{mayOfferImages && candidate==generation}
 
@@ -29,18 +30,19 @@ public typealias VisualInputControlSender = @MainActor (VisualInputAction,@escap
     }
     public func disable(using sender:VisualInputControlSender?) {
         let notify=needsDisable,alreadyDisabling=pending.values.contains(.disable)
-        retireReflection()
+        retireReflection(notify:false)
         if notify,!alreadyDisabling,let sender{submit(.disable,using:sender)}
+        onRetireImages?()
     }
     public func refreshStatus(using sender:@escaping VisualInputControlSender) {
         guard pending.isEmpty else{return}
         submit(.status,using:sender)
     }
     public func retireForHelperChange(){retireReflection()}
-    private func retireReflection() {
+    private func retireReflection(notify:Bool=true) {
         generation=UUID();consentAttempt=false;mayOfferImages=false
         status = .disabled;model=nil
-        onRetireImages?()
+        if notify{onRetireImages?()}
     }
     public func waitForQuiescence()async {
         await withCheckedContinuation{continuation in

@@ -13,7 +13,7 @@ from relay_spike.visual_input import (
     VisualInputController, VisualInputError, VisualImageClaim,
     VerifiedImageCapability, VisualAttachmentPermit,
 )
-from test_screen_context import png
+from tests.test_screen_context import png
 
 
 MODEL = 'synthetic-image-model'

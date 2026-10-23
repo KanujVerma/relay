@@ -12,3 +12,5 @@ Current accepted heads, hosted checks and remaining integration gates live in [B
 
 - [App composition first review](review-composition-86d69e6-report.md):86d69e6 changes required; [scoped correction re-review](review-composition-e45549a-rereview.md) accepted e45549a.
 - [Visual service](review-visual-ad9f587-report.md):ad9f587 accepted within its exact six-file service scope; app/helper consumers and real account acceptance remain separate.
+
+- [Prospective build routing review](review-hypothetical-a5827dc.md): sourcea5827dc accepted, final PR77 head62b30c4 has identical source/tests; [builder evidence](fix-hypothetical-routing-report.md) records48 focused tests and the original seven red failures.

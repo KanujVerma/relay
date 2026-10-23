@@ -131,7 +131,9 @@ def requires_personal_evidence(question):
     addressed=bool(re.search(r"\byou(?:'re|'ve|'d)?\b",text,re.I))
     if not addressed:
         return bool(_BIOGRAPHY.search(text) and re.search(r'\b(?:who|where|when|what|which|tell|describe)\b',text,re.I))
-    neutral=bool(re.search(r'\b(?:(?:can|could|would|should) you|how do you) (?:please )?(?:ask|explain|describe|discuss|compare|implement|design|solve|approach|improve|test|calculate|write|show|outline|handle|validate|optimi[sz]e|use|choose|clarify)\b',text,re.I))
+    # Build follows the same prospective/procedural grammar as design and
+    # implement. Whole-request attribution/history checks above still win.
+    neutral=bool(re.search(r'\b(?:(?:can|could|would|should) you|how do you) (?:please )?(?:ask|explain|describe|discuss|compare|implement|design|build|solve|approach|improve|test|calculate|write|show|outline|handle|validate|optimi[sz]e|use|choose|clarify)\b',text,re.I))
     return not neutral or bool(_BIOGRAPHY.search(text))
 
 

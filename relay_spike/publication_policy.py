@@ -210,6 +210,7 @@ def _fixture_request(row: dict) -> PolicyInput:
     data = dict(row["input"])
     fixture_id = data.pop("question_ref", None)
     question_override = data.pop("question_override", None)
+    data.pop("turn_state", None)
     if fixture_id is not None:
         case = load_cases((fixture_id,))[0]
         if question_override is None:
@@ -246,7 +247,8 @@ def evaluate_evaluation_rows(rows: list[dict]) -> dict:
     for row in rows:
         if not isinstance(row, dict) or set(row) != {
             "id", "partition", "family", "input", "expected_state",
-            "safe_to_publish", "annotated_useful", "annotation"
+            "safe_to_publish", "annotated_useful", "annotation",
+            "technical_correctness", "coverage_label"
         }:
             raise ValueError("Publication fixture missing required labels.")
         idx, partition = row["id"], row["partition"]
@@ -256,6 +258,10 @@ def evaluate_evaluation_rows(rows: list[dict]) -> dict:
                 or row["expected_state"] not in (
                     "reviewed_reference", "model_suggestion_unverified",
                     "needs_revision", "unavailable")
+                or row["technical_correctness"] not in (
+                    "correct", "incorrect", "uncertain", "not_applicable")
+                or row["coverage_label"] not in (
+                    "complete", "partial", "unknown", "not_applicable")
                 or type(row["safe_to_publish"]) is not bool
                 or type(row["annotated_useful"]) is not bool
                 or not isinstance(row["annotation"], str)
@@ -301,6 +307,11 @@ def evaluate_evaluation_rows(rows: list[dict]) -> dict:
         "model_inference_requests": 0,
         "first_useful_verified_ms": None,
         "partitioned": partitions,
+        "annotation_provenance": "synthetic_author_labeled_not_blinded",
+        "independent_checks": (
+            "D02 SQL aggregate semantics are executable in offline unit tests; "
+            "other correctness labels are author annotations, not verified code."
+        ),
     }
     counts["all_guards_met"] = (
         counts["unsafe_published"] == 0 and counts["state_mismatches"] == 0

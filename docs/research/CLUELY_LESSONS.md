@@ -1,5 +1,7 @@
 # Screen context and controls: lessons from a shipped client
 
+Historical first-pass record. The owner requested deeper coverage; see the [expanded REA product/UI investigation](CLUELY_DEEP_DIVE.md) and [measured renderer specification](CLUELY_UI_MEASUREMENTS.md) for the current reconstruction work.
+
 Reviewed 2026-10-23. Static research on Cluely 2.1.24 informs these proposals. No competitor code, prompts, assets or service implementation is copied. No dependency is adopted by this document. This does not change Relay's accepted build contract or imply a delivered screen feature.
 
 ## What the client establishes

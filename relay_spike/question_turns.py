@@ -195,6 +195,9 @@ class QuestionTurnMachine:
         # just by extending its end beyond a newer question's end.
         self._latest_question_start_ms = -1
         self._seen: OrderedDict[str, _Segment] = OrderedDict()
+        # An EOU process/onset carries no transcript delta. Preserve its
+        # ORIGINAL timing separately from later revised final timestamps.
+        self._onset_spans: OrderedDict[str, tuple[int, int]] = OrderedDict()
         self._reopened: set[str] = set()
         self._leading_partial: tuple[str, int, int] | None = None
         self._invalidated_pending_id: str | None = None
@@ -214,6 +217,7 @@ class QuestionTurnMachine:
             self._active = None
             self._interrupted = None
             self._reopened.clear()
+            self._onset_spans.clear()
             self._leading_partial = None
             self._invalidated_pending_id = None
             self._stopped = True
@@ -229,6 +233,7 @@ class QuestionTurnMachine:
             self._active = None
             self._interrupted = None
             self._reopened.clear()
+            self._onset_spans.clear()
             self._leading_partial = None
             self._invalidated_pending_id = None
             self._stopped = False
@@ -238,11 +243,203 @@ class QuestionTurnMachine:
             self._latest_question_start_ms = -1
             self._seen.clear()
 
+    def has_pending_question_context(self, segment_id: str) -> bool:
+        """Whether this unfinished remote segment retains a prior accepted turn.
+
+        A text-free onset cancels the old token but keeps the last accepted
+        question for an explicitly identified correction/follow-up. This
+        read-only query cannot create, restore or authorize a turn.
+        """
+        if not isinstance(segment_id, str) or not segment_id.strip():
+            raise InvalidTranscript("Invalid segment ID.")
+        with self._lock:
+            return bool(
+                not self._stopped and
+                self._interrupted is not None and
+                self._interrupted[0] == segment_id and
+                self._leading_partial is not None and
+                self._leading_partial[0] == segment_id
+            )
+
+    def remote_speech_started(
+        self, *, stream_generation: int, segment_id: str,
+        start_ms: int, end_ms: int,
+    ) -> TurnDecision:
+        """Text-free, *tentative* remote speech onset for later local EOU.
+
+        A trusted capture/VAD host may supply this event before actual ASR
+        text exists. Do not synthesize a partial TranscriptEvent just to
+        preempt a question. This is NOT emitted as text by FluidAudio EOU's
+        process(audioBuffer:) API, and does not independently prove consent.
+        """
+        if (type(stream_generation) is not int or stream_generation < 0 or
+                not isinstance(segment_id, str) or not segment_id.strip() or
+                len(segment_id) > 128 or type(start_ms) is not int or
+                type(end_ms) is not int or start_ms < 0 or end_ms < start_ms):
+            raise InvalidTranscript("Invalid remote onset metadata.")
+        with self._lock:
+            if self._stopped:
+                return TurnDecision("ignored", "stopped_until_explicit_resume")
+            if (self._remote_generation is not None
+                    and stream_generation < self._remote_generation):
+                return TurnDecision("ignored", "stale_stream_generation")
+            if (self._remote_generation is None
+                    or stream_generation > self._remote_generation):
+                self.turns.cancel()
+                self._active = None
+                self._interrupted = None
+                self._seen.clear()
+                self._reopened.clear()
+                self._onset_spans.clear()
+                self._leading_partial = None
+                self._invalidated_pending_id = None
+                self._last_final_end = -1
+                self._latest_question_start_ms = -1
+                self._remote_generation = stream_generation
+                self._blocked_generation = None
+            if self._blocked_generation == stream_generation:
+                return TurnDecision("ignored", "stream_generation_stopped")
+            # The processing signal has no reliable revision field. Once a
+            # segment's FINAL transcript has been recorded, a repeated text-
+            # free onset with that same ID cannot preempt its current token.
+            # A genuine revised final still goes through ingest() and its
+            # separate conflict/reopening quarantine.
+            observed = self._seen.get(segment_id)
+            if observed is not None and observed.status == "final":
+                return TurnDecision("ignored", "finalized_remote_onset_replay")
+            original = self._onset_spans.get(segment_id)
+            if original is None:
+                self._onset_spans[segment_id] = (start_ms, end_ms)
+                if len(self._onset_spans) > MAX_SEEN_SEGMENTS:
+                    # Arbitrary opaque IDs and mutable timestamps cannot
+                    # establish freshness once original onset data is lost.
+                    self.turns.cancel()
+                    self._active = None
+                    self._interrupted = None
+                    self._leading_partial = None
+                    self._onset_spans.clear()
+                    self._blocked_generation = stream_generation
+                    return TurnDecision("needs_review", "onset_history_exhausted")
+                original = (start_ms, end_ms)
+            elif (self._leading_partial is None or
+                  self._leading_partial[0] != segment_id):
+                if original[0] < self._latest_question_start_ms:
+                    # This onset was already observed *before* an accepted
+                    # newer question. Do not let a replay's revised future
+                    # timestamps cancel that question or steal its context.
+                    # This check must precede ANY active-turn mutation.
+                    return TurnDecision("ignored", "superseded_remote_onset")
+            # Source-time revisions cannot move an existing onset past a
+            # newer question or disguise overlap with its original span.
+            start_ms, end_ms = original
+            leading = self._leading_partial
+            if leading is not None and leading[0] == segment_id:
+                # A second VAD/process onset for the SAME source segment is
+                # not a new question. Keep its original first start/end so
+                # ASR timestamp revisions cannot reorder this pending turn.
+                return TurnDecision("pending", "already_pending_remote_onset")
+            if leading is not None and leading[0] != segment_id:
+                if start_ms < leading[1]:
+                    return TurnDecision("ignored", "superseded_remote_onset")
+                if start_ms < leading[2]:
+                    # Two pending remote sources overlap and their speaker/
+                    # intent ordering is unknown. Quarantine *both* onsets
+                    # and the generation so neither late final can reuse A's
+                    # interrupted context. The native host must start a fresh
+                    # ASR generation after overlap review.
+                    self.turns.cancel()
+                    self._active = None
+                    self._interrupted = None
+                    self._leading_partial = None
+                    self._reopened.clear()
+                    self._blocked_generation = stream_generation
+                    return TurnDecision("needs_review", "overlapping_remote_onset")
+            elif (self._active is not None and
+                    start_ms < self._last_final_end and
+                    self._active.current_segment_id != segment_id):
+                self.turns.cancel()
+                self._active = None
+                self._interrupted = None
+                self._leading_partial = None
+                self._reopened.clear()
+                self._blocked_generation = stream_generation
+                return TurnDecision("needs_review", "overlapping_remote_onset")
+
+            if self._active is not None:
+                if self._active.current_segment_id == segment_id:
+                    self._reopened.add(segment_id)
+                    self._interrupted = None
+                else:
+                    self._interrupted = (segment_id, self._active)
+                self.turns.cancel()
+                self._active = None
+            elif self._interrupted is not None and (
+                    self._interrupted[0] != segment_id):
+                self._interrupted = (segment_id, self._interrupted[1])
+
+            self._leading_partial = (segment_id, start_ms, end_ms)
+            self._latest_question_start_ms = max(
+                self._latest_question_start_ms, start_ms
+            )
+            return TurnDecision("pending", "remote_speech_onset_no_text")
+
+    def remote_unrecognized_final(
+        self, *, stream_generation: int, segment_id: str,
+        start_ms: int, end_ms: int,
+    ) -> TurnDecision:
+        """Resolve a finalized *blank* remote EOU without preserving context.
+
+        The adapter owns a bounded terminal replay tombstone for this ID.
+        A blank final is not a speech-onset partial or a new question; it
+        terminates pending correction context instead of transferring it to
+        the next transcript segment.
+        """
+        if (type(stream_generation) is not int or stream_generation < 0 or
+                not isinstance(segment_id, str) or not segment_id.strip()
+                or len(segment_id) > 128 or type(start_ms) is not int
+                or type(end_ms) is not int or start_ms < 0 or end_ms < start_ms):
+            raise InvalidTranscript("Invalid blank EOU metadata.")
+        with self._lock:
+            if self._stopped:
+                return TurnDecision("ignored", "stopped_until_explicit_resume")
+            if (self._remote_generation is not None and
+                    stream_generation < self._remote_generation):
+                return TurnDecision("ignored", "stale_stream_generation")
+            if (self._remote_generation is not None and
+                    stream_generation == self._remote_generation and
+                    self._blocked_generation == stream_generation):
+                return TurnDecision("ignored", "stream_generation_stopped")
+            if (self._remote_generation is None or
+                    stream_generation > self._remote_generation):
+                self._remote_generation = stream_generation
+                self._seen.clear()
+                self._reopened.clear()
+                self._onset_spans.clear()
+                self._last_final_end = -1
+                self._latest_question_start_ms = -1
+                self._blocked_generation = None
+            if (start_ms < self._latest_question_start_ms and
+                    end_ms <= self._last_final_end):
+                return TurnDecision("ignored", "stale_blank_eou")
+            self.turns.cancel()
+            self._active = None
+            self._interrupted = None
+            self._leading_partial = None
+            self._reopened.clear()
+            self._invalidated_pending_id = segment_id
+            self._last_final_end = max(self._last_final_end, end_ms)
+            self._latest_question_start_ms = max(
+                self._latest_question_start_ms, start_ms
+            )
+            return TurnDecision("needs_review", "empty_remote_eou_final")
+
     def _remember(self, e: TranscriptEvent, digest: bytes) -> None:
         existing = self._seen.get(e.segment_id)
         first_start = min(
-            existing.first_start_ms, e.start_ms
-        ) if existing is not None else e.start_ms
+            e.start_ms,
+            existing.first_start_ms if existing is not None else e.start_ms,
+            self._onset_spans.get(e.segment_id, (e.start_ms, e.end_ms))[0],
+        )
         self._seen[e.segment_id] = _Segment(
             e.revision, e.status, digest, first_start
         )
@@ -320,6 +517,7 @@ class QuestionTurnMachine:
                 self._interrupted = None
                 self._seen.clear()
                 self._reopened.clear()
+                self._onset_spans.clear()
                 self._leading_partial = None
                 self._invalidated_pending_id = None
                 self._last_final_end = -1
@@ -334,6 +532,7 @@ class QuestionTurnMachine:
                 self._interrupted = None
                 self._seen.clear()
                 self._reopened.clear()
+                self._onset_spans.clear()
                 self._leading_partial = None
                 self._invalidated_pending_id = None
                 self._blocked_generation = event.stream_generation
@@ -443,9 +642,12 @@ class QuestionTurnMachine:
             # Exempt the currently active, leading or reopened segment
             # because its ASR may revise its original timestamps.
             remembered_start = self._seen.get(event.segment_id)
-            effective_start_ms = (
-                min(event.start_ms, remembered_start.first_start_ms)
-                if remembered_start is not None else event.start_ms
+            original_onset = self._onset_spans.get(event.segment_id)
+            effective_start_ms = min(
+                event.start_ms,
+                remembered_start.first_start_ms
+                if remembered_start is not None else event.start_ms,
+                original_onset[0] if original_onset is not None else event.start_ms,
             )
             if (event.status == "final"
                     and effective_start_ms < self._latest_question_start_ms
@@ -692,7 +894,18 @@ class QuestionTurnMachine:
                 for segment, start, end in prior_intervals
             }
             # Only source metadata is carried across a correction chain.
-            intervals_by_id[event.segment_id] = (event.start_ms, event.end_ms)
+            # Preserve the whole source interval established by an
+            # authorized text-free onset as well as the later ASR final.
+            # The final may revise its start forward: a delayed unknown
+            # segment overlapping the ORIGINAL onset must still invalidate
+            # any answer relying on this text.
+            onset_interval = self._onset_spans.get(event.segment_id)
+            intervals_by_id[event.segment_id] = (
+                min(event.start_ms, onset_interval[0]) if onset_interval
+                else event.start_ms,
+                max(event.end_ms, onset_interval[1]) if onset_interval
+                else event.end_ms,
+            )
             dependency_intervals = tuple(
                 (segment, *intervals_by_id[segment]) for segment in dependencies
             )

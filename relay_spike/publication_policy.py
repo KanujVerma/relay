@@ -194,6 +194,14 @@ def evaluate_publication(request: PolicyInput, *,
         if (request.role == reference.role
                 and request.category == reference.category
                 and question == _normalize_exact_question(reference.question)):
+            # A local reference must still agree with its frozen EVALS source.
+            # A silently changed source question/role/category invalidates
+            # approval rather than broadening the trusted match.
+            fixture = load_cases(("D02",))[0]
+            if (fixture["question"] != reference.question
+                    or fixture["role"] != reference.role
+                    or fixture["category"] != reference.category):
+                return _result("unavailable", "reviewed_fixture_changed")
             return _result("reviewed_reference", "reviewed_full_question", reference)
 
     # Case ID hints are never trusted topic evidence, and are intentionally
@@ -240,6 +248,8 @@ def evaluate_evaluation_rows(rows: list[dict]) -> dict:
                "model_suggestion_unverified": 0, "needs_revision": 0,
                "unavailable": 0, "unsafe_published": 0,
                "benign_withheld": 0, "manually_labeled_useful_published": 0,
+               "annotation_correct": 0, "annotation_incorrect": 0,
+               "coverage_complete": 0, "coverage_partial": 0,
                "state_mismatch": 0}
         for name in ("development", "evaluation")
     }
@@ -293,6 +303,10 @@ def evaluate_evaluation_rows(rows: list[dict]) -> dict:
             row["annotated_useful"] and outcome.publishes
         )
         bucket["state_mismatch"] += int(outcome.state != row["expected_state"])
+        bucket["annotation_correct"] += int(row["technical_correctness"] == "correct")
+        bucket["annotation_incorrect"] += int(row["technical_correctness"] == "incorrect")
+        bucket["coverage_complete"] += int(row["coverage_label"] == "complete")
+        bucket["coverage_partial"] += int(row["coverage_label"] == "partial")
 
     if not all(bucket["n"] for bucket in partitions.values()):
         raise ValueError("Both development and evaluation partitions required.")

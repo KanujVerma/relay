@@ -169,6 +169,25 @@ final class PanelStateTests: XCTestCase {
         XCTAssertNotNil(state.card)
     }
 
+    func testObservedStoppedGenerationCannotPoisonNextSession() {
+        var state = PanelState()
+        let beforeStop = turn("before", 3)
+        XCTAssertTrue(state.apply(.begin(turn: beforeStop, question: "First?")))
+        XCTAssertTrue(state.apply(.stop))
+        XCTAssertFalse(state.apply(.begin(
+            turn: turn("invalid-while-stopped", 1_000_000),
+            question: "Never accepted?"
+        )))
+        XCTAssertTrue(state.apply(.resume))
+        XCTAssertEqual(state.sessionEpoch, 2)
+        // Generation numbers are monotonic per epoch, not across the
+        // separate authorization lifetime identified by sessionEpoch.
+        let afterResume = turn("after", 1, epoch: 2)
+        XCTAssertTrue(state.apply(.begin(turn: afterResume, question: "Authorized new session?")))
+        XCTAssertFalse(state.apply(.publish(turn: beforeStop, card: card())))
+        XCTAssertTrue(state.apply(.publish(turn: afterResume, card: card())))
+    }
+
     func testWithheldTextNeverEntersPresentationState() {
         var state = PanelState()
         let key = turn("unknown", 1)

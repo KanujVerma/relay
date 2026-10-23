@@ -17,6 +17,7 @@ import json
 import re
 import struct
 import sys
+import unicodedata
 from typing import Callable
 
 from .personal_brain import BrainError, BrainStore
@@ -27,13 +28,14 @@ from .profile_preparation import (MAX_SNAPSHOT_BYTES, ProfilePreparation,
 MAX_FRAME_BYTES = 16 * 1024
 CHUNK_BYTES = 4096
 _FIELDS = {
-    "new": (), "state": (), "sources": (), "snapshot_begin": (), "snapshot_end": (),
+    "new": (), "lock": (), "state": (), "sources": (), "snapshot_begin": (), "snapshot_end": (),
     "snapshot_chunk": ("offset",),
     "load_begin": ("size", "sha256"), "load_commit": (),
     "select_begin": ("size", "sha256", "file_type", "purpose", "label", "role", "project_hint"),
     "select_commit": (), "transfer_chunk": ("offset", "data"), "transfer_abort": (),
     "decide": ("fact_id", "fingerprint", "decision", "actor", "claim_key", "replaces_fact_id"),
     "approve_job": ("source_id", "fingerprint"), "revoke": ("source_id",),
+    "current_claim": ("claim_key",),
 }
 
 
@@ -101,11 +103,20 @@ class ProfileBridge:
                 raise BrainError("Profile is already initialized.")
             self._ready = True
             return self._state()
+        if command == "lock":
+            self._retire()
+            self._ready = False
+            self._transfer = None
+            self._prep.store.close()
+            self._prep = ProfilePreparation(BrainStore(), host_capability=self.__cap)
+            return {"ok": True}
         if command in ("load_begin", "select_begin"):
             if self._transfer is not None:
                 raise BrainError("A profile transfer is already active.")
             if command == "select_begin" and not self._ready:
                 raise BrainError("Open the protected profile first.")
+            if command == "load_begin" and self._ready:
+                raise BrainError("Lock the active profile before loading a snapshot.")
             size, digest = message.get("size"), message.get("sha256")
             limit = MAX_SNAPSHOT_BYTES if command == "load_begin" else 2 * 1024 * 1024
             if (type(size) is not int or not 0 < size <= limit or
@@ -175,6 +186,16 @@ class ProfileBridge:
                 "SELECT p.source_id,p.label,p.purpose FROM profile_source p JOIN source s ON s.id=p.source_id "
                 "WHERE s.revoked_at IS NULL ORDER BY p.rowid")
             return {"ok": True, "sources": [{"source_id": r[0], "label": r[1][:64], "purpose": r[2]} for r in rows]}
+        if command == "current_claim":
+            key = message.get("claim_key")
+            if not isinstance(key, str) or not 0 < len(key) <= 160:
+                raise BrainError("Invalid current claim key.")
+            normalize = lambda value: unicodedata.normalize("NFKC", value).casefold().strip()
+            matches = [asdict(fact) for fact in self._prep.store.verified_claims()
+                       if normalize(fact.claim_key) == normalize(key)]
+            if len(matches) > 1:
+                raise BrainError("Existing claim has unresolved collisions.")
+            return {"ok": True, "fact": matches[0] if matches else None}
         if command == "snapshot_begin":
             self._snapshot = export_memory_snapshot(self._prep.store)
             return {"ok": True, "size": len(self._snapshot), "sha256": sha256(self._snapshot).hexdigest()}

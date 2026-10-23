@@ -20,7 +20,7 @@
 
 - [x] Retrieval contract: write failing synthetic tests for relevance, bounded facts, ownership, conflict/missing/revoked states, and stale/counterfeit bundles. Implement provider and run the tests plus existing provenance tests. Commit and send the API and fixtures to the answer lane.
 - [x] Preparation and snapshots: test selected text/document preparation, reviewed job context, exact locators, direct approval rejection, snapshot restoration, and redaction. Implement a bounded in-memory service and inherited-pipe helper. Never put raw documents into snapshots. Commit after targeted tests pass.
-- [ ] Protected native host: inspect pinned upstream source/tests/license. Test AES-GCM authenticated roundtrip/tampering, key-provider failures, atomic persistence, startup without import and real helper lifecycle with synthetic input. Implement Keychain adapter, native picker/review UI and protected persistence. Build/test without launching real-input actions. Commit.
+- [x] Protected native host: inspect pinned upstream source/tests/license. Test AES-GCM authenticated roundtrip/tampering, key-provider failures, atomic persistence, startup without import and real helper lifecycle with synthetic input. Implement Keychain adapter, native picker/review UI and protected persistence. Build/test without launching real-input actions. Commit.
 - [ ] Verify integration: run full Python checks, macOS-profile tests/build, synthetic helper reopen/revocation checks and document current limitations. Update lane record and report. Push scoped branch and draft PR against the controller foundation once available; no merge.
 
 ## Source decisions

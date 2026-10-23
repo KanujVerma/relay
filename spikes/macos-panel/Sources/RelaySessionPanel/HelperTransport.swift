@@ -25,6 +25,59 @@ private final class OwnedChildExit: @unchecked Sendable {
 
 public enum HelperMode: Sendable { case noInference, fixture, oauth }
 
+/// A queued image can retire without waiting behind an unrelated blocked write.
+/// Once its first byte is written, only full completion or transport failure ends it.
+private final class ImageWriteReservation:@unchecked Sendable {
+    let id=UUID()
+    let byteCount:Int
+    private let lock=NSLock()
+    private var bytes:Data?
+    private var started=false
+    private var result:Result<Void,any Error>?
+    private var waiter:CheckedContinuation<Void,any Error>?
+    init(_ bytes:Data){self.bytes=bytes;byteCount=bytes.count}
+    var isFinished:Bool{lock.withLock{result != nil}}
+    var hasStarted:Bool{lock.withLock{started}}
+    func wait()async throws {
+        try await withCheckedThrowingContinuation{continuation in
+            let ready:Result<Void,any Error>?=lock.withLock{if let result{return result};waiter=continuation;return nil}
+            if let ready{continuation.resume(with:ready)}
+        }
+    }
+    func retire(_ error:any Error) {
+        let pending=lock.withLock{
+            guard !started,result==nil else{return Optional<CheckedContinuation<Void,any Error>>.none}
+            result = .failure(error);bytes=nil;let pending=waiter;waiter=nil;return pending
+        }
+        pending?.resume(throwing:error)
+    }
+    func finish(_ outcome:Result<Void,any Error>) {
+        let pending=lock.withLock{
+            guard result==nil else{return Optional<CheckedContinuation<Void,any Error>>.none}
+            result=outcome;bytes=nil;let pending=waiter;waiter=nil;return pending
+        }
+        pending?.resume(with:outcome)
+    }
+    /// Runs on MainActor so source retirement cannot interleave between its
+    /// currentness check and the first nonblocking write. Cancellation shares
+    /// this lock; an EAGAIN has not started a frame and stays retireable.
+    @MainActor func start(fd:Int32,deadline:UInt64,isCurrent:()->Bool)throws ->(Data,Int)? {
+        try lock.withLock{
+            guard result==nil,!started,let bytes else{return nil}
+            guard isCurrent() else{throw CancellationError()}
+            guard DispatchTime.now().uptimeNanoseconds<deadline else{throw PanelBridgeError.timedOut}
+            let count=bytes.withUnsafeBytes{raw in
+                var count=Darwin.write(fd,raw.baseAddress!,raw.count)
+                while count<0,errno==EINTR{count=Darwin.write(fd,raw.baseAddress!,raw.count)}
+                return count
+            }
+            if count>0{started=true;self.bytes=nil;return(bytes,count)}
+            if count<0,(errno==EAGAIN || errno==EWOULDBLOCK){return nil}
+            throw PanelBridgeError.closed
+        }
+    }
+}
+
 /// One child and owned binary pipes. Writes are nonblocking with a deadline;
 /// bounded queue overflow/EOF/malformed input retires native admission.
 public final class HelperTransport: @unchecked Sendable {
@@ -45,6 +98,7 @@ public final class HelperTransport: @unchecked Sendable {
     private var visualReplies:[UUID:VisualInputResponse]=[:]
     private var visualReplyOrder:[UUID]=[]
     private var visualRequestCount=0
+    private var imageWrites:[UUID:ImageWriteReservation]=[:]
     private var queuedFrames=0;private var queuedBytes=0;private var failed=false
     private let exitReceipt=OwnedChildExit()
     private let decoder=AnswerFrameDecoder();private var partialSince:UInt64?
@@ -94,10 +148,17 @@ public final class HelperTransport: @unchecked Sendable {
             guard isCurrent() else{throw CancellationError()}
             guard DispatchTime.now().uptimeNanoseconds<deadline else{throw PanelBridgeError.timedOut}
             do {
-                try await withCheckedThrowingContinuation{(continuation:CheckedContinuation<Void,any Error>) in
-                    do{try enqueue(frame,completion:{continuation.resume(with:$0)})}
-                    catch{continuation.resume(throwing:error)}
+                let reservation=ImageWriteReservation(frame)
+                try enqueueImage(reservation,deadline:deadline,isCurrent:isCurrent)
+                let monitor=Task{@MainActor in
+                    while !reservation.isFinished {
+                        if !isCurrent(){reservation.retire(CancellationError());return}
+                        if DispatchTime.now().uptimeNanoseconds>=deadline{reservation.retire(PanelBridgeError.timedOut);return}
+                        do{try await Task.sleep(for:.milliseconds(1))}catch{return}
+                    }
                 }
+                defer{monitor.cancel()}
+                try await withTaskCancellationHandler{try await reservation.wait()}onCancel:{reservation.retire(CancellationError())}
                 try Task.checkCancellation()
                 guard isCurrent() else{throw CancellationError()}
                 guard DispatchTime.now().uptimeNanoseconds<deadline else{throw PanelBridgeError.timedOut}
@@ -209,24 +270,51 @@ public final class HelperTransport: @unchecked Sendable {
         case .terminal(let continuation):continuation.resume(returning:reply)
         }
     }
-    private func enqueue(_ frame:Data,completion:(@Sendable(Result<Void,any Error>)->Void)?=nil) throws {
+    private func enqueue(_ frame:Data) throws {
         try lock.withLock {
             guard !failed,input != nil else { throw PanelBridgeError.closed }
             guard queuedFrames<32,queuedBytes+frame.count<=262144 else { throw PanelBridgeError.overflow }
             queuedFrames+=1;queuedBytes+=frame.count
         }
         writes.async { [weak self] in
-            guard let self else { completion?(.failure(PanelBridgeError.closed));return }
+            guard let self else { return }
             defer { self.lock.withLock { self.queuedFrames-=1;self.queuedBytes-=frame.count } }
-            do { try self.write(frame);completion?(.success(())) }
-            catch { self.fail();completion?(.failure(PanelBridgeError.closed)) }
+            do { try self.write(frame) } catch { self.fail() }
         }
     }
-    private func write(_ frame:Data) throws {
+    private func enqueueImage(_ reservation:ImageWriteReservation,deadline:UInt64,isCurrent:@escaping @MainActor ()->Bool)throws {
+        try lock.withLock{
+            guard !failed,input != nil else{throw PanelBridgeError.closed}
+            guard queuedFrames<32,queuedBytes+reservation.byteCount<=262144 else{throw PanelBridgeError.overflow}
+            queuedFrames+=1;queuedBytes+=reservation.byteCount;imageWrites[reservation.id]=reservation
+        }
+        writes.async{[weak self] in
+            guard let self else{reservation.finish(.failure(PanelBridgeError.closed));return}
+            // Keep the bounded queue slot until it drains, even if its bytes
+            // and waiter retire earlier. No unbounded cancelled work queue.
+            defer{self.lock.withLock{self.queuedFrames-=1;self.queuedBytes-=reservation.byteCount;self.imageWrites.removeValue(forKey:reservation.id)}}
+            do {
+                guard let fd=self.lock.withLock({!self.failed ? self.input?.fileDescriptor:nil}) else{throw PanelBridgeError.closed}
+                while !reservation.isFinished {
+                    let first=try DispatchQueue.main.sync{
+                        try MainActor.assumeIsolated{try reservation.start(fd:fd,deadline:deadline,isCurrent:isCurrent)}
+                    }
+                    if let (frame,offset)=first {
+                        try self.write(frame,startingAt:offset);reservation.finish(.success(()));return
+                    }
+                    if !reservation.isFinished{var descriptor=pollfd(fd:fd,events:Int16(POLLOUT),revents:0);_=poll(&descriptor,1,50)}
+                }
+            }catch{
+                if reservation.hasStarted{self.fail()}
+                reservation.finish(.failure(error))
+            }
+        }
+    }
+    private func write(_ frame:Data,startingAt:Int=0) throws {
         guard let fd=lock.withLock({ !failed ? input?.fileDescriptor:nil }) else { throw PanelBridgeError.closed }
         let deadline=DispatchTime.now().uptimeNanoseconds+2_000_000_000
         try frame.withUnsafeBytes { raw in
-            var offset=0
+            var offset=startingAt
             while offset<raw.count {
                 guard DispatchTime.now().uptimeNanoseconds<deadline,!lock.withLock({ failed }) else { throw PanelBridgeError.timedOut }
                 let n=Darwin.write(fd,raw.baseAddress!.advanced(by:offset),raw.count-offset)
@@ -299,15 +387,16 @@ public final class HelperTransport: @unchecked Sendable {
     }
 
     public func stop() {
-        let (child,pending)=lock.withLock {
+        let (child,pending,images)=lock.withLock {
             failed=true;let pending=Array(profileRequests.values);profileRequests.removeAll()
             let sessions=Array(quiescenceRequests.values);quiescenceRequests.removeAll()
             sessions.forEach { $0.2.resume(throwing:PanelBridgeError.closed) }
             let visual=Array(visualRequests.values);visualRequests.removeAll()
             visual.forEach{$0.continuation.resume(throwing:PanelBridgeError.closed)}
-            return (process,pending)
+            return (process,pending,Array(imageWrites.values))
         }
         pending.forEach { $0.resume(throwing:PanelBridgeError.closed) }
+        images.forEach{$0.retire(PanelBridgeError.closed)}
         io.async { [weak self] in
             guard let self else { return };self.source?.cancel();self.stderrSource?.cancel();self.timer?.cancel()
         }

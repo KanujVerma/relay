@@ -33,12 +33,14 @@ struct SpeechAssetStore:Sendable {
     let directory:URL
     let manifest:SpeechAssetManifest
     private let availableCapacity:@Sendable(URL)throws->UInt64
+    private let preparationTimeoutNanoseconds:UInt64
     private static let marker=".verified-manifest"
     static var defaultDirectory:URL {
         FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0]
             .resolvingSymlinksInPath().appendingPathComponent("Relay/Speech/v1")
     }
     init(directory:URL,manifest:SpeechAssetManifest = .managedDefault,
+         preparationTimeoutNanoseconds:UInt64=900_000_000_000,
          availableCapacity:@escaping @Sendable(URL)throws->UInt64 = {url in
              var existing=url
              while !FileManager.default.fileExists(atPath:existing.path),existing.path != "/"{existing.deleteLastPathComponent()}
@@ -50,6 +52,7 @@ struct SpeechAssetStore:Sendable {
         // Foundation may retain macOS's /var alias even after resolution.
         // Do not normalize any user-controlled managed child through symlinks.
         self.directory=directory;self.manifest=manifest;self.availableCapacity=availableCapacity
+        self.preparationTimeoutNanoseconds=min(900_000_000_000,max(1,preparationTimeoutNanoseconds))
     }
     private var entry:URL{directory.appendingPathComponent(manifest.id)}
     private func kind(_ url:URL)throws->FileAttributeType?{
@@ -114,7 +117,10 @@ struct SpeechAssetStore:Sendable {
         }
         if requiresMarker {
             let marker=root.appendingPathComponent(Self.marker)
-            guard try kind(marker) == .typeRegular,(try? Data(contentsOf:marker))==Data((manifest.id+"\n").utf8) else{throw SpeechSetupError.invalidArtifacts}
+            let expectedMarker=Data((manifest.id+"\n").utf8)
+            guard try kind(marker) == .typeRegular,
+                  (try FileManager.default.attributesOfItem(atPath:marker.path)[.size] as? NSNumber)?.uint64Value==UInt64(expectedMarker.count),
+                  (try? Data(contentsOf:marker))==expectedMarker else{throw SpeechSetupError.invalidArtifacts}
         }
         for artifact in manifest.artifacts{try validateFile(root.appendingPathComponent(artifact.localPath),artifact:artifact)}
     }
@@ -133,12 +139,15 @@ struct SpeechAssetStore:Sendable {
         let digest=hash.finalize().map{String(format:"%02x",$0)}.joined()
         guard count==artifact.byteCount,digest==artifact.sha256 else{throw SpeechSetupError.invalidArtifacts}
     }
-    private func lease()async throws->SpeechCacheLease{
+    private func lease(deadline:UInt64)async throws->SpeechCacheLease{
         try ensureRoot()
         let fd=Darwin.open(directory.appendingPathComponent(".preparation-lock").path,O_CREAT|O_RDWR|O_NOFOLLOW|O_CLOEXEC,0o600)
         guard fd>=0 else{throw SpeechSetupError.unsafeCache}
         let owned=SpeechCacheLease(fd)
-        while flock(fd,LOCK_EX|LOCK_NB) != 0 {
+        while true {
+            try Task.checkCancellation()
+            guard DispatchTime.now().uptimeNanoseconds<deadline else{throw SpeechSetupError.downloadUnavailable}
+            if flock(fd,LOCK_EX|LOCK_NB)==0{break}
             guard errno==EWOULDBLOCK || errno==EAGAIN else{throw SpeechSetupError.unsafeCache}
             try Task.checkCancellation();try await Task.sleep(for:.milliseconds(10))
         }
@@ -152,35 +161,39 @@ struct SpeechAssetStore:Sendable {
             try FileManager.default.removeItem(at:url)
         }
     }
+    private func checkCurrent(deadline:UInt64)throws{
+        try Task.checkCancellation()
+        guard DispatchTime.now().uptimeNanoseconds<deadline else{throw SpeechSetupError.downloadUnavailable}
+    }
     func prepare(using downloader:any SpeechAssetDownloading,progress:@escaping @Sendable(SpeechSetupProgress)->Void)async throws->PreparedSpeechAssets{
         try Task.checkCancellation()
-        let ownership=try await lease()
+        let deadline=DispatchTime.now().uptimeNanoseconds+preparationTimeoutNanoseconds
+        let ownership=try await lease(deadline:deadline)
         return try await withExtendedLifetimeAsync(ownership){
             try cleanAbandonedStaging()
             progress(SpeechSetupProgress(.checking,totalBytes:manifest.totalBytes))
-            if let cached=try cachedAssets(){return cached}
+            if let cached=try cachedAssets(){try checkCurrent(deadline:deadline);return cached}
             guard try availableCapacity(directory)>=1_073_741_824 else{throw SpeechSetupError.insufficientStorage}
             let staging=directory.appendingPathComponent(".stage-"+UUID().uuidString)
             try FileManager.default.createDirectory(at:staging,withIntermediateDirectories:false,attributes:[.posixPermissions:0o700])
             do {
                 for item in manifest.artifacts{try FileManager.default.createDirectory(at:staging.appendingPathComponent(item.localPath).deletingLastPathComponent(),withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])}
                 let bytes=SpeechByteProgress(artifacts:manifest.artifacts,publish:progress)
-                let deadline=DispatchTime.now().uptimeNanoseconds+900_000_000_000
                 try await withThrowingTaskGroup(of:Void.self){group in
                     var next=0
                     func add(_ index:Int){group.addTask{
                         try Task.checkCancellation()
                         let item=manifest.artifacts[index],destination=staging.appendingPathComponent(item.localPath)
                         try await downloader.download(item,to:destination,deadline:deadline,progress:{bytes.update($0,index:index)})
-                        try validateFile(destination,artifact:item);bytes.update(item.byteCount,index:index)
+                        try checkCurrent(deadline:deadline);try validateFile(destination,artifact:item);bytes.update(item.byteCount,index:index)
                     }}
                     for _ in 0..<min(2,manifest.artifacts.count){add(next);next+=1}
                     while try await group.next() != nil{if next<manifest.artifacts.count{add(next);next+=1}}
                 }
-                try Task.checkCancellation();bytes.validating()
+                try checkCurrent(deadline:deadline);bytes.validating()
                 try validateTree(staging,requiresMarker:false)
                 try Data((manifest.id+"\n").utf8).write(to:staging.appendingPathComponent(Self.marker),options:.atomic)
-                try Task.checkCancellation()
+                try checkCurrent(deadline:deadline)
                 if let cached=try cachedAssets(){try FileManager.default.removeItem(at:staging);return cached}
                 var previous:URL?
                 if try kind(entry) != nil {

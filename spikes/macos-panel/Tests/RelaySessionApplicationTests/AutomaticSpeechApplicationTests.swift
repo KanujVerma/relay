@@ -9,8 +9,9 @@ private actor AutomaticSpeechCalls {
 }
 private actor AutomaticSpeechGate {
     var entered=false
+    private(set) var count=0
     private var completion:CheckedContinuation<PreparedSpeechAssets,Never>?
-    func prepare()async->PreparedSpeechAssets{entered=true;return await withCheckedContinuation{completion=$0}}
+    func prepare()async->PreparedSpeechAssets{entered=true;count+=1;return await withCheckedContinuation{completion=$0}}
     func release(){completion?.resume(returning:PreparedSpeechAssets(manifestID:"synthetic-v1",asrModelRoot:URL(fileURLWithPath:"/private/tmp/not-loaded"),vadCompiledModel:URL(fileURLWithPath:"/private/tmp/not-loaded/vad.mlmodelc")));completion=nil}
 }
 @MainActor final class AutomaticSpeechApplicationTests:XCTestCase {
@@ -48,6 +49,14 @@ private actor AutomaticSpeechGate {
         XCTAssertNotNil(model.error);XCTAssertFalse(model.running);XCTAssertFalse(model.starting)
         await model.stop()
     }
+    func testSyntheticHelperMarkerControlCanActuallyObserveHelperStartup()async throws{
+        let (directory,file,marker)=try launcher();defer{try? FileManager.default.removeItem(at:directory)}
+        let model=SessionApplicationModel(arguments:["relay","--repository",root.path,"--python",file.path])
+        _=try model.ensureHelper()
+        for _ in 0..<1000{if FileManager.default.fileExists(atPath:marker.path){break};try await Task.sleep(for:.milliseconds(2))}
+        XCTAssertTrue(FileManager.default.fileExists(atPath:marker.path),"the no-helper assertions need a functioning observable child")
+        await model.stop()
+    }
     func testUnavailablePreparationSurfacesItsRecoveryWithoutLaunchingHelperOrCapture()async throws{
         let (directory,file,marker)=try launcher();defer{try? FileManager.default.removeItem(at:directory)}
         let setup=SpeechSetupCoordinator(prepare:{_ in throw SpeechSetupError.offline})
@@ -76,5 +85,47 @@ private actor AutomaticSpeechGate {
         await gate.release();await starting.value;await ending.value
         XCTAssertFalse(model.running);XCTAssertFalse(model.starting);XCTAssertFalse(model.stopping);XCTAssertFalse(model.paused)
         XCTAssertFalse(FileManager.default.fileExists(atPath:marker.path));XCTAssertNil(model.currentSessionID)
+    }
+    func testUnexpectedPreparationFailureUsesTheSameSafeRecoveryMessage()async throws{
+        let setup=SpeechSetupCoordinator(prepare:{_ in throw NSError(domain:"synthetic-private-path-must-not-appear",code:1)})
+        let model=SessionApplicationModel(arguments:["relay","--repository",root.path],speechSetup:setup)
+        model.authorizedConversation=true;await model.start()
+        XCTAssertEqual(model.error,setup.snapshot.userMessage);XCTAssertEqual(setup.snapshot.stage,.unavailable)
+        XCTAssertFalse(model.error?.contains("synthetic-private") ?? true);await model.stop()
+    }
+    func testSourceChoiceAndAdvancedOverrideFailuresNeverDownloadOrStartHelper()async throws{
+        let (directory,file,marker)=try launcher();defer{try? FileManager.default.removeItem(at:directory)}
+        let calls=AutomaticSpeechCalls(),setup=SpeechSetupCoordinator(prepare:{_ in try await calls.prepare()})
+        let model=SessionApplicationModel(arguments:["relay","--repository",root.path,"--python",file.path],speechSetup:setup)
+        model.authorizedConversation=true;model.microphoneEnabled=false
+        await model.start();XCTAssertNotNil(model.error)
+        model.microphoneEnabled=true;model.asrFolder="/private/tmp/synthetic-unused-model"
+        await model.start();XCTAssertEqual(model.error,SpeechSetupError.advancedOverrideInvalid.localizedDescription)
+        let count=await calls.count;XCTAssertEqual(count,0);XCTAssertEqual(setup.snapshot.stage,.notPrepared)
+        XCTAssertFalse(FileManager.default.fileExists(atPath:marker.path));await model.stop()
+    }
+    func testChangedRecordingConsentAfterPreparationNeverBeginsCaptureOrHelper()async throws{
+        let (directory,file,marker)=try launcher();defer{try? FileManager.default.removeItem(at:directory)}
+        let gate=AutomaticSpeechGate(),setup=SpeechSetupCoordinator(prepare:{_ in await gate.prepare()})
+        let model=SessionApplicationModel(arguments:["relay","--repository",root.path,"--python",file.path],speechSetup:setup)
+        model.authorizedConversation=true;let starting=Task{await model.start()}
+        try await waitUntil{await gate.entered};model.authorizedConversation=false
+        await gate.release();await starting.value
+        XCTAssertFalse(model.running);XCTAssertFalse(model.starting);XCTAssertNotNil(model.error)
+        XCTAssertFalse(FileManager.default.fileExists(atPath:marker.path));await model.stop()
+    }
+    func testExplicitRetryCreatesNewIntentOnlyAfterActualCancelledPreparationJoins()async throws{
+        let gate=AutomaticSpeechGate(),setup=SpeechSetupCoordinator(prepare:{_ in await gate.prepare()})
+        let model=SessionApplicationModel(arguments:["relay","--repository",root.path],speechSetup:setup)
+        model.authorizedConversation=true;let first=Task{await model.start()}
+        try await waitUntil{await gate.count==1};model.cancelPreparation()
+        await model.retryPreparation()
+        let during=await gate.count;XCTAssertEqual(during,1)
+        await gate.release();await first.value
+        try await waitUntil{model.canStartSession}
+        XCTAssertEqual(setup.snapshot.stage,.cancelled)
+        let second=Task{await model.retryPreparation()}
+        try await waitUntil{await gate.count==2};model.cancelPreparation();await gate.release();await second.value
+        await model.stop();XCTAssertFalse(model.running);XCTAssertEqual(setup.snapshot.stage,.cancelled)
     }
 }

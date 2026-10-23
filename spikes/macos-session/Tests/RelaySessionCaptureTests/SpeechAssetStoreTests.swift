@@ -13,12 +13,19 @@ private actor TinySpeechDownloader:SpeechAssetDownloading {
 private struct OfflineSpeechDownloader:SpeechAssetDownloading {
     func download(_ artifact:SpeechAssetArtifact,to destination:URL,deadline:UInt64,progress:@escaping @Sendable(UInt64)->Void)async throws{throw SpeechSetupError.offline}
 }
+private struct LateSpeechDownloader:SpeechAssetDownloading {
+    func download(_ artifact:SpeechAssetArtifact,to destination:URL,deadline:UInt64,progress:@escaping @Sendable(UInt64)->Void)async throws{
+        try await Task.sleep(for:.milliseconds(40));try Data("abc".utf8).write(to:destination)
+    }
+}
 private actor HeldSpeechDownloader:SpeechAssetDownloading {
     private(set) var entered=false
+    private(set) var calls=0,active=0,peak=0
     private var releases:[CheckedContinuation<Void,Never>]=[]
     private var released=false
     func download(_ artifact:SpeechAssetArtifact,to destination:URL,deadline:UInt64,progress:@escaping @Sendable(UInt64)->Void)async throws{
-        try Task.checkCancellation();entered=true
+        try Task.checkCancellation();entered=true;calls+=1;active+=1;peak=max(peak,active)
+        defer{active-=1}
         if !released{await withCheckedContinuation{releases.append($0)}}
         try Task.checkCancellation()
         try Data("abc".utf8).write(to:destination)
@@ -96,5 +103,42 @@ private actor HeldSpeechDownloader:SpeechAssetDownloading {
         let offline=SpeechSetupCoordinator(store:store,downloader:OfflineSpeechDownloader())
         let reused=try await offline.prepare()
         XCTAssertEqual(reused,prepared);XCTAssertEqual(offline.snapshot.stage,.ready);XCTAssertEqual(offline.snapshot.totalBytes,15)
+    }
+    func testSameRootPreparationsCoalesceUnderLockAndNeverExceedTwoActiveFiles()async throws{
+        let store=try store(),downloader=HeldSpeechDownloader()
+        let first=Task{try await store.prepare(using:downloader,progress:{_ in})}
+        for _ in 0..<200{if await downloader.active==2{break};try await Task.sleep(for:.milliseconds(2))}
+        let second=Task{try await store.prepare(using:downloader,progress:{_ in})}
+        for _ in 0..<10{await Task.yield()}
+        let inFlight=await downloader.calls;XCTAssertEqual(inFlight,2)
+        await downloader.finish()
+        let a=try await first.value,b=try await second.value
+        let calls=await downloader.calls,peak=await downloader.peak
+        XCTAssertEqual(a,b);XCTAssertEqual(calls,5);XCTAssertEqual(peak,2)
+    }
+    func testWaitingForAnotherCacheOwnerIsBoundedByTheSamePreparationDeadline()async throws{
+        let store=try store(),downloader=HeldSpeechDownloader()
+        let first=Task{try await store.prepare(using:downloader,progress:{_ in})}
+        for _ in 0..<200{if await downloader.entered{break};try await Task.sleep(for:.milliseconds(2))}
+        let bounded=try SpeechAssetStore(directory:directory,manifest:manifest(),preparationTimeoutNanoseconds:30_000_000)
+        do{_=try await bounded.prepare(using:OfflineSpeechDownloader(),progress:{_ in});XCTFail("cache lock ignored preparation deadline")}
+        catch let error as SpeechSetupError{XCTAssertEqual(error,.downloadUnavailable)}
+        await downloader.finish();_=try await first.value
+    }
+    func testCancellationAtValidationBoundaryCannotPublishOrRetainStaging()async throws{
+        let store=try store()
+        let preparing=Task{try await store.prepare(using:TinySpeechDownloader(),progress:{progress in
+            if progress.stage == .validating{withUnsafeCurrentTask{$0?.cancel()}}
+        })}
+        do{_=try await preparing.value;XCTFail("cancelled validation published assets")}catch is CancellationError{}
+        XCTAssertNil(try store.cachedAssets())
+        XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath:directory.path).contains{$0.hasPrefix(".stage-")})
+    }
+    func testLateChildCompletionCannotPromoteAnExpiredPreparation()async throws{
+        let store=try SpeechAssetStore(directory:directory,manifest:manifest(),preparationTimeoutNanoseconds:20_000_000)
+        do{_=try await store.prepare(using:LateSpeechDownloader(),progress:{_ in});XCTFail("late child authorized expired setup")}
+        catch let error as SpeechSetupError{XCTAssertEqual(error,.downloadUnavailable)}
+        XCTAssertNil(try store.cachedAssets())
+        XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath:directory.path).contains{$0.hasPrefix(".stage-")})
     }
 }

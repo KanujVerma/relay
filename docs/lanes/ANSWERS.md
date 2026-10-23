@@ -1,6 +1,6 @@
 # Answers lane checkpoint
 
-Branch feature/contextual-answer-panel-2026-10-23, issue #62. Original base3e0eb379fdc8a710dd9ebee51bc93b8c6004e02d; foundationa8f8359 merged. Draft PR #67: https://github.com/KanujVerma/relay/pull/67. Published application checkpoint cbe68c2; final restart/queue/feedback fixes follow in the current source checkpoint. Controller independent review is pending.
+Branch feature/contextual-answer-panel-2026-10-23, issue #62. Original base3e0eb379fdc8a710dd9ebee51bc93b8c6004e02d; foundationa8f8359 merged. Draft PR #67: https://github.com/KanujVerma/relay/pull/67. Verified source head 870396415708ac3ca40176add33234b6ff0c1d3d (published); any later lane-handoff-only commit does not change that tested source. Controller independent review is pending.
 
 ## Implemented
 

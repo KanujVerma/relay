@@ -38,6 +38,8 @@ On explicit capture authorization loss, the adapter retires **at least the gener
 
 A blank successful EOU is unresolved remote speech, not silence. The machine cancels a current answer or pending correction if a blank EOU overlaps **any accepted contributing question/correction source interval**, including earlier roots and original text-free onset spans, even when its end is older than the newest finalized correction. A truly unrelated older blank may be ignored by the state machine but remains a recorded review-only terminal in the bridge; same-millisecond terminal boundaries are treated conservatively. These decisions are synthetic tests, not speech/diarization evidence.
 
+A blank finalized revision of a **retained dependency segment ID** invalidates the latest correction even if the new timestamp lies entirely outside the old span: provenance identity takes precedence over stale-time suppression. Contradictory text or revisions of a previously blank terminal trigger a full QuestionTurnMachine cancellation, clearing any interrupted context and requiring explicit host authorization/resume with a fresh ASR generation; cancelling just ActiveTurns is insufficient.
+
 The bounded blank-final tombstone map has only 128 entries. Once it must evict any finalized blank identity, the entire current generation stops automatic question routing because arbitrary opaque segment IDs and revised timestamps do not prove that a later "new" final was not the evicted terminal. A future generation restores routing. These fail-closed behaviors are **not** evidence that the local FluidAudio worker implements native permission or overlap detection.
 
 ## Intent and answer safety

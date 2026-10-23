@@ -41,4 +41,24 @@ import XCTest
         let running = await port.isRunning
         XCTAssertFalse(running)
     }
+
+    func testSharedPortCloseLocksProfileWithoutStoppingConversationHelper() async throws {
+        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let helper = PipeProfilePort(python: URL(fileURLWithPath: "/opt/homebrew/bin/python3"), repository: repo)
+        let shared = ClosureProfilePort(request: { try await helper.request($0) }, close: {})
+        let client = ProfileClient(port: shared)
+        _ = try await client.command(["command": "new"])
+        let snapshot = try await client.snapshot()
+        await client.close()
+        let running = await helper.isRunning
+        XCTAssertTrue(running)
+        do {
+            _ = try await client.command(["command": "state"])
+            XCTFail("Locked context remained readable")
+        } catch ProfileError.rejected {}
+        let reopened = try await client.load(snapshot)
+        XCTAssertEqual(reopened["ready"] as? Bool, true)
+        await helper.close()
+    }
 }

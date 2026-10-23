@@ -111,6 +111,12 @@ class ProfileBridgeTests(unittest.TestCase):
                     input=struct.pack(">I", MAX_FRAME_BYTES+1), capture_output=True, cwd=root, timeout=5)
         self.assertNotEqual(malformed.returncode, 0)
         self.assertEqual(malformed.stderr, b"")
+        duplicate = b'{"command":"new","command":"new"}'
+        replay = subprocess.run([sys.executable, "-m", "relay_spike.profile_bridge"],
+                    input=struct.pack(">I", len(duplicate)) + duplicate,
+                    capture_output=True, cwd=root, timeout=5)
+        self.assertFalse(json.loads(replay.stdout[4:])["ok"])
+        self.assertEqual(replay.stderr, b"")
 
 
 if __name__ == "__main__":

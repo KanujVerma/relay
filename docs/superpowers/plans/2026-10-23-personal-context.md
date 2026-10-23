@@ -26,3 +26,7 @@
 ## Source decisions
 
 KeychainAccess v4.2.2 at 84e546727d66f1adc5439debad16270d0fdd04e7 (MIT) and Apple swift-crypto 3.15.1 at 95ba0316a9b733e92bb6b071255ff46263bbe7dc (Apache-2.0) are source/test references. Use native Security/CryptoKit APIs directly rather than vendoring either wrapper or adding a runtime package. Exact inspected files and validation belong in PERSONAL_CONTEXT.md.
+
+## Lane handoff
+
+Lane implementation and local verification are complete in draft PR #63. Joined interview acceptance, independent controller review and real private-user/Keychain acceptance remain separate. See docs/lanes/PERSONAL.md for exact published state and next action.

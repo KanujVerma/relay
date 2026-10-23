@@ -1194,6 +1194,38 @@ class TurnSafety(unittest.TestCase):
                 self.assertFalse(machine.turns.is_current(accepted.token))
                 self.assertIsNone(machine.current())
 
+    def test_zero_duration_unknown_final_cannot_preserve_stale_answer(self):
+        for corrected in (False, True):
+            with self.subTest(corrected=corrected):
+                machine = QuestionTurnMachine()
+                initial = machine.ingest(remote(
+                    "root", "Explain a SQL hash join.",
+                    start_ms=0, end_ms=1000,
+                ))
+                self.assertEqual(initial.state, "ready")
+                latest = initial
+                if corrected:
+                    latest = machine.ingest(remote(
+                        "correction", "No, focus on null-handling.",
+                        intent="correction", start_ms=1100, end_ms=1200,
+                    ))
+                    self.assertEqual(latest.state, "ready")
+                # Native monotonic nanoseconds can legitimately round down
+                # to the SAME millisecond. A nonempty final at that boundary
+                # has no interval that could establish safe speaker ordering.
+                terminal_ms = 1200 if corrected else 1000
+                with self.assertRaises(InvalidTranscript) as caught:
+                    machine.ingest(remote(
+                        "ambiguous-unknown", "Another constraint applies.",
+                        intent="unknown",
+                        start_ms=terminal_ms, end_ms=terminal_ms,
+                    ))
+                self.assertEqual(
+                    str(caught.exception), "Zero-duration final transcript."
+                )
+                self.assertFalse(machine.turns.is_current(latest.token))
+                self.assertIsNone(machine.current())
+
     def test_invalid_utf8_remote_partial_cancels_old_answer_before_hash(self):
         # Python can hold lone surrogates in str, but UTF-8 hashing cannot.
         # Regression: previously raised UnicodeEncodeError before cancel.

@@ -118,6 +118,14 @@ def _validate(event: TranscriptEvent) -> None:
     if (not isinstance(event.text, str) or len(event.text) > MAX_EVENT_CHARS
             or "\x00" in event.text):
         raise InvalidTranscript("Invalid or oversized text.")
+    # Python str can contain lone UTF-16 surrogate code points. A transcript
+    # hash encoded as UTF-8 must never throw before a correction cancels an
+    # older response. Reject invalid Unicode here, under the ingest() guard.
+    try:
+        event.segment_id.encode("utf-8")
+        event.text.encode("utf-8")
+    except UnicodeEncodeError:
+        raise InvalidTranscript("Invalid UTF-8 event text.") from None
     if event.status in ("partial", "final"):
         if not event.text.strip():
             raise InvalidTranscript("Empty text segment.")

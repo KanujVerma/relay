@@ -13,6 +13,7 @@ on:
       - 'relay_spike/**'
       - 'tests/**'
       - 'contracts/**'
+      - 'requirements-spike.txt'
       - 'docs/NATIVE_PANEL_PROTOTYPE.md'
       - '.github/workflows/panel-prototype.yml'
   workflow_dispatch:
@@ -41,6 +42,10 @@ jobs:
           python-version: '3.12'
       - name: Show Swift version
         run: swift --version
+      - name: Install pinned HTTP transport dependency (no models)
+        run: python -m pip install httpx==0.28.1
+      - name: Test Python transport and image ports with synthetic inputs
+        run: python -m unittest discover -s tests -q
       - name: Test native packages with synthetic inputs only
         shell: bash
         run: |

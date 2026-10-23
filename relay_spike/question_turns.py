@@ -418,8 +418,30 @@ class QuestionTurnMachine:
                 self._last_final_end = -1
                 self._latest_question_start_ms = -1
                 self._blocked_generation = None
+            # A successful EOU without words is still evidence of remote
+            # speech. A delayed blank final may overlap an EARLIER accepted
+            # question/correction on which the latest answer depends, or a
+            # pending corrected onset. Do not let the source-time late-final
+            # watermark hide that ambiguity. Equal rounded millisecond
+            # endpoints are conservatively treated as potential contact.
+            context = (
+                self._active if self._active is not None else
+                self._interrupted[1] if self._interrupted is not None else None
+            )
+            spans = (
+                context.dependency_intervals if context is not None else ()
+            )
+            if self._leading_partial is not None:
+                _, leading_start, leading_end = self._leading_partial
+                spans = (*spans, ("pending", leading_start, leading_end))
+            overlapping_dependency = any(
+                (start_ms < dep_end and end_ms > dep_start) or
+                (start_ms == end_ms and dep_start <= start_ms <= dep_end)
+                for _, dep_start, dep_end in spans
+            )
             if (start_ms < self._latest_question_start_ms and
-                    end_ms <= self._last_final_end):
+                    end_ms <= self._last_final_end and
+                    not overlapping_dependency):
                 return TurnDecision("ignored", "stale_blank_eou")
             self.turns.cancel()
             self._active = None

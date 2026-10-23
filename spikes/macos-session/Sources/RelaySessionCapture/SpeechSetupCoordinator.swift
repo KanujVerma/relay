@@ -25,13 +25,15 @@ public struct PreparedSpeechAssets:Sendable,Equatable {
     public let manifestID:String
     public let asrModelRoot:URL
     public let vadCompiledModel:URL
-    init(manifestID:String,asrModelRoot:URL,vadCompiledModel:URL){
+    let byteCount:UInt64?
+    init(manifestID:String,asrModelRoot:URL,vadCompiledModel:URL,byteCount:UInt64?=nil){
         self.manifestID=manifestID;self.asrModelRoot=asrModelRoot;self.vadCompiledModel=vadCompiledModel
+        self.byteCount=byteCount
     }
 }
 
 public enum SpeechSetupError:Error,Sendable,Equatable,LocalizedError {
-    case invalidManifest,invalidArtifacts,downloadUnavailable,offline,insufficientStorage,unsupportedPlatform,advancedOverrideInvalid
+    case invalidManifest,invalidArtifacts,downloadUnavailable,offline,insufficientStorage,unsupportedPlatform,advancedOverrideInvalid,unsafeCache
     public var errorDescription:String? {
         switch self {
         case .invalidManifest:"The speech dependency configuration is unavailable."
@@ -41,11 +43,12 @@ public enum SpeechSetupError:Error,Sendable,Equatable,LocalizedError {
         case .insufficientStorage:"Free at least 1 GB of storage, then retry speech preparation."
         case .unsupportedPlatform:"This device cannot prepare the selected local speech models."
         case .advancedOverrideInvalid:"The advanced speech folders are incomplete or unavailable."
+        case .unsafeCache:"Speech storage is not a safe writable folder. Check advanced Settings."
         }
     }
     var recovery:SpeechSetupRecovery {
         switch self {
-        case .invalidManifest,.unsupportedPlatform,.advancedOverrideInvalid:.openSettings
+        case .invalidManifest,.unsupportedPlatform,.advancedOverrideInvalid,.unsafeCache:.openSettings
         default:.retry
         }
     }
@@ -55,7 +58,8 @@ struct SpeechSetupProgress:Sendable {
     let stage:SpeechSetupStage
     let completedBytes:UInt64?
     let totalBytes:UInt64?
-    init(_ stage:SpeechSetupStage,completedBytes:UInt64?=nil,totalBytes:UInt64?=nil){self.stage=stage;self.completedBytes=completedBytes;self.totalBytes=totalBytes}
+    let sequence:UInt64
+    init(_ stage:SpeechSetupStage,completedBytes:UInt64?=nil,totalBytes:UInt64?=nil,sequence:UInt64=0){self.stage=stage;self.completedBytes=completedBytes;self.totalBytes=totalBytes;self.sequence=sequence}
 }
 
 /// One owned preparation. Cancellation retires its intent before task cleanup;
@@ -67,7 +71,17 @@ struct SpeechSetupProgress:Sendable {
     private let preparation:Preparation
     private var generation=UUID()
     private var operation:Operation?
-    public convenience init(){self.init(prepare:{_ in throw SpeechSetupError.downloadUnavailable})}
+    private var lastProgressSequence:UInt64=0
+    public convenience init(){self.init(prepare:{progress in
+        #if arch(arm64)
+        guard #available(macOS 15.2,*) else{throw SpeechSetupError.unsupportedPlatform}
+        let store=try SpeechAssetStore(directory:SpeechAssetStore.defaultDirectory)
+        return try await store.prepare(using:SpeechAssetDownloader(),progress:progress)
+        #else
+        throw SpeechSetupError.unsupportedPlatform
+        #endif
+    })}
+    convenience init(store:SpeechAssetStore,downloader:any SpeechAssetDownloading){self.init(prepare:{try await store.prepare(using:downloader,progress:$0)})}
     init(prepare:@escaping Preparation){preparation=prepare}
     public func prepare()async throws->PreparedSpeechAssets {
         try Task.checkCancellation()
@@ -75,7 +89,7 @@ struct SpeechSetupProgress:Sendable {
         if let operation {
             guard generation==operation.id else{throw CancellationError()};owned=operation
         }else{
-            let id=UUID();generation=id
+            let id=UUID();generation=id;lastProgressSequence=0
             snapshot=SpeechSetupSnapshot(stage:.checking,userMessage:"Checking local speech files…",isBusy:true)
             let applyProgress:@MainActor @Sendable(SpeechSetupProgress)->Void = {[weak self] progress in self?.update(progress,for:id)}
             let task=Task{[preparation] in
@@ -88,7 +102,8 @@ struct SpeechSetupProgress:Sendable {
             guard generation==owned.id,!owned.task.isCancelled,!Task.isCancelled else{throw CancellationError()}
             if operation?.id==owned.id {
                 operation=nil
-                snapshot=SpeechSetupSnapshot(stage:.ready,completedBytes:snapshot.totalBytes,totalBytes:snapshot.totalBytes,progressFraction:1,userMessage:"Local speech files are ready.")
+                let total=assets.byteCount ?? snapshot.totalBytes
+                snapshot=SpeechSetupSnapshot(stage:.ready,completedBytes:total,totalBytes:total,progressFraction:1,userMessage:"Local speech files are ready.")
             }
             return assets
         }catch{
@@ -113,7 +128,8 @@ struct SpeechSetupProgress:Sendable {
         while let owned=operation{_ = await owned.task.result;await Task.yield()}
     }
     private func update(_ progress:SpeechSetupProgress,for id:UUID){
-        guard generation==id,operation?.id==id,[.checking,.downloading,.validating].contains(progress.stage) else{return}
+        guard generation==id,operation?.id==id,progress.sequence>=lastProgressSequence,[.checking,.downloading,.validating].contains(progress.stage) else{return}
+        lastProgressSequence=progress.sequence
         let fraction:Double?
         if let done=progress.completedBytes,let total=progress.totalBytes,total>0{fraction=min(1,Double(done)/Double(total))}else{fraction=nil}
         let message:String

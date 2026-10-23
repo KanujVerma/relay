@@ -318,6 +318,19 @@ class SyntheticEOUBridge:
             return result("ignored", "stale_asr_generation")
         if (self._latest_generation is None
                 or event.stream_generation > self._latest_generation):
+            # Even a new generation containing only silence/unavailable
+            # events must revoke the prior ActiveTurns token before the
+            # event-specific early returns below. The bridge and machine
+            # generation ledgers must never diverge.
+            if not self.machine.accept_remote_generation(event.stream_generation):
+                self.machine.cancel()
+                self._awaiting_host_resume = True
+                self._retired_generation = max(
+                    event.stream_generation,
+                    self._retired_generation
+                    if self._retired_generation is not None else -1,
+                )
+                return result("cancelled", "remote_machine_requires_resume")
             self._latest_generation = event.stream_generation
             self._blank_finals.clear()
             self._evicted_blank_end_ms = -1

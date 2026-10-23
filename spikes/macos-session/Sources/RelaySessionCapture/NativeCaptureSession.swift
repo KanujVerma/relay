@@ -58,6 +58,19 @@ protocol SessionCaptureDriver: Sendable {
         self.prepare = prepare; self.makeDrivers = makeDrivers
         self.stopTimeoutMilliseconds = stopTimeoutMilliseconds
     }
+    deinit {
+        controller.beginStop(reason: .userStop)
+        drainer?.cancel()
+        let retainedDrivers = drivers, retainedDrainer = drainer, controller = controller
+        Task.detached {
+            await withTaskGroup(of: Void.self) { group in
+                for driver in retainedDrivers { group.addTask { await driver.stop() } }
+            }
+            await retainedDrainer?.value
+            await controller.waitForQuiescence()
+            controller.finishStop(quiesced: true)
+        }
+    }
     public func start(configuration: NativeCaptureConfiguration) async throws {
         guard phase == .idle else { throw NativeSessionError.alreadyRunning }
         try configuration.validate()
@@ -109,6 +122,7 @@ protocol SessionCaptureDriver: Sendable {
         }
         drainer?.cancel()
         let retainedDrivers = drivers, retainedDrainer = drainer
+        let controller = controller
         let stopping = Task.detached {
             await withTaskGroup(of: Void.self) { group in
                 for driver in retainedDrivers { group.addTask { await driver.stop() } }
@@ -116,6 +130,7 @@ protocol SessionCaptureDriver: Sendable {
             // Both capture callbacks are quiescent before the SPSC consumer and
             // queues can retire. A timeout never establishes this fact.
             await retainedDrainer?.value
+            await controller.waitForQuiescence()
         }
         shutdown = stopping
         let quiesced = await waitForShutdown(stopping, timeoutMilliseconds: stopTimeoutMilliseconds)
@@ -163,13 +178,13 @@ protocol SessionCaptureDriver: Sendable {
                     }
                 }
                 iteration = (iteration + 1) % 100
-                if controller.authority.snapshot() == nil {
+                if controller.authority.snapshot() == nil || drivers.contains(where: { !controller.isSourceActive($0.source) }) {
                     // A helper/writer failure halts actual capture as well as UI
                     // authority. Schedule teardown then leave this consumer, so
                     // shutdown never awaits its own task.
                     Task { @MainActor [weak self] in
                         guard self?.operationID == operation else { return }
-                        await self?.stop(reason: .transportClosed)
+                        await self?.stop(reason: controller.authority.snapshot() == nil ? .transportClosed : .captureError)
                     }
                     return
                 }

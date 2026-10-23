@@ -79,3 +79,56 @@ actor FakeCaptureDriver: SessionCaptureDriver {
         XCTAssertEqual(stops, 1)
     }
 }
+
+actor TwoChunkVad: SpeechActivityDetector {
+    nonisolated let chunkSamples = 512
+    var count = 0
+    func accept(_ samples: [Float]) async throws -> [SpeechBoundary] {
+        count += 1
+        return [SpeechBoundary(kind: count == 1 ? .start : .end, sampleIndex: count == 1 ? 0 : 1024)]
+    }
+}
+actor UncancellableCaptureRecognizer: ActivityRecognizer {
+    private var continuation: CheckedContinuation<String, Never>?
+    var entered: Bool { continuation != nil }
+    func recognize(_ samples: [Float]) async throws -> String { await withCheckedContinuation { continuation = $0 } }
+    func release() { continuation?.resume(returning: "synthetic late reply"); continuation = nil }
+}
+extension CaptureLifecycleTests {
+    func testStopTimeoutRetainsModelOwnershipUntilUncancellableCoreMLStandInReturns() async throws {
+        let driver = try FakeCaptureDriver(), recognizer = UncancellableCaptureRecognizer()
+        let authority = SessionPresentationAuthority()
+        let session = NativeCaptureSession(authority: authority, onEvent: { _ in },
+            prepare: { _ in [1: SourceComponents(vad: TwoChunkVad(), recognizer: recognizer)] },
+            makeDrivers: { _ in [driver] }, stopTimeoutMilliseconds: 20)
+        try await session.start(configuration: config)
+        let clock = NativeClockCalibration.now()
+        let ticks = mach_absolute_time() - UInt64(2_000_000_000 * Double(clock.nsDenom) / Double(clock.nsNumer))
+        let samples = Array(repeating: Float(0.1), count: 1024)
+        let accepted = samples.withUnsafeBufferPointer {
+            driver.queue.enqueueInterleaved(samples: $0.baseAddress!, frames: 1024, channels: 1,
+                sampleRate: 16_000, hostTime: ticks, streamGeneration: 1)
+        }
+        XCTAssertTrue(accepted)
+        try await waitUntil { await recognizer.entered }
+        await session.stop()
+        XCTAssertNil(authority.snapshot())
+        XCTAssertEqual(session.phase, .stopping)
+        await recognizer.release()
+        try await waitUntil { session.phase == .idle }
+    }
+}
+
+extension CaptureLifecycleTests {
+    func testDroppingOwnerClosesAuthorityAndStopsActualDriver() async throws {
+        let driver = try FakeCaptureDriver(), authority = SessionPresentationAuthority()
+        var session: NativeCaptureSession? = NativeCaptureSession(authority: authority, onEvent: { _ in },
+            prepare: { _ in [1: SourceComponents(vad: EmptyVad(), recognizer: EmptyRecognizer())] },
+            makeDrivers: { _ in [driver] }, stopTimeoutMilliseconds: 20)
+        try await session?.start(configuration: config)
+        XCTAssertNotNil(authority.snapshot())
+        session = nil
+        try await waitUntil { await driver.stops == 1 }
+        XCTAssertNil(authority.snapshot())
+    }
+}

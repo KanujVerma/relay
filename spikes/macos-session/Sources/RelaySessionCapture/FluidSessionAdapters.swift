@@ -17,7 +17,7 @@ public actor FluidClosedActivityRecognizer: ActivityRecognizer {
         return FluidClosedActivityRecognizer(backend: backend)
     }
     public func recognize(_ samples: [Float]) async throws -> String {
-        guard !busy, !samples.isEmpty, samples.count <= 320_000, samples.allSatisfy(\.isFinite) else {
+        guard !busy, !samples.isEmpty, samples.count <= NativeSessionLimits.maximumActivitySamples, samples.allSatisfy(\.isFinite) else {
             throw NativeSessionError.invalidFrame
         }
         busy = true; defer { busy = false }

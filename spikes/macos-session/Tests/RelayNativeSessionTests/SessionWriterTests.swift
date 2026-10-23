@@ -67,3 +67,21 @@ final class SessionWriterTests: XCTestCase {
         writer.close()
     }
 }
+
+extension SessionWriterTests {
+    func testSingleStalledFrameHitsDeadlineEvenWithoutQueueOverflow() async throws {
+        var fds: [Int32] = [0, 0]; XCTAssertEqual(pipe(&fds), 0)
+        defer { Darwin.close(fds[0]); Darwin.close(fds[1]) }
+        XCTAssertEqual(fcntl(fds[1], F_SETFL, fcntl(fds[1], F_GETFL) | O_NONBLOCK), 0)
+        let filler = [UInt8](repeating: 1, count: 4096)
+        while filler.withUnsafeBytes({ Darwin.write(fds[1], $0.baseAddress!, $0.count) }) > 0 {}
+        let failure = FailureProbe()
+        let writer = try BoundedSessionEventWriter(descriptor: fds[1], writeDeadlineMilliseconds: 20, onFailure: failure.fail)
+        try writer.enqueue(event())
+        for _ in 0..<500 { if failure.failed { break }; try await Task.sleep(for: .milliseconds(1)) }
+        XCTAssertTrue(failure.failed)
+        let flushed = await writer.flush(timeoutMilliseconds: 50)
+        XCTAssertFalse(flushed)
+        writer.close()
+    }
+}

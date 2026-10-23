@@ -10,6 +10,7 @@ public final class NativeSessionController: @unchecked Sendable {
     private let lock = NSRecursiveLock()
     private let onEvent: @Sendable (NativeSessionEvent) throws -> Void
     private var sources: [UInt32: SourcePipeline] = [:]
+    private var retiredSources: [SourcePipeline] = []
     private var sessionID: UUID?
     private var sequence: UInt64 = 0
     private var segmentCounters: [UInt32: UInt64] = [:]
@@ -23,7 +24,7 @@ public final class NativeSessionController: @unchecked Sendable {
     public func start(selectedBundleID: String?, microphoneEnabled: Bool,
                       components: [UInt32: SourceComponents]) throws {
         try lock.withLock {
-            guard sessionID == nil else { throw NativeSessionError.alreadyRunning }
+            guard sessionID == nil, retiredSources.isEmpty else { throw NativeSessionError.alreadyRunning }
             var expected: Set<UInt32> = microphoneEnabled ? [1] : []
             if let selectedBundleID {
                 guard SelectedAppProcesses.isValidBundleID(selectedBundleID) else { throw NativeSessionError.invalidConfiguration }
@@ -52,6 +53,9 @@ public final class NativeSessionController: @unchecked Sendable {
             guard sessionID != nil else { throw NativeSessionError.transportClosed }
         }
     }
+    public func isSourceActive(_ source: PCMSource) -> Bool {
+        lock.withLock { sources[source.rawValue] != nil && authority.snapshot() != nil }
+    }
     public func ingest(_ packet: SessionAudioPacket) {
         lock.withLock { sources[packet.source.rawValue]?.enqueue(packet) }
     }
@@ -64,16 +68,22 @@ public final class NativeSessionController: @unchecked Sendable {
     /// Close admission and paint authority BEFORE capture/model shutdown awaits.
     public func beginStop(reason: SessionReason = .userStop) {
         lock.withLock {
-            guard let lease = authority.snapshot(), sessionID != nil else { return }
+            guard sessionID != nil else { return }
+            guard let lease = authority.snapshot() else {
+                // A failed writer can withdraw the shared authority first.
+                // Still cancel and retain all model/source owners for join.
+                retireSources(); sessionID = nil; stoppingLease = nil
+                return
+            }
             stoppingLease = authority.invalidate() ?? lease; stopReason = reason
             authority.stop()
-            sources.values.forEach { $0.stop() }; sources.removeAll()
+            retireSources()
             if let stoppingLease { emit(kind: .stopping, lease: stoppingLease,
                 payload: ["reasonCode": .string(reason.rawValue)]) }
         }
     }
-    /// quiesced concerns capture producers, not whether a cancelled CoreML await
-    /// returned. Detached model tasks retain their own buffers until completion.
+    /// quiesced is supplied only after actual producer, VAD and ASR ownership
+    /// has returned. A UI deadline alone cannot supply true.
     public func finishStop(quiesced: Bool) {
         lock.withLock {
             guard let lease = stoppingLease, sessionID != nil else { return }
@@ -81,7 +91,15 @@ public final class NativeSessionController: @unchecked Sendable {
             sessionID = nil; stoppingLease = nil
         }
     }
-    public func stop(reason: SessionReason = .userStop) { beginStop(reason: reason); finishStop(quiesced: true) }
+    public func stop(reason: SessionReason = .userStop) { beginStop(reason: reason); finishStop(quiesced: false) }
+    /// Join cancelled source tasks before reusing this controller. The capture
+    /// wrapper includes this in its bounded shutdown operation and keeps model
+    /// owners alive after timeout until an uncancellable CoreML await returns.
+    public func waitForQuiescence() async {
+        let retired = lock.withLock { retiredSources }
+        for source in retired { await source.waitForQuiescence() }
+        lock.withLock { retiredSources.removeAll { source in retired.contains { $0 === source } } }
+    }
     public func retire(reason: SessionReason = .transportClosed) { stop(reason: reason) }
 
     private func speechStarted(session: UUID, source: UInt32, activity: UInt64, generation: UInt64,
@@ -146,7 +164,7 @@ public final class NativeSessionController: @unchecked Sendable {
     private func sourceUnavailable(session: UUID, source: UInt32, generation: UInt64, reason: SessionReason) {
         lock.withLock {
             guard sessionID == session, let pipeline = sources.removeValue(forKey: source) else { return }
-            pipeline.stop()
+            pipeline.stop(); retiredSources.append(pipeline)
             guard let lease = source == 2 ? authority.invalidate() : authority.snapshot() else { return }
             let kind: SessionEventKind = [.deviceChanged, .sequenceGap, .queueOverflow, .clockInvalid].contains(reason) ? .discontinuity : .sourceUnavailable
             emit(kind: kind, lease: lease, source: source, generation: generation,
@@ -164,8 +182,14 @@ public final class NativeSessionController: @unchecked Sendable {
                 payload: payload, requestID: requestID))
         } catch { transportFailed() }
     }
+    private func retireSources() {
+        let retiring = Array(sources.values)
+        sources.removeAll()
+        retiring.forEach { $0.stop() }
+        retiredSources.append(contentsOf: retiring)
+    }
     private func transportFailed() {
-        authority.stop(); sources.values.forEach { $0.stop() }; sources.removeAll()
+        authority.stop(); retireSources()
         sessionID = nil; stoppingLease = nil
     }
 }

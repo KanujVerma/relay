@@ -71,9 +71,12 @@ class PolicyInput:
     question: str
     role: str
     category: str
-    source_channel: SourceChannel = "user_synthetic"
-    question_status: QuestionStatus = "final"
-    host_authorized: bool = True
+    # Runtime inputs must fail closed until a trusted host explicitly
+    # attests source, finality and permission. Only fixture factory fills in
+    # synthetic defaults for offline tests.
+    source_channel: SourceChannel = "unknown"
+    question_status: QuestionStatus = "partial"
+    host_authorized: bool = False
     constraints: tuple[str, ...] = ()
     case_id_hint: str | None = None
     candidate: str | None = None
@@ -231,6 +234,11 @@ def _fixture_request(row: dict) -> PolicyInput:
         question = question_override
     if not isinstance(question, str):
         raise ValueError("Expected a fixture question or explicit override.")
+    # Only this trusted offline fixture factory supplies affirmative defaults;
+    # production callers have none and cannot skip permissions/turn finality.
+    data.setdefault("source_channel", "user_synthetic")
+    data.setdefault("question_status", "final")
+    data.setdefault("host_authorized", True)
     for key in ("constraints", "claimed_source_ids"):
         if key in data:
             if not isinstance(data[key], list):

@@ -224,6 +224,54 @@ class EOUAdapterTests(unittest.TestCase):
         self.assertTrue(self.machine.turns.is_current(old.token))
         self.assertEqual(self.machine.current().token, old.token)
 
+    def test_silence_only_new_generation_revokes_old_question_before_return(self):
+        first = self.bridge.ingest(final(
+            "old", "Explain SQL grouping.",
+            generation=1, start_ms=0, end_ms=100,
+        ), context=AUTHORIZED)
+        self.assertEqual(first.disposition, "ready")
+        self.assertTrue(self.machine.turns.is_current(first.token))
+        silent = self.bridge.ingest(final(
+            "silence-new-gen", "", generation=2, stage="silence",
+            start_ms=200, end_ms=220,
+        ), context=AUTHORIZED)
+        self.assertEqual(silent.disposition, "ignored")
+        self.assertEqual(silent.reason, "no_speech_finalized")
+        self.assertFalse(self.machine.turns.is_current(first.token))
+        self.assertIsNone(self.machine.current())
+        self.assertEqual(self.machine._remote_generation, 2)
+
+        old_late = self.bridge.ingest(final(
+            "old-correction", "No, change that.",
+            generation=1, start_ms=120, end_ms=180,
+        ), context=AUTHORIZED)
+        self.assertEqual(old_late.disposition, "ignored")
+        self.assertEqual(old_late.reason, "stale_asr_generation")
+        fresh = self.bridge.ingest(final(
+            "new-question", "Explain binary search.",
+            generation=2, start_ms=250, end_ms=400,
+        ), context=AUTHORIZED)
+        self.assertEqual(fresh.disposition, "ready")
+        self.assertTrue(self.machine.turns.is_current(fresh.token))
+
+    def test_generation_sync_rejects_stopped_machine_without_reauthorization(self):
+        # Direct external machine stop must not leave the EOU adapter
+        # believing it can route new remote question generations.
+        original = self.bridge.ingest(final(
+            "old", "Explain a hash join.", generation=1,
+            start_ms=0, end_ms=100,
+        ), context=AUTHORIZED)
+        self.assertEqual(original.disposition, "ready")
+        self.machine.cancel()
+        newer = self.bridge.ingest(final(
+            "new", "Explain B-trees.", generation=2,
+            start_ms=250, end_ms=400,
+        ), context=AUTHORIZED)
+        self.assertEqual(newer.disposition, "cancelled")
+        self.assertEqual(newer.reason, "remote_machine_requires_resume")
+        self.assertIsNone(self.machine.current())
+        self.assertFalse(self.machine.turns.is_current(original.token))
+
     def test_EOU_processing_emits_no_partial_and_final_is_timed_only(self):
         working = final(stage="processing", text="", finalized_ms=None)
         pending = self.bridge.ingest(working, context=AUTHORIZED)

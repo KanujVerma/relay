@@ -73,3 +73,30 @@ private final class VisualReplyProbe:@unchecked Sendable {
         await helper.shutdownAndWait()
     }
 }
+
+extension VisualInputTransportTests {
+    @MainActor func testSynchronousControlOwnsReplyBeforeTheCallerStartsWaiting()async throws {
+        for mode in ["valid","wrong_action","closed"] {
+            let script="""
+            import json,struct,sys
+            size=struct.unpack('>I',sys.stdin.buffer.read(4))[0]
+            req=json.loads(sys.stdin.buffer.read(size))
+            if sys.argv[1]=='closed':sys.exit(0)
+            action='status' if sys.argv[1]=='wrong_action' else req['action']
+            reason='current_status' if action=='status' else 'user_disabled'
+            data=json.dumps(dict(schemaVersion=1,kind='visual_input_response',requestID=req['requestID'],action=action,resultRevision=2,status='disabled',reasonCode=reason,model=None)).encode()
+            sys.stdout.buffer.write(struct.pack('>I',len(data))+data);sys.stdout.buffer.flush()
+            sys.stdin.buffer.read()
+            """
+            let helper=HelperTransport(root:root,python:URL(fileURLWithPath:"/usr/bin/env"),pythonArguments:["python3","-u","-c",script,mode],mode:.fixture,onFrame:{_ in},onFailure:{})
+            try helper.start()
+            let response=try helper.issueVisualInput(.disable,onUpdate:{_ in})
+            try await Task.sleep(for:.milliseconds(30))
+            do {
+                let reply=try await response.value()
+                XCTAssertEqual(mode,"valid");XCTAssertEqual(reply.action,.disable);XCTAssertEqual(reply.status,.disabled)
+            }catch{XCTAssertNotEqual(mode,"valid")}
+            await helper.shutdownAndWait()
+        }
+    }
+}

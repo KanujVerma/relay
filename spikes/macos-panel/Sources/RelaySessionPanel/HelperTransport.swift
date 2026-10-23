@@ -25,6 +25,32 @@ private final class OwnedChildExit: @unchecked Sendable {
 
 public enum HelperMode: Sendable { case noInference, fixture, oauth }
 
+/// Owned response for an already registered/enqueued visual control. Issuance
+/// is synchronous; waiting for the actual helper terminal remains asynchronous.
+public final class PendingVisualInputResponse:@unchecked Sendable {
+    private let lock=NSLock()
+    private var result:Result<VisualInputResponse,any Error>?
+    private var waiter:CheckedContinuation<VisualInputResponse,any Error>?
+    fileprivate init(){}
+    public func value()async throws->VisualInputResponse {
+        try await withCheckedThrowingContinuation{continuation in
+            let ready:Result<VisualInputResponse,any Error>?=lock.withLock{
+                if let result{return result}
+                guard waiter==nil else{return .failure(PanelBridgeError.malformed)}
+                waiter=continuation;return nil
+            }
+            if let ready{continuation.resume(with:ready)}
+        }
+    }
+    fileprivate func finish(_ value:Result<VisualInputResponse,any Error>) {
+        let pending=lock.withLock{
+            guard result==nil else{return Optional<CheckedContinuation<VisualInputResponse,any Error>>.none}
+            result=value;let pending=waiter;waiter=nil;return pending
+        }
+        pending?.resume(with:value)
+    }
+}
+
 /// A queued image can retire without waiting behind an unrelated blocked write.
 /// Once its first byte is written, only full completion or transport failure ends it.
 private final class ImageWriteReservation:@unchecked Sendable {
@@ -90,7 +116,7 @@ public final class HelperTransport: @unchecked Sendable {
     private var quiescenceRequests:[UUID:(UUID,UInt64,CheckedContinuation<Void,any Error>)]=[:]
     private struct VisualWaiter {
         let action:VisualInputAction
-        let continuation:CheckedContinuation<VisualInputResponse,any Error>
+        let response:PendingVisualInputResponse
         let progress:@Sendable(VisualInputResponse)->Void
         var last:VisualInputResponse?
     }
@@ -218,31 +244,35 @@ public final class HelperTransport: @unchecked Sendable {
     /// no native image authority, and cancellation completion comes from the
     /// original verify terminal reply rather than a local timer/Task flag.
     public func requestVisualInput(_ action:VisualInputAction,onUpdate:@escaping @Sendable(VisualInputResponse)->Void) async throws -> VisualInputResponse {
+        let response=try issueVisualInput(action,onUpdate:onUpdate)
+        return try await response.value()
+    }
+    /// Register and enqueue before the caller can release a staged EOU. No
+    /// helper IO or await occurs here; the existing bounded writer owns order.
+    public func issueVisualInput(_ action:VisualInputAction,onUpdate:@escaping @Sendable(VisualInputResponse)->Void) throws -> PendingVisualInputResponse {
         let id=UUID()
         let envelope=try JSONEncoder().encode(WireValue.object(["schemaVersion":.uint(1),"kind":.string("visual_input_request"),"requestID":.string(id.uuidString.lowercased()),"action":.string(action.rawValue)]))
-        return try await withCheckedThrowingContinuation { continuation in
-            let admitted=lock.withLock {
-                guard !failed,visualRequests.count<4,visualRequestCount<512 else{return false}
-                visualRequestCount+=1
-                visualRequests[id]=VisualWaiter(action:action,continuation:continuation,progress:onUpdate,last:nil)
-                return true
-            }
-            guard admitted else{continuation.resume(throwing:PanelBridgeError.closed);return}
-            do{try sendJSON(envelope)}catch{
-                let waiter=lock.withLock{visualRequests.removeValue(forKey:id)}
-                waiter?.continuation.resume(throwing:PanelBridgeError.closed);return
-            }
-            io.asyncAfter(deadline:.now() + .seconds(35)){[weak self] in
-                guard let self else{return}
-                let waiter=self.lock.withLock{self.visualRequests.removeValue(forKey:id)}
-                if let waiter{waiter.continuation.resume(throwing:PanelBridgeError.timedOut);self.fail()}
-            }
+        let response=PendingVisualInputResponse()
+        try lock.withLock {
+            guard !failed,visualRequests.count<4,visualRequestCount<512 else{throw PanelBridgeError.closed}
+            visualRequestCount+=1
+            visualRequests[id]=VisualWaiter(action:action,response:response,progress:onUpdate,last:nil)
         }
+        do{try sendJSON(envelope)}catch{
+            let waiter=lock.withLock{visualRequests.removeValue(forKey:id)}
+            waiter?.response.finish(.failure(PanelBridgeError.closed));fail();throw error
+        }
+        io.asyncAfter(deadline:.now() + .seconds(35)){[weak self] in
+            guard let self else{return}
+            let waiter=self.lock.withLock{self.visualRequests.removeValue(forKey:id)}
+            if let waiter{waiter.response.finish(.failure(PanelBridgeError.timedOut));self.fail()}
+        }
+        return response
     }
     private enum VisualDelivery {
         case ignored
         case progress(@Sendable(VisualInputResponse)->Void)
-        case terminal(CheckedContinuation<VisualInputResponse,any Error>)
+        case terminal(PendingVisualInputResponse)
     }
     private func acceptVisual(_ reply:VisualInputResponse)throws {
         let delivery:VisualDelivery=try lock.withLock {
@@ -262,12 +292,12 @@ public final class HelperTransport: @unchecked Sendable {
             visualRequests.removeValue(forKey:reply.requestID)
             visualReplies[reply.requestID]=reply;visualReplyOrder.append(reply.requestID)
             while visualReplyOrder.count>8{visualReplies.removeValue(forKey:visualReplyOrder.removeFirst())}
-            return .terminal(waiter.continuation)
+            return .terminal(waiter.response)
         }
         switch delivery {
         case .ignored:break
         case .progress(let callback):callback(reply)
-        case .terminal(let continuation):continuation.resume(returning:reply)
+        case .terminal(let response):response.finish(.success(reply))
         }
     }
     private func enqueue(_ frame:Data) throws {
@@ -393,7 +423,7 @@ public final class HelperTransport: @unchecked Sendable {
             let sessions=Array(quiescenceRequests.values);quiescenceRequests.removeAll()
             sessions.forEach { $0.2.resume(throwing:PanelBridgeError.closed) }
             let visual=Array(visualRequests.values);visualRequests.removeAll()
-            visual.forEach{$0.continuation.resume(throwing:PanelBridgeError.closed)}
+            visual.forEach{$0.response.finish(.failure(PanelBridgeError.closed))}
             return (process,pending,Array(imageWrites.values))
         }
         pending.forEach { $0.resume(throwing:PanelBridgeError.closed) }

@@ -114,7 +114,7 @@ class ProfileBridge:
             self._transfer = None
             self._prep.store.close()
             self._prep = ProfilePreparation(BrainStore(), host_capability=self.__cap)
-            return {"ok": True}
+            return {"ok": True, "locked": True, "ready": False}
         if command in ("load_begin", "select_begin"):
             if self._transfer is not None:
                 raise BrainError("A profile transfer is already active.")

@@ -30,3 +30,14 @@ KeychainAccess v4.2.2 at 84e546727d66f1adc5439debad16270d0fdd04e7 (MIT) and Appl
 ## Lane handoff
 
 Lane implementation and local verification are complete in draft PR #63. Joined interview acceptance, independent controller review and real private-user/Keychain acceptance remain separate. See docs/lanes/PERSONAL.md for exact published state and next action.
+
+
+## Review round 1 follow-up
+
+- [x] Reproduce the three independent findings on the reviewed baseline with synthetic regressions.
+- [x] Require acknowledged lock or independent emergency helper retirement, with a distinct outcome.
+- [x] Fence client/controller generations and delayed persistence/publication; retain MainActor closure isolation.
+- [x] Preserve C/R relevance and require positive non-overview query evidence.
+- [x] Replace fixed native-test Python paths with a required version/capability-checked override or PATH resolution.
+- [x] Run complete local checks and preserve host integration instructions.
+- [ ] Controller independently re-reviews the frozen correction delta and validates hosted Swift 6.1.2/shared-helper composition.

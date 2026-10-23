@@ -23,7 +23,7 @@ private final class FailingSaveKey: ProfileKeyProvider, @unchecked Sendable {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let port = PipeProfilePort(python: URL(fileURLWithPath: "/opt/homebrew/bin/python3"), repository: root)
+        let port = PipeProfilePort(python: try ProfileTestEnvironment.python(), repository: root)
         let vault = ProfileVault(directory: directory, keys: ControllerKey())
         var invalidated = 0
         let controller = ProfileController(client: ProfileClient(port: port), vault: vault,
@@ -44,7 +44,7 @@ private final class FailingSaveKey: ProfileKeyProvider, @unchecked Sendable {
         XCTAssertGreaterThanOrEqual(invalidated, 2)
         await controller.close()
         let reopened = ProfileController(client: ProfileClient(port: PipeProfilePort(
-            python: URL(fileURLWithPath: "/opt/homebrew/bin/python3"), repository: root)), vault: vault)
+            python: try ProfileTestEnvironment.python(), repository: root)), vault: vault)
         await reopened.openProfile()
         XCTAssertTrue(reopened.opened)
         XCTAssertNil(reopened.card)
@@ -61,7 +61,7 @@ private final class FailingSaveKey: ProfileKeyProvider, @unchecked Sendable {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let port = PipeProfilePort(python: URL(fileURLWithPath: "/opt/homebrew/bin/python3"), repository: root)
+        let port = PipeProfilePort(python: try ProfileTestEnvironment.python(), repository: root)
         var invalidated = 0
         let controller = ProfileController(client: ProfileClient(port: port),
             vault: ProfileVault(directory: directory, keys: FailingSaveKey()), onInvalidate: { invalidated += 1 })

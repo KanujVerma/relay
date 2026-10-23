@@ -58,7 +58,7 @@ class PersonalContextProvider(Protocol):
 
 def _terms(text: str) -> set[str]:
     return {term for term in re.findall(r"[\w+#]+", text.casefold())
-            if len(term) > 1 and term not in _STOP}
+            if (len(term) > 1 or term in {"c", "r"}) and term not in _STOP}
 
 
 class BrainContextProvider:
@@ -144,7 +144,7 @@ class BrainContextProvider:
             if project_terms and not project_terms.intersection(haystack):
                 continue
             overlap = len(question_terms.intersection(haystack))
-            if question_terms and not overlap and not project_terms and not overview:
+            if not overlap and not project_terms and not overview:
                 continue
             # A pending alternative under an existing canonical key is an
             # unresolved contradiction, never a second approved claim.

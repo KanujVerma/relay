@@ -56,9 +56,11 @@ public struct ProfileExistingFact: Decodable, Sendable {
     @Published public private(set) var pendingCount = 0
     @Published public private(set) var errorStatus: String?
     @Published public private(set) var existingFact: ProfileExistingFact?
+    @Published public private(set) var closeOutcome: ProfileCloseOutcome?
     private let client: ProfileClient
     private let vault: ProfileVault
     private let onInvalidate: @MainActor () -> Void
+    private var lifecycle = UUID()
 
     public init(client: ProfileClient, vault: ProfileVault,
                 onInvalidate: @escaping @MainActor () -> Void = {}) {
@@ -74,48 +76,71 @@ public struct ProfileExistingFact: Decodable, Sendable {
         pendingCount = state["pending_count"] as? Int ?? 0
         existingFact = nil
     }
-    private func refreshSources() async throws {
+    private func readSources() async throws -> [ProfileSourceSummary] {
         let response = try await client.command(["command": "sources"])
-        sources = try decode(response["sources"] ?? [], as: [ProfileSourceSummary].self)
+        return try decode(response["sources"] ?? [], as: [ProfileSourceSummary].self)
     }
-    private func lockAfterFailure() async {
-        opened = false; card = nil; job = nil; sources = []; existingFact = nil
+    private func clearVisibleState() {
+        opened = false; card = nil; job = nil; sources = []; existingFact = nil; pendingCount = 0
+    }
+    private func lockAfterFailure(operation: UUID, message: String) async {
+        guard lifecycle == operation else { return }
+        clearVisibleState()
         onInvalidate()
-        await client.close()
-        errorStatus = "The change could not be saved. Profile locked. Reopen to review the saved state."
+        let outcome = await client.close()
+        guard lifecycle == operation else { return }
+        closeOutcome = outcome
+        errorStatus = outcome == .locked
+            ? message + " Profile locked. Reopen to review the saved state."
+            : message + " Profile unavailable. The helper was stopped; a fresh helper is required."
     }
     public func openProfile() async {
         guard !busy, !opened else { return }
-        busy = true; errorStatus = nil; defer { busy = false }
+        let operation = UUID()
+        lifecycle = operation
+        busy = true; errorStatus = nil; closeOutcome = nil
+        defer { if lifecycle == operation { busy = false } }
         do {
             let state: [String: Any]
             if try vault.exists() {
                 state = try await client.load(vault.load())
+                guard lifecycle == operation else { return }
             } else {
                 state = try await client.command(["command": "new"])
-                try await vault.save(client.snapshot(), createKey: true)
+                guard lifecycle == operation else { return }
+                let snapshot = try await client.snapshot()
+                guard lifecycle == operation else { return }
+                try vault.save(snapshot, createKey: true)
             }
+            let newSources = try await readSources()
+            guard lifecycle == operation else { return }
             try apply(state)
-            try await refreshSources()
+            sources = newSources
             opened = true
         } catch {
-            await client.close()
-            opened = false
-            errorStatus = "Profile could not be opened. Existing data and keys were kept."
+            await lockAfterFailure(operation: operation,
+                                   message: "Profile could not be opened. Existing data and keys were kept.")
         }
     }
-    private func mutate(_ action: () async throws -> [String: Any]) async {
+    private func mutate(_ action: @MainActor () async throws -> [String: Any]) async {
         guard opened, !busy else { return }
-        busy = true; errorStatus = nil; onInvalidate(); defer { busy = false }
+        let operation = lifecycle
+        busy = true; errorStatus = nil; closeOutcome = nil; onInvalidate()
+        defer { if lifecycle == operation { busy = false } }
         do {
             let state = try await action()
+            guard lifecycle == operation else { return }
             let snapshot = try await client.snapshot()
+            guard lifecycle == operation else { return }
             try vault.save(snapshot)
+            let newSources = try await readSources()
+            guard lifecycle == operation else { return }
             try apply(state)
-            try await refreshSources()
+            sources = newSources
         } catch ProfileError.rejected {
+            guard lifecycle == operation else { return }
             errorStatus = "Review could not be applied. Check ownership, the fact key and the selected revision."
-        } catch { await lockAfterFailure() }
+        } catch { await lockAfterFailure(operation: operation, message: "The change could not be saved.") }
     }
     public func stageEnteredText(_ text: String, purpose: String, label: String, role: String, project: String?) async {
         await mutate {
@@ -153,12 +178,17 @@ public struct ProfileExistingFact: Decodable, Sendable {
     }
     public func lookupExisting(claimKey: String) async {
         guard opened, !busy else { return }
-        busy = true; defer { busy = false }
+        let operation = lifecycle
+        busy = true; defer { if lifecycle == operation { busy = false } }
         do {
             let response = try await client.command(["command": "current_claim", "claim_key": claimKey])
+            guard lifecycle == operation else { return }
             existingFact = try (response["fact"] as? [String: Any]).map { try decode($0, as: ProfileExistingFact.self) }
             errorStatus = existingFact == nil ? "No active fact uses this key." : nil
-        } catch { errorStatus = "The existing fact could not be checked." }
+        } catch {
+            guard lifecycle == operation else { return }
+            errorStatus = "The existing fact could not be checked."
+        }
     }
     public func approveJob(_ displayed: ProfileJobCard) async {
         guard displayed.sourceID == job?.sourceID, displayed.fingerprint == job?.fingerprint else { return }
@@ -169,8 +199,15 @@ public struct ProfileExistingFact: Decodable, Sendable {
         await mutate { try await self.client.command(["command": "revoke", "source_id": source.sourceID]) }
     }
     public func close() async {
+        let operation = UUID()
+        lifecycle = operation
+        busy = true
         onInvalidate()
-        opened = false; card = nil; job = nil; sources = []; existingFact = nil
-        await client.close()
+        clearVisibleState()
+        let outcome = await client.close()
+        guard lifecycle == operation else { return }
+        closeOutcome = outcome
+        busy = false
+        errorStatus = outcome == .locked ? nil : "Profile unavailable. The helper was stopped; a fresh helper is required."
     }
 }

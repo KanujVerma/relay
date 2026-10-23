@@ -90,6 +90,11 @@ public actor PCMTranscriptWorker {
     public func ingest(_ frame: PCMFrame) async -> [FinalTranscriptEvent] {
         guard !cancelled, !resetInProgress else { return [] }
         if processingInProgress {
+            // Discard foreign-source or older-generation callbacks before
+            // treating a competing packet as an interruption. A stale Core
+            // Audio callback must not invalidate a legitimate in-flight EOU.
+            guard frame.source == source else { return [] }
+            if let generation, frame.streamGeneration < generation { return [] }
             // Never append audio while an existing ingest/finish awaits.
             // Explicitly invalidate that final if a concurrent caller drops
             // samples here. The worker remains bounded and discards no content
@@ -213,8 +218,14 @@ public actor PCMTranscriptWorker {
     /// cancelled/discontinuous generation is reconstructed from stale buffers.
     public func finishAtStop() async -> FinalTranscriptEvent? {
         if processingInProgress {
+            // A timer stop overlapping CoreML must still invalidate any
+            // previous answer; returning nil would silently drop that terminal.
+            // Another concurrent frame already published a discontinuity.
+            let firstInterruption = !processingInterrupted
             processingInterrupted = true
-            return nil
+            guard firstInterruption, authorized, !cancelled,
+                  let generation else { return nil }
+            return event(.unavailable, generation: generation)
         }
         guard authorized, !cancelled, !resetInProgress,
               let generation, let sampleRate else {

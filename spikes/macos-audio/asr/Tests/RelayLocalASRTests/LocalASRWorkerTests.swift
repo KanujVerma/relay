@@ -377,6 +377,90 @@ final class LocalASRWorkerTests: XCTestCase {
         XCTAssertNil(stopped)
     }
 
+    func testOldOrForeignFrameDuringPendingAcceptDoesNotInterruptValidEOU() async throws {
+        let backend = SuspendedEou()
+        let ring = try OwnedPCMQueue(source: .remoteAudio)
+        let foreignRing = try OwnedPCMQueue(source: .microphone)
+        let worker = PCMTranscriptWorker(
+            source: .remoteAudio, authorizedCapture: true, backend: backend
+        )
+        // Build the old-generation frame before the valid stream, so the
+        // valid stream's packet sequence remains contiguous.
+        let obsolete = try packet(ring, generation: 1)
+        _ = await worker.ingest(try packet(ring, generation: 2))
+        _ = await worker.ingest(try packet(ring, generation: 2))
+        let third = try packet(ring, generation: 2)
+        let inFlight = Task { await worker.ingest(third) }
+
+        var started = false
+        for _ in 0..<2000 {
+            if await backend.entered() {
+                started = true
+                break
+            }
+            await Task.yield()
+        }
+        if !started {
+            await backend.release()
+            inFlight.cancel()
+            XCTFail("Fake EOU accept did not suspend")
+            return
+        }
+
+        let stale = await worker.ingest(obsolete)
+        let foreign = await worker.ingest(try packet(foreignRing, generation: 2))
+        XCTAssertTrue(stale.isEmpty)
+        XCTAssertTrue(foreign.isEmpty)
+        await backend.release()
+        let result = await inFlight.value
+        XCTAssertEqual(result.map(\.status), [.final])
+        XCTAssertEqual(result.first?.streamGeneration, 2)
+        XCTAssertEqual(result.first?.text, "untrusted stale interview words")
+        let finishes = await backend.finishCount
+        XCTAssertEqual(finishes, 1)
+    }
+
+    func testStopDuringPendingAcceptEmitsNontextUnavailableTerminal() async throws {
+        let backend = SuspendedEou()
+        let ring = try OwnedPCMQueue(source: .remoteAudio)
+        let worker = PCMTranscriptWorker(
+            source: .remoteAudio, authorizedCapture: true, backend: backend
+        )
+        _ = await worker.ingest(try packet(ring))
+        _ = await worker.ingest(try packet(ring))
+        let third = try packet(ring)
+        let inFlight = Task { await worker.ingest(third) }
+
+        var started = false
+        for _ in 0..<2000 {
+            if await backend.entered() {
+                started = true
+                break
+            }
+            await Task.yield()
+        }
+        if !started {
+            await backend.release()
+            inFlight.cancel()
+            XCTFail("Fake EOU accept did not suspend")
+            return
+        }
+
+        let stopped = await worker.finishAtStop()
+        XCTAssertEqual(stopped?.status, .unavailable)
+        XCTAssertEqual(stopped?.source, .remoteAudio)
+        XCTAssertEqual(stopped?.streamGeneration, 1)
+        XCTAssertNil(stopped?.text)
+        let secondStop = await worker.finishAtStop()
+        XCTAssertNil(secondStop)
+
+        await backend.release()
+        let stale = await inFlight.value
+        XCTAssertTrue(stale.isEmpty)
+        let finishes = await backend.finishCount
+        XCTAssertEqual(finishes, 0)
+    }
+
     func testCancellationWhileBackendAwaitingNeverPublishesStaleText() async throws {
         let backend = SuspendedEou()
         let ring = try OwnedPCMQueue(source: .remoteAudio)

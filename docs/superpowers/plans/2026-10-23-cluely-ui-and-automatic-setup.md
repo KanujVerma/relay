@@ -52,10 +52,11 @@ RELAY_TEST_PYTHON=/private/tmp/relay-answers-venv/bin/python swift test --disabl
 
 ## Task3: My Context simplification
 
-**Owner:** Controller, disjoint ProfilePreparationView and pure profile presentation file/tests. The existing ProfileController/helper/vault contract remains unchanged in this UI-focused task.
+**Owner:** Controller, disjoint ProfilePreparationView and pure profile presentation file/tests. The existing approval/vault/lifecycle authority stays unchanged. The bounded read-only memories command/controller/browser refinement in the shared contract makes saved-memory correction usable without typed internal keys.
 
 - [ ] Make Add résumé/project/job clear tasks. Move source fingerprints/spans/revision and correction-key tooling into Source details/Advanced review; preserve selected-file and explicit ownership/approval/reject/revoke actions.
 - [ ] Generate a stable source/fact-bound default claim key when the user has not entered an advanced topic, without inventing ownership, changing claims or approving automatically. Keep explicit replacement lookup for advanced correction.
+- [ ] Add the bounded active-approved-memory reader, native DTO/paging with lifecycle fencing and saved-fact selection for correction. Test rejected paging inputs, exact UTF8 byte bounds/no truncation, revocation/currentness and late response after lock.
 - [ ] Verify identity/default-key/ownership eligibility and existing review command routing. Build profile and joined app; record only actual observed states.
 
 ## Task4: Review and join

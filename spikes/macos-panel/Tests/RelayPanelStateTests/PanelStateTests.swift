@@ -57,7 +57,8 @@ final class PanelStateTests: XCTestCase {
         XCTAssertTrue(state.apply(.resume))
         XCTAssertEqual(state.status, .idle)
         XCTAssertFalse(state.apply(.begin(turn: first, question: "Replayed after resume?")))
-        XCTAssertTrue(state.apply(.begin(turn: turn("new", 8), question: "New authorized turn?")))
+        XCTAssertFalse(state.apply(.begin(turn: turn("old-pre-resume", 8), question: "Replayed after resume?")))
+        XCTAssertTrue(state.apply(.begin(turn: turn("new", 9), question: "New authorized turn?")))
         XCTAssertEqual(state.status, .waiting)
         XCTAssertNil(state.card)
     }

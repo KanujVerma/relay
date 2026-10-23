@@ -1,0 +1,65 @@
+# Accepted parallel build contract, 2026-10-23
+
+The owner approved implementation of the three core lanes, frequent scoped commits/pushes, GPT-6.1 Sol extra-high workers, source/test-driven upstream reuse, automatic live help and both résumé and open-ended technical coverage. Main merges remain separate. Base `3e0eb379fdc8a710dd9ebee51bc93b8c6004e02d` combines repaired PR46/49 and documentation PR59 in an isolated build branch. The controller owns this shared contract; lane plans add implementation detail without changing it silently.
+
+## Scope and ownership
+
+- Conversation issue #60 owns `spikes/macos-session`, the actual capture/VAD/ASR provenance seams and its lane tests/docs. Both microphone and selected-app remote audio remain separate.
+- Personal context issue #61 owns personal_context/profile_preparation/profile_bridge, existing BrainStore/converter seams, `spikes/macos-profile`, protected persistence, prep review and retrieval tests/docs.
+- Answers/interface issue #62 owns the answer/helper/router/context modules, `spikes/macos-panel`, continuous-session bundle/purpose strings, generated policy, transport and panel tests/docs. It consumes other lanes' ports.
+- Controller owns global handoff/ADRs, shared schema/golden fixtures, build assembly and independent review. Each builder commits and pushes only its branch and lane handoff. No worker changes another lane's core files.
+
+## Native session wire v1
+
+Inherited local pipes use a four-byte big-endian length followed by strict UTF-8 JSON, at most 16 KiB per frame. No duplicate/unknown fields, nonfinite values, floating counters, unbounded allocation or control loss. Each direction is capped at 32 frames/256 KiB; overflow retires admission rather than dropping cancellation.
+
+Exact outer fields: `schemaVersion`, `captureSessionID`, `sessionEpoch`, `eventSequence`, `presentationGeneration`, `requestID`, `kind`, `sourceCode`, `streamGeneration`, `emittedUptimeNanoseconds`, `payload`.
+
+Version is 1. Session/request identities are native-issued UUID strings; counters are UInt64. Event sequence is global across both sources for the session and starts at 1. Native capture generation, native presentation generation and Python TurnToken generation are distinct. Source 1 is user microphone and 2 is selected-app output, not biometric identity. Source/generation are null only for session controls. `requestID` is a UUID on remote EOU, null on every other event including mic EOU. IDs/fences are captured at source creation, never rewritten on delivery.
+
+Exact kind/payload key sets:
+
+- session_started: `{selectedBundleID,microphoneEnabled}`.
+- speech_started: `{activityID,startHostTime,detectedUptimeNanoseconds,timebase}`.
+- speech_ended: `{activityID,endHostTime,lastSpeechInputSequence,timebase}`.
+- eou: `{event,activityID,firstInputSequence,lastInputSequence,activityClosed,lastSpeechInputSequence}`.
+- source_unavailable/discontinuity/stopping: `{reasonCode}`.
+- stopped: `{reasonCode,quiesced}`.
+
+Inner `event` preserves the existing exact 13-key native EOU v1 schema and native timebase. Source and generation match the outer envelope. Activity IDs and ASR segment IDs cannot be equated by counter or arrival order. Routing requires real closed-activity/input-range evidence covering later same-activity constraints; absent/ambiguous evidence withholds. ASR confidence stays null if absent. VAD probability is never transcript accuracy. Code/model-generated source identifiers grant no authority.
+
+Remote onset and remote invalidation/full stop retire the native presentation lease synchronously before helper delivery. User mic onset/finals update dialogue context and do not clear the current remote talking point or launch a new answer. Valid late closed remote activity can enter bounded same-session history under its original source ordering/fences; it cannot publish, revive an older turn, cancel the newer turn or launch inference. Results with invalid source provenance or a stopped/retired session are discarded entirely.
+
+## Personal context port
+
+`BrainContextProvider.retrieve(question, role, project_hint=None, budget=8)` returns immutable `ContextBundle(facts, role, project_hint, job_context, status, missing_fields, revision)`. Status is ready/no_evidence/conflict/revoked; revision is opaque. Facts carry fact_id/source_id/actor/claim_key/text/evidence/revision. The provider defines the evidence record and reports its exact API to the answer owner. `validate_current(bundle) -> bool` compares issued identity, current approved facts/source consent and job/profile revision before publication. Empty evidence does not mean the user has no experience.
+
+Use the existing BrainStore/candidate/provenance lifecycle. Native-selected sources and real preparation review drive authority; an arbitrary JSON authorized flag or generated fact ID cannot substitute. Native CryptoKit/Keychain-protected whole SQLite snapshots and in-memory Python stores are the accepted implementation direction, subject to source/test review and negative tests. No plaintext profile DB is written to disk. Profile load/update/revoke is composed into the same final Python helper, not a second persistent plaintext store. Bulk snapshots use bounded 8 KiB chunks within 16 KiB framing or a separately bounded inherited channel; partial/oversized/replayed loads never authorize facts. New profile/revocation state invalidates affected personal-answer admission.
+
+## Answer and display port
+
+One composite eligibility strategy applies common source/finality/activity/freshness checks, then a full reviewed match or eligible contextual generation. One shared QuestionTurnMachine/ActiveTurns remains semantic authority. Reuse the repaired remote_speech_started context suspension; no fabricated partial transcript. A reviewed-only classifier cannot starve the generated path.
+
+Every answer decision echoes original native request/session/epoch/presentationGeneration/eventSequence and full Python token plus opaque display ID. Optional pending resultRevision is 1; exactly one terminal revision is 2. Terminal disposition is answer/clarify/abstain/error. Only answer has answerID/kind/provenance/card. Terminal latches reject late success, and old errors cannot clear new answers. Host-issued answer kinds are reviewed_reference or generated_suggestion; grounded personal suggestions remain generated suggestions with provider-issued exact supported facts and checked source revision, not model-claimed authority.
+
+Card: lead at most 280 UTF-8 bytes, zero to two points at most 180 bytes each, optional detail `{kind,language,text}`. Kind is prose/code, language null/python/sql. Detail is at most 4096 UTF-8 bytes, preserving code whitespace; only code permits LF/tab. Generated candidate JSON is at most 8192 bytes and the full helper frame at most 16 KiB. No silent truncation. Legacy 900-byte detail proposals are superseded to support the owner's coding requirement.
+
+Python pre-send publication keeps actual ReferenceCard object checks; native actual commit checks the current lease/fences with its MainActor reducer. A serialized object does not inherit Python identity/locks. Initial answers are immutable after terminal publication; no background critic/upgrade. Local cancellation does not prove upstream token work stopped. All fake-source/model acceptance remains distinct from real hardware/model quality and latency.
+
+## Multi-turn task acceptance
+
+The first useful product must support natural mixed interviews, not just D02. Coding-with-an-engineer cases cover clarifying constraints, explaining an approach, implementing a solution, discussing complexity and improving it as feedback changes. Feature case studies cover users/problem, requirements, flows, design/trade-offs, success measures and follow-ups. Keep known facts, unresolved assumptions, the user's latest attempt and current stage separately. Never invent unseen screen/starter code or missing schemas. A screen-context port will be separately supplied; explicit pasted problem/code is a valid first input.
+
+No actual private import, Keychain access, permission prompt, model download/load, live capture or account inference is exercised by default tests. Production adapters must be real code, with synthetic injected tests and honest external acceptance gates. Keep source/copy notices and exact test evidence with each committed slice.
+
+## Early terminal and supplemental context refinements
+
+A pre-routing remote request that is blank, a statement or otherwise ineligible may terminate immediately with a fixed local abstain reason and null Python token/display ID. It still echoes the original native request/fences and seals that request. It carries no answer ID/kind/card/provenance and never fabricates a turn solely to report no question. Every answer still requires an actual current Python token and opaque native mapping.
+
+Optional screen context is a separate strict supplemental message, never an extra EOU field. Approved source descriptor fields are windowID (UInt32), bundleID (<=160 UTF-8 bytes), processID (positive Int32), label (<=160 bytes). A request-bound snapshot carries session/epoch/presentation/request identity, selectionRevision, permissionRevision, capturedUptimeNanoseconds, contentDigest, imageDigest, text and local_ocr provenance. contentDigest identifies canonical OCR text/layout; imageDigest identifies the observed pixels. Neither timestamp nor digest alone proves the screen is still unchanged at display time. Source changes/revocation retire native authority before callbacks. One bounded optional final re-observation may veto changed content; after await, native lease must still be checked synchronously. Never promise zero-lag pixel knowledge.
+
+The answered coding/case context port also accepts explicitly pasted problems. Images, when supported by the chosen official model route and user-selected screen scope, require a separate bounded chunked payload/capability port; they do not fit the16KiB text frame. No image/account inference is exercised by default tests. OCR alone cannot establish diagram relationships or exact code symbols.
+
+The exact retirement message keys are `schemaVersion,kind,captureSessionID,sessionEpoch,presentationGeneration,requestID,selectionRevision,permissionRevision,reasonCode`. Version is 1; kind is `screen_context_retired`; every fence/revision belongs to the original issued snapshot. Request ID is required, never a wildcard or null. Reasons are `selection_changed`, `permission_revoked`, `source_closed`, `context_changed`, `context_expired`, `request_superseded`, `user_stop`. Retirement only clears its matching issued context; duplicates are idempotent and a late old retirement cannot clear newer context. With no issued context, use native/direct invalidation rather than inventing an issued request.
+
+Optional image transfer is PNG only, at most 2 MiB with each side at most 1920 pixels. Raw chunks are at most 6144 bytes (8192 base64 bytes), ordered by exact index/count with one original transfer/request identity and SHA-256. Allow only one assembler with a two-second expiry. Pull frames lazily within the existing 32-frame/256 KiB sender bound. Unknown account/model image capability leaves images disabled. Selection, permission, session or request retirement clears both text and image authority.

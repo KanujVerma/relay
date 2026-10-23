@@ -62,7 +62,9 @@ public struct NativeSessionEvent: Sendable, Equatable, Encodable {
         ]).encode(to: encoder)
     }
     public func encodedFrame(maximumBytes: Int = 16_384) throws -> Data {
-        let json = try JSONEncoder().encode(self)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let json = try encoder.encode(self)
         guard !json.isEmpty, json.count <= maximumBytes, json.count <= Int(UInt32.max) else {
             throw NativeSessionError.frameTooLarge
         }

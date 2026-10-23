@@ -137,42 +137,49 @@ private actor ControlledProfilePort: ProfilePort {
         await helper.close()
     }
 
-    func testDelayedOpenSourcesCannotRestoreOpenStateAfterClose() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let key = LifecycleKey(), vault = ProfileVault(directory: directory, keys: key)
-        let helper = try helper(), port = ControlledProfilePort(helper: helper)
-        let controller = ProfileController(client: ProfileClient(port: port), vault: vault)
-        // Establish a source so the stale response also carries a private label.
-        await controller.openProfile()
-        await controller.stageEnteredText("I wrote Atlas tests.", purpose: "project", label: "Atlas notes",
-                                            role: "developer", project: "Atlas")
-        await controller.close()
-        XCTAssertEqual(controller.closeOutcome, .locked)
-        await port.holdNext("sources")
-        let opening = Task { await controller.openProfile() }
-        try await port.waitUntilHeld()
-        await controller.close()
-        let closedError = controller.errorStatus
-        XCTAssertEqual(controller.closeOutcome, .helperStopped)
-        let freshHelper = try self.helper()
-        let fresh = ProfileController(client: ProfileClient(port: freshHelper), vault: vault)
-        await fresh.openProfile()
-        XCTAssertTrue(fresh.opened)
-        await port.release()
-        await opening.value
-        XCTAssertFalse(controller.opened)
-        XCTAssertTrue(controller.sources.isEmpty)
-        XCTAssertNil(controller.card)
-        XCTAssertEqual(controller.errorStatus, closedError)
-        XCTAssertFalse(controller.busy)
-        XCTAssertEqual(fresh.sources.count, 1)
-        await fresh.close()
-        await helper.close()
+    func testDelayedOpenListsCannotRestoreClosedState() async throws {
+        for command in ["sources", "memories"] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let key = LifecycleKey(), vault = ProfileVault(directory: directory, keys: key)
+            let helper = try helper(), port = ControlledProfilePort(helper: helper)
+            let controller = ProfileController(client: ProfileClient(port: port), vault: vault)
+            // Establish a source so the stale response also carries a private label.
+            await controller.openProfile()
+            await controller.stageEnteredText("I wrote Atlas tests.", purpose: "project", label: "Atlas notes",
+                                                role: "developer", project: "Atlas")
+            let card = try XCTUnwrap(controller.card)
+            await controller.review(card, actor: "self", claimKey: "atlas.tests", replaces: nil)
+            await controller.close()
+            XCTAssertEqual(controller.closeOutcome, .locked)
+            await port.holdNext(command)
+            let opening = Task { await controller.openProfile() }
+            try await port.waitUntilHeld()
+            await controller.close()
+            let closedError = controller.errorStatus
+            XCTAssertEqual(controller.closeOutcome, .helperStopped)
+            let freshHelper = try self.helper()
+            let fresh = ProfileController(client: ProfileClient(port: freshHelper), vault: vault)
+            await fresh.openProfile()
+            XCTAssertTrue(fresh.opened)
+            await port.release()
+            await opening.value
+            XCTAssertFalse(controller.opened)
+            XCTAssertTrue(controller.sources.isEmpty)
+            XCTAssertTrue(controller.memories.isEmpty)
+            XCTAssertEqual(controller.memoryCount, 0)
+            XCTAssertNil(controller.card)
+            XCTAssertEqual(controller.errorStatus, closedError)
+            XCTAssertFalse(controller.busy)
+            XCTAssertEqual(fresh.sources.count, 1)
+            XCTAssertEqual(fresh.memoryCount, 1)
+            await fresh.close()
+            await helper.close()
+        }
     }
 
     func testDelayedSelectionAndReviewCannotPersistAfterCloseOrReopen() async throws {
-        for command in ["transfer_chunk", "select_commit", "decide", "sources"] {
+        for command in ["transfer_chunk", "select_commit", "decide", "sources", "memories"] {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: directory) }
             let key = LifecycleKey(), vault = ProfileVault(directory: directory, keys: key)
@@ -211,7 +218,7 @@ private actor ControlledProfilePort: ProfilePort {
             XCTAssertFalse(controller.busy, command)
             XCTAssertEqual(controller.errorStatus, closedError, command)
             XCTAssertEqual(try vault.load(), savedAtReopen, command)
-            if command != "sources" {
+            if !["sources", "memories"].contains(command) {
                 XCTAssertEqual(savedAtReopen, before, "An uncommitted delayed operation reached the vault: " + command)
             } else {
                 XCTAssertEqual(fresh.sources.count, 1)
@@ -247,6 +254,7 @@ private actor ControlledProfilePort: ProfilePort {
         await lookup.value
         XCTAssertFalse(controller.opened)
         XCTAssertNil(controller.existingFact)
+        XCTAssertNil(controller.existingClaimKey)
         XCTAssertTrue(controller.sources.isEmpty)
         XCTAssertEqual(controller.errorStatus, closedError)
         XCTAssertFalse(controller.busy)

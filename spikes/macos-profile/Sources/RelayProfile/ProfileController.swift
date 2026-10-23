@@ -56,11 +56,16 @@ public struct ProfileExistingFact: Decodable, Sendable {
     @Published public private(set) var pendingCount = 0
     @Published public private(set) var errorStatus: String?
     @Published public private(set) var existingFact: ProfileExistingFact?
+    @Published public private(set) var existingClaimKey: String?
+    @Published public private(set) var memories: [ProfileMemoryFact] = []
+    @Published public private(set) var memoryCount = 0
     @Published public private(set) var closeOutcome: ProfileCloseOutcome?
     private let client: ProfileClient
     private let vault: ProfileVault
     private let onInvalidate: @MainActor () -> Void
     private var lifecycle = UUID()
+    private var memoryCursor: String?
+    public var canLoadMoreMemories: Bool { opened && !busy && memoryCursor != nil }
 
     public init(client: ProfileClient, vault: ProfileVault,
                 onInvalidate: @escaping @MainActor () -> Void = {}) {
@@ -75,13 +80,24 @@ public struct ProfileExistingFact: Decodable, Sendable {
         job = try (state["job"] as? [String: Any]).map { try decode($0, as: ProfileJobCard.self) }
         pendingCount = state["pending_count"] as? Int ?? 0
         existingFact = nil
+        existingClaimKey = nil
     }
     private func readSources() async throws -> [ProfileSourceSummary] {
         let response = try await client.command(["command": "sources"])
         return try decode(response["sources"] ?? [], as: [ProfileSourceSummary].self)
     }
+    private func readMemories(after: String? = nil) async throws -> ProfileMemoryPage {
+        let response = try await client.command(["command": "memories", "after": after as Any? ?? NSNull(), "limit": 8])
+        let page = try decode(response, as: ProfileMemoryPage.self)
+        try page.validate(after: after)
+        return page
+    }
+    private func applyMemories(_ page: ProfileMemoryPage) {
+        memories = page.memories; memoryCount = page.totalCount; memoryCursor = page.nextAfter
+    }
     private func clearVisibleState() {
         opened = false; card = nil; job = nil; sources = []; existingFact = nil; pendingCount = 0
+        existingClaimKey = nil; memories = []; memoryCount = 0; memoryCursor = nil
     }
     private func lockAfterFailure(operation: UUID, message: String) async {
         guard lifecycle == operation else { return }
@@ -114,8 +130,11 @@ public struct ProfileExistingFact: Decodable, Sendable {
             }
             let newSources = try await readSources()
             guard lifecycle == operation else { return }
+            let newMemories = try await readMemories()
+            guard lifecycle == operation else { return }
             try apply(state)
             sources = newSources
+            applyMemories(newMemories)
             opened = true
         } catch {
             await lockAfterFailure(operation: operation,
@@ -135,8 +154,11 @@ public struct ProfileExistingFact: Decodable, Sendable {
             try vault.save(snapshot)
             let newSources = try await readSources()
             guard lifecycle == operation else { return }
+            let newMemories = try await readMemories()
+            guard lifecycle == operation else { return }
             try apply(state)
             sources = newSources
+            applyMemories(newMemories)
         } catch ProfileError.rejected {
             guard lifecycle == operation else { return }
             errorStatus = "Review could not be applied. Check ownership, the fact key and the selected revision."
@@ -180,14 +202,32 @@ public struct ProfileExistingFact: Decodable, Sendable {
         guard opened, !busy else { return }
         let operation = lifecycle
         busy = true; defer { if lifecycle == operation { busy = false } }
+        existingFact = nil; existingClaimKey = nil
         do {
             let response = try await client.command(["command": "current_claim", "claim_key": claimKey])
             guard lifecycle == operation else { return }
             existingFact = try (response["fact"] as? [String: Any]).map { try decode($0, as: ProfileExistingFact.self) }
+            existingClaimKey = claimKey
             errorStatus = existingFact == nil ? "No active fact uses this key." : nil
         } catch {
             guard lifecycle == operation else { return }
             errorStatus = "The existing fact could not be checked."
+        }
+    }
+    public func loadMoreMemories() async {
+        guard canLoadMoreMemories, let after = memoryCursor else { return }
+        let operation = lifecycle
+        busy = true; errorStatus = nil
+        defer { if lifecycle == operation { busy = false } }
+        do {
+            let page = try await readMemories(after: after)
+            guard lifecycle == operation, opened else { return }
+            let combined = memories + page.memories
+            guard Set(combined.map(\.factID)).count == combined.count, page.totalCount >= combined.count
+            else { throw ProfileError.invalidPayload }
+            memories = combined; memoryCount = page.totalCount; memoryCursor = page.nextAfter
+        } catch {
+            await lockAfterFailure(operation: operation, message: "Saved memory could not be loaded.")
         }
     }
     public func approveJob(_ displayed: ProfileJobCard) async {

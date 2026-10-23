@@ -22,6 +22,15 @@ public struct FinalTranscriptEvent: Sendable, Equatable {
     /// This EOU adapter does NOT have a calibrated word-confidence score.
     public let confidence: Double?
 
+    /// A completed EOU without recognized words is a distinct terminal
+    /// *outcome*, never silence or permission to keep an old answer visible.
+    /// The versioned native wire decoder maps final + nil/blank text into
+    /// blank_final. The real authorized host/turn bridge is still separate.
+    public var isBlankEOUTerminal: Bool {
+        status == .final
+            && (text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
     public init(
         status: Status, source: PCMSource, streamGeneration: UInt64,
         segmentID: UInt64, revision: UInt64 = 1,

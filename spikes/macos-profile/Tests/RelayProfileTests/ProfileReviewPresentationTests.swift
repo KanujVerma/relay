@@ -120,4 +120,47 @@ final class ProfileReviewPresentationTests: XCTestCase {
         XCTAssertThrowsError(try page([empty], count: 1).validate(after: nil))
     }
 
+    @MainActor func testSelectingSavedKeysPreservesIdentityAndReplacesExactlyOneFact() async throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        for storedKey in ["atlas.component_v1", "atlas:component-v1", "Atlas.Component_V1"] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let port = PipeProfilePort(python: try ProfileTestEnvironment.python(), repository: root)
+            let controller = ProfileController(client: ProfileClient(port: port),
+                vault: ProfileVault(directory: directory, keys: ReviewPresentationKey()))
+            await controller.openProfile()
+            await controller.stageEnteredText("I implemented Atlas version one.", purpose: "project", label: "Earlier notes",
+                                              role: "developer", project: "Atlas")
+            let original = try XCTUnwrap(controller.card)
+            await controller.review(original, actor: "self", claimKey: storedKey, replaces: nil)
+            let selected = try XCTUnwrap(controller.memories.first)
+            await controller.stageEnteredText("I implemented Atlas version two.", purpose: "project", label: "Corrected notes",
+                                              role: "developer", project: "Atlas")
+            let displayed = try XCTUnwrap(controller.card)
+            let key = ProfileReviewPresentation.claimKey(sourceID: displayed.sourceID, factID: displayed.factID,
+                                                        topic: "Some previously typed topic", selectedClaimKey: selected.claimKey)
+            XCTAssertEqual(key, selected.claimKey)
+            await controller.lookupExisting(claimKey: key)
+            let earlier = try XCTUnwrap(controller.existingFact)
+            XCTAssertEqual(earlier.factID, selected.factID)
+            XCTAssertEqual(controller.existingClaimKey, key)
+            XCTAssertFalse(ProfileReviewPresentation.canApprove(actor: "self", claimKey: key,
+                hasExisting: false, replacesExisting: true, requiresExisting: true))
+            XCTAssertFalse(ProfileReviewPresentation.canApprove(actor: "self", claimKey: key,
+                hasExisting: true, replacesExisting: false, requiresExisting: true))
+            XCTAssertTrue(ProfileReviewPresentation.canApprove(actor: "self", claimKey: key,
+                hasExisting: true, replacesExisting: true, requiresExisting: true))
+            await controller.review(displayed, actor: "self", claimKey: key, replaces: earlier)
+            XCTAssertNil(controller.errorStatus)
+            XCTAssertEqual(controller.memoryCount, 1)
+            XCTAssertEqual(controller.memories.count, 1)
+            XCTAssertEqual(controller.memories.first?.factID, displayed.factID)
+            XCTAssertEqual(controller.memories.first?.claimKey, selected.claimKey)
+            XCTAssertFalse(controller.memories.contains { $0.factID == original.factID })
+            await controller.close()
+            await port.close()
+        }
+    }
+
 }

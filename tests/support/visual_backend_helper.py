@@ -45,7 +45,7 @@ def main(argv=None):
     tail = arguments[boundary:]
     if tail and (len(tail) not in (4, 5)
                  or tail[:3] != ['-m', 'relay_spike.session_host', '--role']
-                 or tail[3] not in ('analytics', 'epic')
+                 or tail[3] not in ('analytics', 'epic', 'developer')
                  or (len(tail) == 5 and tail[4] not in ('--fixture-model', '--oauth'))):
         parser.error('Expected only the HelperTransport module/role/mode suffix.')
     role = tail[3] if tail else 'analytics'

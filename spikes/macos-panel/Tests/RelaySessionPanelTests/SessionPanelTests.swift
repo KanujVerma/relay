@@ -217,3 +217,15 @@ extension HelperTransportTests {
         XCTAssertEqual(waitpid(pid,&status,WNOHANG),-1);XCTAssertEqual(errno,ECHILD)
     }
 }
+
+extension SessionPanelTests {
+    @MainActor func test_task_correction_clarification_has_task_specific_message() throws {
+        let authority=SessionPresentationAuthority();try authority.start()
+        let panel=SessionPanelController(authority:authority);let e=try event(authority);panel.observe(e)
+        var value=try JSONSerialization.jsonObject(with:result(e,disposition:"clarify")) as! [String:Any]
+        value["reasonCode"]="task_context_unresolved"
+        XCTAssertTrue(try panel.accept(JSONSerialization.data(withJSONObject:value)))
+        XCTAssertEqual(panel.snapshot.status,"Clarify the updated task constraint")
+        XCTAssertFalse(panel.snapshot.status.contains("background"))
+    }
+}

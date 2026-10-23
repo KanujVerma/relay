@@ -1,12 +1,8 @@
-# Answers lane current review handoff
+# Answers lane current round 2 handoff
 
-Round1 review baseline cd5286a50700b8040f9e9b03b65c8f960e98fb1c. All four reproduced corrections are implemented and verified in focused10tests. Published correction checkpoint9ef2ee4 plus personal liveness dependency2775fb4(original7ace412). The final source commit follows this record; no optional screen/control/workflow/native-capture composition was added.
+Reviewed baseline2e06c6d03e7606532c9cf16c961fd4841d327160. The two follow-ups are corrected in a narrow source delta: ordinary named/third-person attribution cannot acquire authority through a coaching verb; the shared ASR/task correction prefix detects Make that and tracks unresolved targets/replacement hints so supported explicit restatements recover. The native task-clarification message is specific. See [ANSWERS_REVIEW_R2.md](ANSWERS_REVIEW_R2.md).
 
-See [ANSWERS_REVIEW_R1.md](ANSWERS_REVIEW_R1.md) for exact policy/task/source/display delta and limits. Original-owner personal d8bb0dc/eb98e41 imported as1472c75/79e19f2; follow-up7ace412 as2775fb4. Required emergency callback now binds one helper, synchronously retires source/display/helper/pending admission, awaits actual child termination receipt, blocks recovery until completion and requires fresh helper/port/client/controller. No waitUntilExit in the shared path.
-
-Fresh final-delta checks: Python460passed/23optional skips; native personal17passed and panel25passed; production app build, EVALS26, docs20 and diff whitespace passed. Real child exit/reap and required emergency profile close tests passed; standalone personal36shutdown schedules passed. Local Swift6.4; independent re-review and hosted Swift6.1 CI pending. No live private/hardware/model/account work.
-
-Next: controller re-review immutable corrected source, then composition owner may import it and separately wire screen/controls. Prior implementation smoke below is historical and was not rerun as live acceptance.
+Fresh checks: round2 module8passed; fullPython468passed/23optional skips; panel26native tests+app build passed; EVALS26/docs20/diff checks passed. Accepted helper/profile/mic/display/source lifetime code was not changed; no profile rerun, optional composition or workflow changes. Root owns independent re-review, hostedSwift6.1 CI and joined acceptance. Final source head is recorded in the external correction report after publication.
 
 ## Prior source handoff (historical)
 

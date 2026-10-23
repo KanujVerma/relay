@@ -44,7 +44,11 @@ questions also have no matching coverage-complete reviewed reference.
 
 This contract is an **offline decision object**, not a publishing callback.
 The production host must revalidate ActiveTurns at the actual synchronous
-display boundary and again if a UI render is deferred. A source_channel value
+display boundary and again if a UI render is deferred. Unspecified runtime
+policy inputs default to **host not authorized, unknown source and partial
+question**, so omitting any permission/finality evidence fails closed.
+Only the controlled synthetic evaluation fixture factory supplies positive
+source/finality/permission defaults. A source_channel value
 is a trusted-host assertion, not proof of the interviewer's biometric identity
 or consent by itself. The host must obtain permission before treating remote
 ASR as a final question.

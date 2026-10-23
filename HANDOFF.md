@@ -14,7 +14,7 @@ GitHub is the durable source of truth. A new chat or agent must be able to conti
 
 ## Active implementation, approved by owner
 
-The owner approved the three core features and directed agents to build them in parallel. Current delivery is tracked in [BUILD_STATUS](docs/BUILD_STATUS.md), with implementation interfaces in [BUILD_CONTRACT](docs/BUILD_CONTRACT.md) and the [execution plan](docs/superpowers/plans/2026-10-23-parallel-implementation.md). Personal PR #63, answer/panel PR #67, conversation PR #68 and screen-context PR #69 are published drafts. Shortcuts/app controls are building separately. Personal independent review found three reproducible issues and corrections are underway; conversation independent review is active. PR #67 also exposes a Swift 6.1.2 compilation failure in its imported profile dependency. Independent review, complete app composition and real hardware/account acceptance remain open.
+The owner approved the three core features and directed agents to build them in parallel. Current delivery is tracked in [BUILD_STATUS](docs/BUILD_STATUS.md), with implementation interfaces in [BUILD_CONTRACT](docs/BUILD_CONTRACT.md) and the [execution plan](docs/superpowers/plans/2026-10-23-parallel-implementation.md). Personal PR #63, answer/panel PR #67, conversation PR #68 and screen-context PR #69 are published drafts. Shortcuts/app controls are published as draft PR #70. Personal independent review found three reproducible issues and corrections are underway; conversation independent review passed and its head is assembled on the integration branch. PR #67 also exposes a Swift 6.1.2 compilation failure in its imported profile dependency. Independent review, complete app composition and real hardware/account acceptance remain open.
 
 Additional accepted requirements include coding with an engineer, feature case studies, optional screen context and useful global shortcuts/app controls. A separate agent completed the requested [REA/Cluely investigation](docs/research/CLUELY_LESSONS.md); its observed implementation details and unknowns inform these features. No proprietary app code or private user material is copied into Relay.
 
@@ -64,7 +64,7 @@ For each subsequent checkpoint, record exact commit/PR links and observed check/
 
 ## One exact next action
 
-Finish personal review round-one corrections, then independently re-review that delta while the conversation review and controls builder continue. The controller next assembles accepted lane heads, repairs hosted build coverage, composes screen/controls and verifies the actual joined synthetic path. Exact lane heads and remaining gates are in BUILD_STATUS; main merges remain separately approved actions.
+Finish personal review round-one corrections, then independently re-review that delta while independent answer/screen reviews continue and controls review is queued. The controller next assembles accepted lane heads, repairs hosted build coverage, composes screen/controls and verifies the actual joined synthetic path. Exact lane heads and remaining gates are in BUILD_STATUS; main merges remain separately approved actions.
 
 ## Resume procedure and open decisions
 

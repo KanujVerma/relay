@@ -4,6 +4,8 @@ Issue #65. Branch `feature/app-controls-2026-10-23`, frozen foundation `a8f83593
 
 Date: 2026-10-23. Verified code head: `14660e7a2a086058466bd073d24c282ad14d93c8`. [Draft PR #70](https://github.com/KanujVerma/relay/pull/70) targets the frozen foundation. This lane is ready for independent controller review and assembly.
 
+Toolchain minimum: the actual pinned upstream KeyboardShortcuts 3.1.0 `Package.swift` declares **Swift tools 6.2**, macOS 10.15 and no external dependencies. RelayControls requires tools 6.2/macOS 15. Swift 6.1 cannot resolve this manifest; hosted native checks must select a toolchain providing Swift 6.2 or newer. Local verification used Apple Swift 6.4 with the macOS 27 SDK and a macOS 15 deployment target.
+
 ## Goal
 
 Configurable ordinary global controls, useful own-window actions and optional explicit selected-text context, preserving the real host's session and display authority.

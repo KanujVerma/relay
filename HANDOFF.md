@@ -14,6 +14,8 @@ P0 newly confirmed gap: the prototype app still depends on checkout/system Pytho
 
 Read [Cluely parity direction](docs/superpowers/specs/2026-10-23-cluely-parity-direction.md) next. Raw competitor artifacts/evidence stay local. Public handoff records functional observations/source identity and gaps. The Mac remains locked, so visible runtime inspection still needs manual unlock; static REA, builds and synthetic verification continue.
 
+Runtime foundation ec796a7 is reviewed/imported ase787aee: strict bundled-helper resolver/entry, exact CPython3.14.9 input and54-package production/hash locks. Root's narrow Model default/error hook now uses that resolver, blocks broken `.app` fallback and preserves explicit developer fixture overrides. Root26 affected native tests (5resolver,2actual-app runtime,9setup,10presentation) and3Python entry tests pass. Hook independent review and actual frozen helper/bundle/relocation remain pending; this is not yet a standalone product. The packaging worker owns that next artifact and builds current joined source.
+
 ## Goal
 
 Build one native Mac copilot for permitted interviews/mock sessions: listen continuously, automatically recognize questions and follow-ups/corrections, and show concise suggestions with optional code/detail. Cover technical questions, verified personal background, coding with an engineer and feature case studies. Explicit selected-window screen/selected-text context and useful controls complement the conversation. A manual question-confirmation step is not the milestone. Personal claims require support; speech/model output cannot silently become biography.

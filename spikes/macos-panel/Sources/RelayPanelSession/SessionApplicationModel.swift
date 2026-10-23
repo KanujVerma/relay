@@ -80,8 +80,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     @Published private(set) var oauth:Bool
     let role:String
     let root:URL
-    private let python:URL
-    private let pythonArguments:[String]
+    private let helperRuntime:Result<HelperRuntimeLocation,HelperRuntimeError>
     private let authority=SessionPresentationAuthority()
     private let contextCoordinatorOverride:ScreenContextCoordinator?
     private let contextWriteAcknowledged:(@MainActor (Data,PanelRequestBinding) async ->Void)?
@@ -192,7 +191,9 @@ private actor FixtureRecognizer: ActivityRecognizer {
     init(arguments:[String]=CommandLine.arguments,contextCoordinator:ScreenContextCoordinator?=nil,
          contextWriteAcknowledged:(@MainActor (Data,PanelRequestBinding) async ->Void)?=nil,
          ingressEnqueued:(@MainActor (SessionIngress)->Void)?=nil,
-         speechSetup:SpeechSetupCoordinator?=nil) {
+         speechSetup:SpeechSetupCoordinator?=nil,
+         bundleURL:URL=Bundle.main.bundleURL,
+         workingDirectory:URL=URL(fileURLWithPath:FileManager.default.currentDirectoryPath)) {
         self.speechSetup=speechSetup ?? SpeechSetupCoordinator()
         self.contextCoordinatorOverride=contextCoordinator
         self.contextWriteAcknowledged=contextWriteAcknowledged;self.ingressEnqueued=ingressEnqueued
@@ -200,10 +201,14 @@ private actor FixtureRecognizer: ActivityRecognizer {
         fixtureSuite=Self.argument("--fixture-suite",arguments) ?? "reviewed"
         role=Self.argument("--role",arguments) ?? (fixture ? "analytics":"developer")
         oauth=arguments.contains("--oauth") && !fixture
-        let pythonPath=Self.argument("--python",arguments)
-        python=URL(fileURLWithPath:pythonPath ?? "/usr/bin/env")
-        pythonArguments=pythonPath==nil ? ["python3"]:[]
-        root=URL(fileURLWithPath:Self.argument("--repository",arguments) ?? FileManager.default.currentDirectoryPath)
+        do {
+            let location=try HelperRuntimeResolver.resolve(bundleURL:bundleURL,arguments:arguments,workingDirectory:workingDirectory)
+            helperRuntime = .success(location);root=location.resourceRoot
+        }catch{
+            let failure=(error as? HelperRuntimeError) ?? .invalidBundledRuntime
+            helperRuntime = .failure(failure);root=bundleURL
+            self.error=failure.localizedDescription
+        }
         asrFolder=Self.argument("--asr-models",arguments) ?? ""
         vadFolder=Self.argument("--vad-model",arguments) ?? ""
         modelLicensesAcknowledged=arguments.contains("--acknowledge-local-model-licenses")
@@ -229,11 +234,12 @@ private actor FixtureRecognizer: ActivityRecognizer {
     func ensureHelper() throws -> HelperTransport {
         guard !stopping,profileBinding?.retired != true else { throw PanelBridgeError.closed }
         if let helper { return helper }
+        let runtime=try helperRuntime.get()
         visual.retireForHelperChange()
         let identity=UUID();helperIdentity=identity;helperFailures.activate(identity)
         let nativeAuthority=authority;let failures=helperFailures;let delivery=answers
         let sourceController=fixture ? native:capture.controller
-        let helper=HelperTransport(root:root,python:python,pythonArguments:pythonArguments,mode:fixture ? .fixture:oauth ? .oauth:.noInference,role:role,onFrame:{ [weak self] data in
+        let helper=HelperTransport(root:runtime.resourceRoot,python:runtime.executable,pythonArguments:runtime.arguments,mode:fixture ? .fixture:oauth ? .oauth:.noInference,role:role,onFrame:{ [weak self] data in
             try delivery.enqueue(data,byteCount:data.count) { [weak self] data in
                 guard let self,self.helperIdentity==identity else { return }
                 do { try self.acceptFrame(data) } catch { self.failSession() }
@@ -458,7 +464,10 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     func ingestFixturePacket(_ packet:SessionAudioPacket){guard fixture else{return};native.ingest(packet)}
     var currentSessionID:UUID? { authority.snapshot()?.captureSessionID ?? forwardedSessionID }
-    var canStartSession:Bool { !running && !starting && !stopping && teardown==nil && !speechSetup.snapshot.isBusy && !visual.isBusy && visual.status != .busy && (fixture || capture.phase == .idle) }
+    var canStartSession:Bool {
+        guard case .success=helperRuntime else{return false}
+        return !running && !starting && !stopping && teardown==nil && !speechSetup.snapshot.isBusy && !visual.isBusy && visual.status != .busy && (fixture || capture.phase == .idle)
+    }
     var canResume:Bool { paused && canStartSession }
     func beginRetirement(end:Bool) {
         endRequested = endRequested || end

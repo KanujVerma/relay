@@ -22,7 +22,8 @@ final class SessionContractTests: XCTestCase {
     func testNonunitTimebaseAndCheckedOverflow() throws {
         let clock = NativeClockCalibration(hostTicksAtAnchor: 100, uptimeNsAtAnchor: 1_000, nsNumer: 125, nsDenom: 3)
         XCTAssertEqual(try clock.uptimeNanoseconds(forHostTicks: 103), 1_125)
-        XCTAssertThrowsError(try clock.uptimeNanoseconds(forHostTicks: 99))
+        XCTAssertEqual(try clock.uptimeNanoseconds(forHostTicks: 97), 875)
+        XCTAssertEqual(try clock.uptimeNanoseconds(forHostTicks: 99), 958)
         let overflow = NativeClockCalibration(hostTicksAtAnchor: 0, uptimeNsAtAnchor: UInt64.max, nsNumer: 2, nsDenom: 1)
         XCTAssertThrowsError(try overflow.uptimeNanoseconds(forHostTicks: 1))
     }

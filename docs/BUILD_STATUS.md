@@ -1,6 +1,6 @@
 # Parallel build status, 2026-10-23
 
-Main remains `eb28d15`. Existing PR46/49 repairs and documentation PR59 are published but unmerged. The owner approved implementation, frequent scoped commits/pushes and GPT-6.1 Sol extra-high workers. Current native/session and answer/interface builders are active; personal lane has delivered a draft for independent review. No real private source, Keychain, capture/model or account-inference acceptance is claimed.
+Main remains `eb28d15`. Existing PR46/49 repairs and documentation PR59 are published but unmerged. The owner approved implementation, frequent scoped commits/pushes and GPT-6.1 Sol extra-high workers. Four feature drafts are published; personal corrections, conversation review and the controls builder are active. No real private source, Keychain, capture/model or account-inference acceptance is claimed.
 
 ## Branch topology
 
@@ -12,12 +12,12 @@ Main remains `eb28d15`. Existing PR46/49 repairs and documentation PR59 are publ
 
 | Work | Published checkpoint / branch | Evidence and remaining work |
 | --- | --- | --- |
-| Conversation #60 | `aea5122`, feature/conversation-runtime-2026-10-23 | Builder reports 17 native tests, actual local FluidAudio capture adapters compile, no model/capture run. Closed-activity provenance, independent source IDs, owned task cancellation and bounded writer are underway. CLI, longer-reply behavior, final tests/docs and independent review remain. |
-| Personal #61 | [Draft PR #63](https://github.com/KanujVerma/relay/pull/63), `d8bb0dcaf72be5db053b688d895fb5830a206a01` | Builder reports 414 Python tests with 21 optional converter skips and 10 native tests; selected-file/review UI, provider-issued context, full encrypted profile persistence and same-helper locking implemented. Independent review, joined acceptance, signed app/real Keychain/private-picker checks remain. |
-| Answers/panel #62 | `c5394bf`, feature/contextual-answer-panel-2026-10-23; later verified work preparing its draft | Builder reports latest 444 Python tests with 22 skips and 16 native panel tests; actual offline coding window and Stop clear observed. Live assembly links the native/profile ports; new schema fixtures and final draft/review remain. One optional HTTPX test joins the 21 converter skips. |
-| Screen context #64 | feature/screen-context-2026-10-23 | Dedicated builder active: selected-source ScreenCaptureKit/Vision, request/source/freshness binding, code/OCR limitations and injected negative tests. No screen capture or permission prompt exercised. |
-| Shortcuts/app controls #65 | queued separate worker | Use suitable native configurable hotkeys; determine actual need for AX from useful features. Pause must stop processing, not just alter a timer. |
-| REA research #66 | [Sanitized findings](research/CLUELY_LESSONS.md) | Dedicated extra-high agent actually ran REA6.7.0 on installed Cluely2.1.24 selected sources. Evidence retained locally; source hashes/coordinates and coverage/integrity limits published. No competitor runtime or account data accessed. |
+| Conversation #60 | [Draft PR #68](https://github.com/KanujVerma/relay/pull/68), `a26181ee068feb4ff1e0f3b965479df7fb07a797` | Builder reports 27 synthetic Swift tests, built/signed inert app and nine native frames accepted by the actual Python host. Independent review active. Real speech, overlap/echo, latency, CPU/RSS and permissions remain unmeasured. |
+| Personal #61 | [Draft PR #63](https://github.com/KanujVerma/relay/pull/63), `d8bb0dcaf72be5db053b688d895fb5830a206a01` | Builder reports 414 Python tests with 21 optional converter skips and 10 native tests. Independent review reproduced failed-lock authority, delayed-open-after-close and unrelated C/R retrieval defects. Round-one fixes underway, plus Swift 6.1.2 isolation failure observed through PR67. Not accepted yet. |
+| Answers/panel #62 | [Draft PR #67](https://github.com/KanujVerma/relay/pull/67), `cd5286a50700b8040f9e9b03b65c8f960e98fb1c`; tested source `8703964` | Builder reports 449 Python tests with 23 optional skips, three isolated HTTPX tests, 23 native panel tests, production build and visible offline coding/Stop acceptance. Includes declared native/personal peer checkpoints. Hosted panel compile fails in imported ProfileController under Swift 6.1.2; independent answer review and final composition pending. |
+| Screen context #64 | [Draft PR #69](https://github.com/KanujVerma/relay/pull/69), `ec2ef2565da6ff6d056c58f08eb06128dbc9bf36` | Builder reports 28 Swift and 20 Python tests plus native text/PNG to actual ContextSnippet round trip. Explicit window picker, local OCR, strict retirement and optional disabled image port implemented. Independent review and real app composition remain. No user screen, prompt or image inference exercised. |
+| Shortcuts/app controls #65 | feature/app-controls-2026-10-23 | Dedicated builder active: pinned MIT KeyboardShortcuts, useful own-window controls, real host action port and narrow optional selected-text AX service. Normal hotkeys do not require Accessibility permission. Final draft/review/composition pending. |
+| REA research #66 | [Sanitized findings](research/CLUELY_LESSONS.md) | Dedicated extra-high agent ran REA 6.7.0 on eight selected sources from installed Cluely 2.1.24. Evidence retained locally; source hashes/coordinates and coverage/integrity limits published. No competitor runtime or account data accessed. |
 
 These counts are lane-reported results for the cited checkpoints; read each lane handoff/PR and current CI before integration. They do not establish live interview accuracy or a fully joined app. No branch is accepted merely because an agent says complete.
 
@@ -29,4 +29,14 @@ The owner added coding-with-an-engineer and feature-case-study scenarios. Test e
 
 ## Next controller action
 
-Collect immutable lane diffs and reports, run independent review, and assemble the verified branches. Start the separate shortcuts worker when a slot frees. Keep current implementation/handoff commits on GitHub; preserve unfinished edits and resume interrupted agents from their checkpoints.
+Complete and re-review personal round-one corrections while reviewing the native conversation lane and finishing controls. Review answer and screen lanes next, compose the optional features and assemble accepted heads. Add offline native CI coverage for new packages and fix the observed hosted compiler failure. Keep current implementation/handoff commits on GitHub; preserve unfinished edits and resume interrupted agents from their checkpoints.
+
+
+## Review and hosted-check ledger
+
+- Personal review round 1, immutable `a8f8359..d8bb0dc`: changes required. P1 failed shared-helper lock leaves profile ready; P2 delayed open republishes after close; P2 C/R queries return unrelated facts. Focused reproductions used synthetic data and no real Keychain. Original implementer is correcting these before scoped re-review. The fixed host port must preserve the shared helper on acknowledged lock and require emergency shutdown on unacknowledged lock.
+- Conversation `a8f8359..a26181e`: read-only independent review active. Answer/screen independent reviews pending. Builder self-review is not substituted for them.
+- Live GitHub metadata confirms PRs 59/63/67/68/69 are open drafts and unmerged, with the exact heads above (PR59 documentation mirror is being refreshed). Frozen feature base remains `a8f8359`.
+- PR67 [contract check](https://github.com/KanujVerma/relay/actions/runs/39994455471) passed; [native panel check](https://github.com/KanujVerma/relay/actions/runs/39994455489) failed. Job120554382170 reports Swift 6.1.2 rejects the nonisolated `mutate` action closure returning `[String: Any]` in ProfileController. The local builder used Swift 6.4. This is a real compatibility failure, not an unrun check.
+- PR68 [contract check](https://github.com/KanujVerma/relay/actions/runs/39994017539) and PR69 [contract check](https://github.com/KanujVerma/relay/actions/runs/39995626688) passed. Existing path filters do not yet exercise their new native packages. Native test counts above are local builder evidence, not hosted results.
+- Controller assembly currently contains repaired foundation, shared fixtures and coordination docs. Joining feature code is pending reviews; main is unchanged. Documentation PR59 is kept runtime-free.

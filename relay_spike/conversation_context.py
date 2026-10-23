@@ -4,6 +4,7 @@ from collections import deque
 from dataclasses import asdict, dataclass
 import json
 import re
+from .correction_grammar import CORRECTION_PREFIX
 
 
 @dataclass(frozen=True)
@@ -36,7 +37,7 @@ class ConversationContext:
     corrections and overflow require a restatement instead of losing authority.
     """
     _NEW=re.compile(r'^(?:new|next|different) (?:task|problem|case(?: study)?)[,: ]+',re.I)
-    _CORRECTION=re.compile(r'^(?:actually|no|instead|correction|i meant)[,: ]+',re.I)
+    _CORRECTION=CORRECTION_PREFIX
     _FIELD=re.compile(r'\b(capacity|keys?|values?|inputs?|latency|users?|concurrency|throughput|budget|privacy|availability|language|storage|requirements?)\b',re.I)
     def __init__(self, *, max_utterances=12, max_bytes=6000):
         if not 1 <= max_utterances <= 32 or not 512 <= max_bytes <= 12000:
@@ -47,6 +48,7 @@ class ConversationContext:
     def clear(self):
         self._history=deque();self._kind='discussion';self._order=0;self._task_order=-1
         self._gaps=();self._problem=();self._constraints={};self._task_state='ready';self._task_started=False
+        self._unresolved_fields=set();self._unresolved_bare=False;self._unresolved_value=None;self._problem_restatement=False
 
     def mark_gap(self,reason):
         if reason not in ('microphone_unavailable','microphone_discontinuity'): raise ValueError('Invalid context gap.')
@@ -58,14 +60,26 @@ class ConversationContext:
         if re.search(r'implement|coding|write (?:a |the )?(?:function|code)|solve|algorithm',text,re.I): return 'coding'
         return 'discussion'
 
+    @staticmethod
+    def _field_name(name):
+        name=name.lower()
+        return {'key':'keys','value':'values','inputs':'input','user':'users','requirement':'requirements'}.get(name,name)
+
     def _constraint(self,part):
         stripped=self._CORRECTION.sub('',part).strip()
         if stripped.endswith('?'): return None
         field=self._FIELD.search(stripped)
         if field is None or not re.search(r'\b(?:must|shall|is|are|only|require|requires|assume|no)\b|=',stripped,re.I): return None
-        name=field.group(1).lower()
-        name={'key':'keys','value':'values','inputs':'input','users':'users','user':'users','requirement':'requirements'}.get(name,name)
+        name=self._field_name(field.group(1))
         return name,stripped
+
+    def _replacement_hint(self,text):
+        tail=self._CORRECTION.sub('',text).strip(' \t,.:!?')
+        tail=re.sub(r'^make (?:it|that)\s+','',tail,flags=re.I)
+        words=tuple(re.findall(r"\w+",tail.casefold()))
+        if not 1<=len(words)<=4 or len(tail.encode())>128: return None
+        if any(w in ('make','it','that','please','actually','no','instead','rather','sorry','reverse') for w in words): return None
+        return words
 
     def _update_task(self,text,order):
         if order<self._task_order: return
@@ -77,6 +91,7 @@ class ConversationContext:
         if begin:
             self._task_started=True
             self._kind=kind;self._constraints={};self._task_state='ready'
+            self._unresolved_fields.clear();self._unresolved_bare=False;self._unresolved_value=None;self._problem_restatement=False
             problem=tuple(part for index,part in enumerate(parts) if index==0 or self._constraint(part) is None)
             if sum(len(p.encode()) for p in problem)>4096:
                 self._problem=();self._task_state='overflow';return
@@ -84,6 +99,10 @@ class ConversationContext:
         correction=bool(self._CORRECTION.match(text))
         updates=[(part,self._constraint(part)) for part in parts]
         if correction and not any(parsed is not None for _,parsed in updates):
+            fields={self._field_name(name) for name in self._FIELD.findall(text)}
+            self._unresolved_fields.update(fields)
+            if not fields:
+                self._unresolved_bare=True;self._unresolved_value=self._replacement_hint(text)
             self._task_state='needs_clarification';return
         for part,parsed in updates:
             if parsed is None: continue
@@ -95,8 +114,20 @@ class ConversationContext:
             # An embedded original value cannot be safely rewritten mechanically.
             # A full explicit task restatement is required in that case.
             if correction and key in self._constraints and any(self._constraint(p) and self._constraint(p)[0]==key for p in self._problem):
+                self._problem_restatement=True;self._unresolved_fields.add(key)
                 self._task_state='needs_clarification';return
+            changed=self._constraints.get(key)!=value
             self._constraints=candidate
+            # Resolve a named target only with that field. A bare replacement
+            # also needs a changed explicit statement carrying its bounded
+            # replacement hint; unrelated/unchanged requirements cannot clear it.
+            if self._problem_restatement and key in self._unresolved_fields and not correction:
+                self._problem_restatement=False
+            self._unresolved_fields.discard(key)
+            if self._unresolved_bare and changed and self._unresolved_value is not None and set(self._unresolved_value).issubset(re.findall(r"\w+",value.casefold())):
+                self._unresolved_bare=False;self._unresolved_value=None
+        if self._task_state=='needs_clarification' and not self._unresolved_fields and not self._unresolved_bare and not self._problem_restatement:
+            self._task_state='ready'
 
     def observe(self,channel,text,*,order=None):
         if channel not in ('remote','microphone') or not isinstance(text,str): raise ValueError('Invalid conversation input.')
@@ -113,7 +144,12 @@ class ConversationContext:
         for name,pattern in (('validation',r'validat|test|measure|success'),('tradeoffs',r'tradeoff|improv|scale|optimi'),('flows',r'workflow|user flow|journey'),('requirements',r'require|constraint|capacity'),('users',r'who|user|customer'),('design',r'design|architect'),('implementation',r'code|implement|solve|function|query')):
             if re.search(pattern,current): stage=name;break
         assumptions=('Only explicitly supplied requirements are known.',)
-        if self._task_state!='ready': assumptions+=('Restate the full task or affected constraint before relying on it.',)
+        if self._task_state!='ready':
+            assumptions+=('Restate the full task or affected constraint before relying on it.',)
+            if self._unresolved_fields: assumptions+=('Unresolved fields: '+', '.join(sorted(self._unresolved_fields)),)
+            elif self._unresolved_bare:
+                assumptions+=('The correction target is not yet explicit.',)
+                if self._unresolved_value: assumptions+=('Unresolved replacement: '+' '.join(self._unresolved_value),)
         task=TaskContext(kind=self._kind,known_problem=self._problem,constraints=tuple(self._constraints.values()),stage=stage,user_attempt=user[-2:],engineer_feedback=remote[-2:],unresolved_assumptions=assumptions,context_gaps=self._gaps,state=self._task_state,next_step='Discuss '+stage+'; keep uncertain requirements explicit.')
         snapshot=DialogueSnapshot(tuple((c,t) for c,t,_ in self._history),task)
         if len(json.dumps(snapshot.as_dict(),ensure_ascii=False).encode())>24576 and len(self._history)>1:

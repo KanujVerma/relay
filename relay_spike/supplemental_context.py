@@ -90,6 +90,8 @@ class SupplementalContextProvider:
             if snippet.provenance=='local_ocr':return self._screen.validate_current(snippet,native)
             return 0<=self._now()-self._issued['capturedUptimeNanoseconds']<=5_000_000_000
         except (ValueError,TypeError,KeyError):return False
+    def discard_staged(self):
+        self._staged=None
     def invalidate(self):
         self._staged=self._native=self._snippet=self._issued=None
         self._screen.invalidate(require_new_authority=False)

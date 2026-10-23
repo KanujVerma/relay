@@ -132,3 +132,39 @@ extension CaptureLifecycleTests {
         XCTAssertNil(authority.snapshot())
     }
 }
+
+private final class CaptureEventProbe:@unchecked Sendable {
+    private let lock=NSLock();private var stored:[NativeSessionEvent]=[]
+    func append(_ event:NativeSessionEvent){lock.withLock{stored.append(event)}}
+    var events:[NativeSessionEvent]{lock.withLock{stored}}
+}
+extension CaptureLifecycleTests {
+    func testSynchronousRetirementThenRepeatedAsyncStopKeepsOneStopPairAndRealOwnership() async throws {
+        let driver=try FakeCaptureDriver();await driver.setHoldStop()
+        let authority=SessionPresentationAuthority();let probe=CaptureEventProbe()
+        let session=NativeCaptureSession(authority:authority,onEvent:probe.append,
+            prepare:{_ in [1:SourceComponents(vad:EmptyVad(),recognizer:EmptyRecognizer())]},makeDrivers:{_ in [driver]},stopTimeoutMilliseconds:20)
+        try await session.start(configuration:config)
+        session.retireAdmission();session.retireAdmission()
+        XCTAssertNil(authority.snapshot());XCTAssertFalse(session.controller.isSourceActive(.microphone))
+        await session.stop();await session.stop()
+        XCTAssertEqual(session.phase,.stopping)
+        XCTAssertEqual(probe.events.filter{$0.kind == .stopping}.count,1)
+        XCTAssertEqual(probe.events.filter{$0.kind == .stopped}.count,1)
+        XCTAssertEqual(probe.events.last?.payload["quiesced"],.bool(false))
+        do {try await session.start(configuration:config);XCTFail("restart before actual producer return")}catch{}
+        await driver.releaseStop();try await waitUntil{session.phase == .idle}
+        let stops=await driver.stops;XCTAssertEqual(stops,1)
+    }
+    func testSynchronousRetirementDuringPreparationKeepsStartOwnerUntilReturn() async throws {
+        let gate=PrepareGate();let driver=try FakeCaptureDriver();let authority=SessionPresentationAuthority()
+        let session=NativeCaptureSession(authority:authority,onEvent:{_ in},prepare:{_ in await gate.wait();return [1:SourceComponents(vad:EmptyVad(),recognizer:EmptyRecognizer())]},makeDrivers:{_ in [driver]},stopTimeoutMilliseconds:20)
+        let start=Task{try await session.start(configuration:config)}
+        try await waitUntil{await gate.entered}
+        session.retireAdmission();session.retireAdmission();await session.stop()
+        XCTAssertEqual(session.phase,.stopping);XCTAssertNil(authority.snapshot())
+        await gate.release();_ = await start.result
+        XCTAssertEqual(session.phase,.idle)
+        let starts=await driver.starts;XCTAssertEqual(starts,0)
+    }
+}

@@ -44,6 +44,9 @@ public enum ContextForwardingError: Error, Equatable { case overflow, retired, o
         }
         drain()
     }
+    public func cancelOptionalWork() {
+        if let current=flight { current.operation.cancel(); finish(current.id,context:[]) }
+    }
     public func retire() {
         retired = true; flight?.operation.cancel(); flight?.timer.cancel(); flight = nil; queue.removeAll(); bytes = 0
     }

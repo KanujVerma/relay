@@ -2,6 +2,7 @@
 """Explicit synthetic launcher for native visual-retirement regression tests.
 
 pythonArguments: [this_file, "--synthetic-visual-test", "--log", new_temp_path]
+The exact module/role/mode suffix appended by HelperTransport is validated too.
 The real helper runs with an injected token and HTTPX MockTransport only.
 JSONL records contain exactly {kind, count}; never headers, prompts or PNGs.
 Importing this module starts nothing and creates no files.
@@ -38,7 +39,16 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description='Synthetic native visual test helper; no real account or network.')
     parser.add_argument('--synthetic-visual-test', action='store_true', required=True)
     parser.add_argument('--log', required=True, help='New, nonexistent absolute temporary JSONL path.')
-    args = parser.parse_args(argv)
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    boundary = arguments.index('-m') if '-m' in arguments else len(arguments)
+    args = parser.parse_args(arguments[:boundary])
+    tail = arguments[boundary:]
+    if tail and (len(tail) not in (4, 5)
+                 or tail[:3] != ['-m', 'relay_spike.session_host', '--role']
+                 or tail[3] not in ('analytics', 'epic')
+                 or (len(tail) == 5 and tail[4] not in ('--fixture-model', '--oauth'))):
+        parser.error('Expected only the HelperTransport module/role/mode suffix.')
+    role = tail[3] if tail else 'analytics'
 
     try:
         # Direct script execution otherwise puts tests/support, not the repo,
@@ -86,7 +96,9 @@ def main(argv=None):
 
             stream = OAuthAnswerStream(model=MODEL, token_provider=lambda: 'synthetic-native-test-bearer',
                 client_factory=lambda **options: httpx.AsyncClient(transport=httpx.MockTransport(respond), **options))
-            options = SimpleNamespace(oauth=True, fixture_model=False, model=MODEL, role='analytics')
+            # The native mode suffix is syntax only here: the explicit test
+            # launcher always selects the same injected synthetic OAuth stream.
+            options = SimpleNamespace(oauth=True, fixture_model=False, model=MODEL, role=role)
             return asyncio.run(run_stdio(options, oauth_stream=stream))
     except Exception:
         # A harness failure must never print request data or provider exceptions

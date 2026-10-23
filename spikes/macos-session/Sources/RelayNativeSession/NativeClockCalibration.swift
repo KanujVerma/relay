@@ -24,14 +24,23 @@ public struct NativeClockCalibration: Sendable, Equatable, Codable {
                     nsNumer: UInt64(info.numer), nsDenom: UInt64(info.denom))
     }
     public func uptimeNanoseconds(forHostTicks ticks: UInt64) throws -> UInt64 {
-        guard nsNumer > 0, nsDenom > 0, nsNumer <= 1_000_000_000, nsDenom <= 1_000_000_000,
-              ticks >= hostTicksAtAnchor else { throw NativeSessionError.invalidClock }
-        let delta = ticks - hostTicksAtAnchor
+        guard nsNumer > 0, nsDenom > 0, nsNumer <= 1_000_000_000, nsDenom <= 1_000_000_000 else { throw NativeSessionError.invalidClock }
+        let delta = ticks >= hostTicksAtAnchor ? ticks - hostTicksAtAnchor : hostTicksAtAnchor - ticks
         // Full-width multiplication preserves valid large timebase products.
         let product = delta.multipliedFullWidth(by: nsNumer)
         guard product.high < nsDenom else { throw NativeSessionError.invalidClock }
-        let converted = nsDenom.dividingFullWidth(product).quotient
-        let (value, overflow) = uptimeNsAtAnchor.addingReportingOverflow(converted)
+        let division = nsDenom.dividingFullWidth(product)
+        var converted = division.quotient
+        // Python's signed integer division floors negative offsets. Match it
+        // exactly when the anchor was sampled after the source packet.
+        if ticks < hostTicksAtAnchor, division.remainder != 0 {
+            let (rounded, overflow) = converted.addingReportingOverflow(1)
+            guard !overflow else { throw NativeSessionError.invalidClock }
+            converted = rounded
+        }
+        let (value, overflow) = ticks >= hostTicksAtAnchor
+            ? uptimeNsAtAnchor.addingReportingOverflow(converted)
+            : uptimeNsAtAnchor.subtractingReportingOverflow(converted)
         guard !overflow else { throw NativeSessionError.invalidClock }
         return value
     }

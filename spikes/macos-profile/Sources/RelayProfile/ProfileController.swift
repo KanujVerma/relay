@@ -13,10 +13,12 @@ public struct ProfileReviewCard: Decodable, Sendable, Identifiable, Equatable {
     public let reviewRevision: Int
     public let actorHint: String
     public let fingerprint: String
+    public let locator: String?
     enum CodingKeys: String, CodingKey {
         case factID = "fact_id", sourceID = "source_id", snippet
         case sourceSHA256 = "source_sha256", spanStart = "span_start", spanEnd = "span_end"
         case reviewRevision = "review_revision", actorHint = "actor_hint", fingerprint = "card_fingerprint"
+        case locator
     }
 }
 

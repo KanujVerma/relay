@@ -104,6 +104,13 @@ class ProfilePreparationTests(unittest.TestCase):
             with self.subTest(size=len(snapshot)), self.assertRaises(ValueError):
                 restore_memory_snapshot(snapshot)
 
+    def test_job_unicode_byte_and_control_bounds_preserve_frame_limit(self):
+        for text in ("🧪" * 4000, "\x01" * 3000):
+            with self.subTest(text_length=len(text)), self.assertRaises(ValueError):
+                self.prep.select_bytes(text.encode(), file_type="txt", purpose="job", label="Selected job",
+                    role="developer", observed_at=STAMP, capability=self.cap)
+        self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM source").fetchone()[0], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

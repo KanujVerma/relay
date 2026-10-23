@@ -39,5 +39,11 @@ Verified/reviewed on 2026-10-22 unless otherwise noted. External projects are CA
 - https://github.com/Unstructured-IO/unstructured : element-level metadata and document structure reference. Assess current license/dependency size before considering reuse.
 - [RESUME_CANDIDATES.md](RESUME_CANDIDATES.md) : actual B0 parser and consent contract; no third-party conversion source copied.
 
+## Transcript turn-state reuse references, reviewed 2026-10-22
+- https://github.com/pipecat-ai/pipecat : BSD-2-Clause voice/event-pipeline and interruption architecture reference. No Pipecat dependency or upstream source copying in 03B-A.
+- https://github.com/livekit/agents : Apache-2.0 voice agent framework with semantic turn-detection prior art; separate turn-detection model licensing/resource cost must be reviewed before using on Apple Silicon. No server-side voice-agent runtime installed.
+- https://github.com/statelyai/xstate : MIT event-statechart reference; Python 03B-A reuses Relay ActiveTurns instead of importing a separate JS runtime.
+- [QUESTION_TURNS.md](QUESTION_TURNS.md) : actual implemented/offline state transitions and remaining ASR/classification boundaries.
+
 ## Source reliability discipline
 Official documentation governs protocol; project README governs upstream intent; real measured local tests govern practical behavior. Anecdotal interview reports are weak priors, not a guarantee that a company will ask a specific question. Record citation URL, verification date, version, OS, benchmark methodology and observed result before promoting proposed technology to settled ADR.

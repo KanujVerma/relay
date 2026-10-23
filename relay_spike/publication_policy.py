@@ -108,6 +108,7 @@ class PublicationDecision:
     displayed_text: str | None
     reviewed_reference_id: str | None
     reason_code: str
+    reviewed_source_ref: str | None = None
     first_useful_verified_ms: None = None
 
     def __post_init__(self) -> None:
@@ -117,10 +118,13 @@ class PublicationDecision:
             if not any(
                 self.displayed_text == ref.answer
                 and self.reviewed_reference_id == ref.reference_id
+                and self.reviewed_source_ref == ref.source_ref
                 for ref in _REFERENCES
             ):
                 raise ValueError("Published answer must match reviewed reference.")
-        elif self.displayed_text is not None or self.reviewed_reference_id is not None:
+        elif (self.displayed_text is not None
+              or self.reviewed_reference_id is not None
+              or self.reviewed_source_ref is not None):
             raise ValueError("Unverified, unsafe or unavailable text cannot be displayed.")
         if self.first_useful_verified_ms is not None:
             raise ValueError("Offline fixtures cannot prove first useful latency.")
@@ -145,7 +149,8 @@ def _result(state: PublicationState, reason: str,
             reference: ReviewedReference | None = None) -> PublicationDecision:
     if reference is not None:
         return PublicationDecision(
-            state, reference.answer, reference.reference_id, reason
+            state, reference.answer, reference.reference_id, reason,
+            reviewed_source_ref=reference.source_ref,
         )
     return PublicationDecision(state, None, None, reason)
 

@@ -1194,6 +1194,28 @@ class TurnSafety(unittest.TestCase):
                 self.assertFalse(machine.turns.is_current(accepted.token))
                 self.assertIsNone(machine.current())
 
+    def test_invalid_utf8_remote_partial_cancels_old_answer_before_hash(self):
+        # Python can hold lone surrogates in str, but UTF-8 hashing cannot.
+        # Regression: previously raised UnicodeEncodeError before cancel.
+        for field in ("text", "segment_id"):
+            with self.subTest(field=field):
+                machine = QuestionTurnMachine()
+                old = machine.ingest(remote(
+                    "root", "Explain an index.", start_ms=0, end_ms=250,
+                ))
+                self.assertEqual(old.state, "ready")
+                malformed = replace(remote(
+                    "changed", "No, use a B-tree.",
+                    status="partial", intent="correction",
+                    start_ms=300, end_ms=440,
+                ), **{field: "\ud800"})
+                with self.assertRaises(InvalidTranscript) as error:
+                    machine.ingest(malformed)
+                self.assertEqual(str(error.exception),
+                                 "Invalid UTF-8 event text.")
+                self.assertFalse(machine.turns.is_current(old.token))
+                self.assertIsNone(machine.current())
+
     def test_invalid_microphone_counter_does_not_cancel_remote_question(self):
         accepted = self.machine.ingest(remote(
             "A", "Explain binary search.", start_ms=0, end_ms=200,

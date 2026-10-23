@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor final class ImageWriteBackpressureTests:XCTestCase {
     private var root:URL { URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent() }
-    private func makeBlockedHelper(_ gate:URL)->HelperTransport {
+    private func makeBlockedHelper(_ gate:URL,record:URL?=nil)->HelperTransport {
         let script="""
         import json,os,struct,sys,time
         while not os.path.exists(sys.argv[1]):time.sleep(.001)
@@ -14,9 +14,11 @@ import XCTest
             size=struct.unpack('>I',header)[0]
             data=sys.stdin.buffer.read(size)
             if len(data)!=size:break
-            json.loads(data)
+            value=json.loads(data)
+            if sys.argv[2]:
+                with open(sys.argv[2],'a') as log:log.write(json.dumps(list(value))+'\\n')
         """
-        return HelperTransport(root:root,python:URL(fileURLWithPath:"/usr/bin/env"),pythonArguments:["python3","-u","-c",script,gate.path],mode:.fixture,onFrame:{_ in},onFailure:{})
+        return HelperTransport(root:root,python:URL(fileURLWithPath:"/usr/bin/env"),pythonArguments:["python3","-u","-c",script,gate.path,record?.path ?? ""],mode:.fixture,onFrame:{_ in},onFailure:{})
     }
     @discardableResult private func fillQueue(_ helper:HelperTransport)throws ->Int {
         // Fill the frame limit before the byte limit, so even a small next
@@ -59,6 +61,44 @@ import XCTest
         // The channel remains framed and usable; retirement did not truncate
         // an existing frame or close unrelated native control admission.
         try await helper.sendJSONAwaitingWrite(Data("{\"synthetic_control\":1}".utf8),deadline:DispatchTime.now().uptimeNanoseconds+1_000_000_000,isCurrent:{true})
+        await helper.shutdownAndWait()
+    }
+    func testAdmittedImageRetiresBeforeItsFirstByteOnCancellationOrSourceChange()async throws {
+        for mode in ["cancel","source"]{try await checkAdmittedRetirement(mode)}
+    }
+    func testAdmittedImageDeadlineRetiresBeforeItsFirstByte()async throws {
+        try await checkAdmittedRetirement("deadline")
+    }
+    private func checkAdmittedRetirement(_ mode:String)async throws {
+        let gate=FileManager.default.temporaryDirectory.appendingPathComponent("relay-queued-"+UUID().uuidString)
+        let record=gate.appendingPathExtension("observed")
+        defer{try? FileManager.default.removeItem(at:gate);try? FileManager.default.removeItem(at:record)}
+        let helper=makeBlockedHelper(gate,record:record);try helper.start()
+        let padding=try JSONSerialization.data(withJSONObject:["padding":String(repeating:"x",count:14000)])
+        // The image fits both admission bounds, but ten preceding frames are
+        // blocked on the unopened reader, so none of its bytes can have begun.
+        for _ in 0..<10{try helper.sendJSON(padding)}
+        var current=true,finished=false
+        let writing=Task{@MainActor in
+            defer{finished=true}
+            do {
+                try await helper.sendJSONAwaitingWrite(Data("{\"synthetic_image_chunk\":1}".utf8),deadline:DispatchTime.now().uptimeNanoseconds+(mode=="deadline" ? 100_000_000:1_000_000_000),isCurrent:{current})
+                XCTFail("retired queued image completed")
+            }catch{}
+        }
+        try await Task.sleep(for:.milliseconds(50))
+        if mode=="cancel"{writing.cancel()}else if mode=="source"{current=false}
+        try await Task.sleep(for:.milliseconds(150))
+        XCTAssertTrue(finished,"queued retirement must resolve before reader opens")
+        try Data().write(to:gate)
+        await writing.value
+        try await helper.sendJSONAwaitingWrite(Data("{\"synthetic_control\":1}".utf8),deadline:DispatchTime.now().uptimeNanoseconds+1_000_000_000,isCurrent:{true})
+        for _ in 0..<100 {
+            if (try? String(contentsOf:record,encoding:.utf8).contains("synthetic_control"))==true{break}
+            try await Task.sleep(for:.milliseconds(2))
+        }
+        let observed=try String(contentsOf:record,encoding:.utf8)
+        XCTAssertTrue(observed.contains("synthetic_control"));XCTAssertFalse(observed.contains("synthetic_image_chunk"))
         await helper.shutdownAndWait()
     }
 }

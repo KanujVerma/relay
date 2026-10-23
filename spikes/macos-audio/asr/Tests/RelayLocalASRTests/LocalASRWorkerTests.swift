@@ -11,10 +11,15 @@ actor FakeEou: LocalEouRecognizer {
     private(set) var captured = [Float]()
     var eouAtAccept: Int?
     var throwOnAccept = false
+    private let finalText: String
 
-    init(eouAt: Int? = nil, throwOnAccept: Bool = false) {
+    init(
+        eouAt: Int? = nil, throwOnAccept: Bool = false,
+        finalText: String = "what is the difference between where and having"
+    ) {
         eouAtAccept = eouAt
         self.throwOnAccept = throwOnAccept
+        self.finalText = finalText
     }
 
     func accept(_ mono16kSamples: [Float]) async throws -> Bool {
@@ -26,7 +31,7 @@ actor FakeEou: LocalEouRecognizer {
 
     func finish() async throws -> String {
         finished += 1
-        return "what is the difference between where and having"
+        return finalText
     }
 
     func reset() async {
@@ -131,9 +136,56 @@ final class LocalASRWorkerTests: XCTestCase {
         XCTAssertEqual(final.revision, 1)
         XCTAssertEqual(final.confidence, nil)
         XCTAssertEqual(final.text, "what is the difference between where and having")
+        XCTAssertFalse(final.isBlankEOUTerminal)
         XCTAssertGreaterThan(final.finalizedUptimeNanoseconds, 0)
         let finished = await fake.finished
         XCTAssertEqual(finished, 1)
+    }
+
+    func testSuccessfulWhitespaceEOUEmitsNontextTerminal() async throws {
+        // A finished but unrecognized utterance must cancel old answers
+        // downstream. It cannot vanish as a silent nil event.
+        let fake = FakeEou(eouAt: 1, finalText: "  \n\t ")
+        let ring = try OwnedPCMQueue(source: .remoteAudio)
+        let worker = PCMTranscriptWorker(
+            source: .remoteAudio, authorizedCapture: true, backend: fake
+        )
+        let beforeA = await worker.ingest(try packet(ring))
+        let beforeB = await worker.ingest(try packet(ring))
+        XCTAssertTrue(beforeA.isEmpty)
+        XCTAssertTrue(beforeB.isEmpty)
+        let output = await worker.ingest(try packet(ring))
+        let terminal = try XCTUnwrap(output.first)
+        XCTAssertEqual(output.count, 1)
+        XCTAssertEqual(terminal.status, .final)
+        XCTAssertTrue(terminal.isBlankEOUTerminal)
+        XCTAssertEqual(terminal.text, "")
+        XCTAssertEqual(terminal.source, .remoteAudio)
+        XCTAssertEqual(terminal.streamGeneration, 1)
+        XCTAssertEqual(terminal.revision, 1)
+        XCTAssertNil(terminal.confidence)
+        XCTAssertGreaterThan(terminal.finalizedUptimeNanoseconds, 0)
+        let finishCount = await fake.finished
+        XCTAssertEqual(finishCount, 1)
+    }
+
+    func testStopFlushWithBlankEOUEmitsTerminalNotUnavailable() async throws {
+        let fake = FakeEou(eouAt: 1, finalText: " \t ")
+        let ring = try OwnedPCMQueue(source: .microphone)
+        let worker = PCMTranscriptWorker(
+            source: .microphone, authorizedCapture: true, backend: fake
+        )
+        let first = await worker.ingest(try packet(ring))
+        let second = await worker.ingest(try packet(ring))
+        XCTAssertTrue(first.isEmpty)
+        XCTAssertTrue(second.isEmpty)
+        let terminal = try XCTUnwrap(await worker.finishAtStop())
+        XCTAssertEqual(terminal.status, .final)
+        XCTAssertTrue(terminal.isBlankEOUTerminal)
+        XCTAssertEqual(terminal.text, "")
+        XCTAssertEqual(terminal.source, .microphone)
+        let secondStop = await worker.finishAtStop()
+        XCTAssertNil(secondStop)
     }
 
     func testFinishAtStopFlushesOnlyRecognizedEOU() async throws {

@@ -2,6 +2,14 @@
 
 Updated 2026-10-23. Repository: KanujVerma/relay. Controller branch: `build/copilot-integration-2026-10-23`, runtime checkpoint `5ed2b5005b8d415ee8b43a5451d992c0d7c12794`, test-startup checkpoint `951b06275d8762e5a16effb8225ca4f50f7a27dc` (documentation commits may advance it). Main is still `eb28d1586e52b7f0fd2e3b15580ae08ff295872e`, verified through live PR metadata. Recheck Git/PR heads and checks before continuing. [BUILD_STATUS](docs/BUILD_STATUS.md) inventories exact accepted source and evidence; linked reports and Git preserve historical findings.
 
+## Active product rebuild: Cluely parity
+
+The owner clarified the target after the verified engine checkpoint: the ordinary desktop experience should work and look like Cluely, with résumé ingestion and personal memory added. The present developer-facing model/detector pickers and dense setup are rejected as the product UX. Speech setup must be automatic; technical overrides belong in Settings. This is active authorized work, not delivered by the earlier test totals.
+
+Frozen baseline: `build/cluely-parity-foundation-2026-10-23` at `1f8e7fbc7e4c7a2f925e1380ddec67f46c5fc3a7`. Three GPT-6.1 Sol extra-high workers are active: `/root/research_visual_inputs` deepens REA/official-product behavior and UI coverage; `/root/compose_context_controls` designs/rebuilds the native surface; `/root/review_composition` designs/builds automatic speech provisioning/readiness. Initial work is disjoint research/design; controller freezes implementation contracts/file ownership before concurrent edits. Root owns current integration, personal-context/feature-gap mapping, shared contracts and review. Do not resume the old next-action-only UI smoke checklist as if this newer direction did not exist.
+
+Read [Cluely parity direction](docs/superpowers/specs/2026-10-23-cluely-parity-direction.md) next. Raw competitor artifacts/evidence stay local. Public handoff records functional observations/source identity and gaps. The Mac remains locked, so visible runtime inspection still needs manual unlock; static REA, builds and synthetic verification continue.
+
 ## Goal
 
 Build one native Mac copilot for permitted interviews/mock sessions: listen continuously, automatically recognize questions and follow-ups/corrections, and show concise suggestions with optional code/detail. Cover technical questions, verified personal background, coding with an engineer and feature case studies. Explicit selected-window screen/selected-text context and useful controls complement the conversation. A manual question-confirmation step is not the milestone. Personal claims require support; speech/model output cannot silently become biography.

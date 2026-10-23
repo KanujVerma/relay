@@ -4,6 +4,10 @@ Main remains `eb28d1586e52b7f0fd2e3b15580ae08ff295872e`, verified through live P
 
 The owner authorizes frequent scoped commits/pushes and requires GPT-6.1 Sol extra-high workers. No private source, Keychain material, real capture, model download/load or actual account inference was used by this effort. Default/fixture helpers and normal image setup remain inert until explicitly enabled.
 
+## New active product target
+
+The owner now requires a Cluely-style normal desktop experience plus résumé/personal memory, with automatic speech setup and technical choices moved to Settings. The earlier runtime below is a verified engine foundation, not acceptance of its current UI. Three GPT-6.1 Sol extra-high workers are conducting deeper REA coverage, concrete native UX design and managed audio/readiness design from frozen1f8e7fb. See [current direction](superpowers/specs/2026-10-23-cluely-parity-direction.md) and HANDOFF; new implementation remains explicitly separate from historical passing checks.
+
 ## Source checkpoints and ownership
 
 These are exact reviewed or pending checkpoints, not a claim that every later PR head has the same review.

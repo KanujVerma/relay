@@ -15,6 +15,10 @@ import Observation
         self.actionPort = actionPort
     }
 
+    isolated deinit {
+        for action in ControlAction.allCases { registrar.unregister(action) }
+    }
+
     public func validate(_ shortcut: ControlShortcut, for action: ControlAction) throws {
         guard shortcut.isSafe else { throw ControlsError.unsafeShortcut }
         if let duplicate = ControlAction.allCases.first(where: { $0 != action && shortcuts[$0] == shortcut }) {

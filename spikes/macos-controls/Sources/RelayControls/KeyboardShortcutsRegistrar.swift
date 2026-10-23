@@ -26,7 +26,11 @@ extension ControlShortcut {
 /// Own one instance per namespace; it removes only its own named handlers.
 @MainActor public final class KeyboardShortcutsRegistrar: HotkeyRegistering {
     private let namespace: String
+    private var registeredActions = Set<ControlAction>()
     public init(namespace: String = "relay.controls.v1") { self.namespace = namespace }
+    isolated deinit {
+        for action in Array(registeredActions) { unregister(action) }
+    }
     private func name(_ action: ControlAction) -> KeyboardShortcuts.Name {
         .init("\(namespace).\(action.rawValue)")
     }
@@ -36,6 +40,7 @@ extension ControlShortcut {
         guard !shortcut.keyboardShortcut.isTakenBySystem else { throw ControlsError.systemConflict }
         let name = name(action)
         unregister(action)
+        registeredActions.insert(action)
         KeyboardShortcuts.setShortcut(shortcut.keyboardShortcut, for: name)
         KeyboardShortcuts.enable(name)
         KeyboardShortcuts.onKeyUp(for: name, action: handler)
@@ -46,6 +51,7 @@ extension ControlShortcut {
     }
 
     public func unregister(_ action: ControlAction) {
+        guard registeredActions.remove(action) != nil else { return }
         let name = name(action)
         KeyboardShortcuts.removeHandler(for: name)
         KeyboardShortcuts.disable(name)

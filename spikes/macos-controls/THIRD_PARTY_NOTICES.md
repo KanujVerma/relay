@@ -1,3 +1,9 @@
+# KeyboardShortcuts 3.1.0
+
+Invoked as a pinned Swift Package dependency, without modification or vendoring.
+Source: https://github.com/sindresorhus/KeyboardShortcuts
+Revision: 772133d9dbe800fdac0473226822994c5c162c58
+
 MIT License
 
 Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)

@@ -86,6 +86,19 @@ import Testing
         #expect(host.helpRequests == 0)
         #expect(throws: ControlsError.closed) { try controls.setEnabled(true) }
     }
+
+    @Test func releasingControllerUnregistersItsKeys() throws {
+        let registrar = FakeRegistrar()
+        let host = SessionHarness()
+        var controls: ControlsController? = ControlsController(registrar: registrar, actionPort: host)
+        try controls?.configure(.init(keyCode: 4, modifiers: [.command, .shift]), for: .requestHelp)
+        try controls?.setEnabled(true)
+        let queued = try #require(registrar.callbacks[.requestHelp])
+        controls = nil
+        #expect(registrar.callbacks.isEmpty)
+        queued()
+        #expect(host.helpRequests == 0)
+    }
 }
 
 @MainActor final class FakeRegistrar: HotkeyRegistering {

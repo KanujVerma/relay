@@ -47,4 +47,4 @@ Interface: `SelectedTextService.enable(allowedBundleIDs:requestPermission:)`, `r
 - [x] Write failing tests for no trust/allowlist, secure/unsupported/empty/oversized selection, focus changes, trust revocation, request supersession, concurrent reads and timeout.
 - [x] Implement real public AX focused-element read on a bounded worker, explicit prompt only, no clipboard/full-text fallback, per-call messaging timeout, original PID checks and post-read freshness checks.
 - [x] Compile and run the synthetic suite; record untested permission and hardware acceptance honestly.
-- [ ] Update lane handoff and integration guide with exact API, evidence and next assembly action. Commit/push; create and attach draft PR against the frozen foundation.
+- [x] Update lane handoff and integration guide with exact API, evidence and next assembly action. Commit/push; create and attach draft PR against the frozen foundation (PR #70; code head 14660e7).

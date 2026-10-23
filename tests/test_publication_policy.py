@@ -58,6 +58,27 @@ class PublicationPolicyTests(unittest.TestCase):
         self.assertEqual(report["annotation_provenance"],
                          "synthetic_author_labeled_not_blinded")
 
+    def test_runtime_default_inputs_never_assume_consent_or_finality(self):
+        case = load_cases(("D02",))[0]
+        turns = ActiveTurns()
+        token = turns.activate("synthetic:question", 1)
+        request = PolicyInput(
+            question=case["question"], role="analytics", category="sql"
+        )
+        result = evaluate_publication(request, turns=turns, token=token)
+        self.assertEqual(result.state, "unavailable")
+        self.assertEqual(result.reason_code, "permission_not_confirmed")
+        permitted_only = replace(request, host_authorized=True)
+        result = evaluate_publication(permitted_only, turns=turns, token=token)
+        self.assertEqual(result.reason_code, "untrusted_or_partial_source")
+        sourced_only = replace(permitted_only, source_channel="remote_final")
+        result = evaluate_publication(sourced_only, turns=turns, token=token)
+        self.assertEqual(result.reason_code, "question_not_final")
+        complete = replace(sourced_only, question_status="final")
+        result = evaluate_publication(complete, turns=turns, token=token)
+        self.assertEqual(result.state, "reviewed_reference")
+        self.assertEqual(result.displayed_text, _REFERENCES[0].answer)
+
     def test_reference_is_pinned_to_actual_question_role_and_full_coverage(self):
         spec = load_cases(("D02",))[0]
         ref, = _REFERENCES

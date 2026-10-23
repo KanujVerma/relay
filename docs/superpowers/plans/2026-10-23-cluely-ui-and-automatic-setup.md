@@ -26,10 +26,10 @@
 
 **Produces:** Public SpeechSetupCoordinator/Snapshot and internally issued PreparedSpeechAssets, plus model.speechSetup/start/cancelPreparation/retryPreparation.
 
-- [ ] Add the fixed manifest/API foundation and negative synthetic tests for invalid cache/manifests, currentness/cancellation and no eager work. Verify failures establish the absent provisioning behavior.
-- [ ] Implement streamed bounded downloads, owned staging/cache validation and atomic publication, finite retries and actual cancellation/join using the exact speech design. Preserve native inference/capture ports and reviewed model policy.
-- [ ] Wire one current Start intent through preparation, actual model/capture start and existing teardown. Source/recording denial remains separate from model readiness. Advanced explicit roots cannot alter managed files.
-- [ ] Run changed package/setup/app bridge checks with synthetic artifacts and injected transport. No repeated baseline model/capture audit. Build the product, record exact results/skips and publish scoped checkpoints.
+- [x] Add the fixed manifest/API foundation and negative synthetic tests for invalid cache/manifests, currentness/cancellation and no eager work. Verify failures establish the absent provisioning behavior.
+- [x] Implement streamed bounded downloads, owned staging/cache validation and atomic publication, finite retries and actual cancellation/join using the exact speech design. Preserve native inference/capture ports and reviewed model policy.
+- [x] Wire one current Start intent through preparation, actual model/capture start and existing teardown. Source/recording denial remains separate from model readiness. Advanced explicit roots cannot alter managed files.
+- [x] Run changed package/setup/app bridge checks with synthetic artifacts and injected transport. No repeated baseline model/capture audit. Build the product, record exact results/skips and publish scoped checkpoints.
 
 ```sh
 RELAY_TEST_PYTHON=/private/tmp/relay-answers-venv/bin/python swift test --disable-sandbox --package-path spikes/macos-session
@@ -44,23 +44,27 @@ RELAY_TEST_PYTHON=/private/tmp/relay-answers-venv/bin/python swift test --disabl
 
 **Produces:** A clean normal launch, compact live surface, separate Context/Settings access and functional current-answer actions.
 
-- [ ] Split existing view/window presentation into the named components; retain a single real session model and bind only the live window to own-window actions. Use measured Cluely proportions as a familiar visual target with Relay assets.
-- [ ] Move source/permission first-run tasks and technical overrides to appropriate setup/Settings. Observe real managed setup progress/recovery; preserve inert fixtures and actual stop availability.
-- [ ] Keep current-question Help, current answer copy/detail, automatic replacements, context status and profile import/review/revoke working. Implement no decorative typed/history/mode controls before their ports exist.
-- [ ] Verify command routing/state eligibility and build the actual SwiftUI app. Produce inert synthetic Home/live/paused/preparing/error visual artifacts for review without live account/capture actions. Record locked-Mac limitations honestly.
-- [ ] Commit/push isolated own deltas and lane handoff. Declare imported automatic API dependency and exact own commits for independent review.
+- [x] Split existing view/window presentation into the named components; retain a single real session model and bind only the live window to own-window actions. Use measured Cluely proportions as a familiar visual target with Relay assets.
+- [x] Move source/permission first-run tasks and technical overrides to appropriate setup/Settings. Observe real managed setup progress/recovery; preserve inert fixtures and actual stop availability.
+- [x] Keep current-question Help, current answer copy/detail, automatic replacements, context status and profile import/review/revoke working. Implement no decorative typed/history/mode controls before their ports exist.
+- [x] Verify command routing/state eligibility and build the actual SwiftUI app. Produce inert synthetic Home/live/paused/preparing/error visual artifacts for review without live account/capture actions. Record locked-Mac limitations honestly.
+- [x] Commit/push isolated own deltas and lane handoff. Declare imported automatic API dependency and exact own commits for independent review.
 
 ## Task3: My Context simplification
 
 **Owner:** Controller, disjoint ProfilePreparationView and pure profile presentation file/tests. The existing approval/vault/lifecycle authority stays unchanged. The bounded read-only memories command/controller/browser refinement in the shared contract makes saved-memory correction usable without typed internal keys.
 
-- [ ] Make Add résumé/project/job clear tasks. Move source fingerprints/spans/revision and correction-key tooling into Source details/Advanced review; preserve selected-file and explicit ownership/approval/reject/revoke actions.
-- [ ] Generate a stable source/fact-bound default claim key when the user has not entered an advanced topic, without inventing ownership, changing claims or approving automatically. Keep explicit replacement lookup for advanced correction.
-- [ ] Add the bounded active-approved-memory reader, native DTO/paging with lifecycle fencing and saved-fact selection for correction. Test rejected paging inputs, exact UTF8 byte bounds/no truncation, revocation/currentness and late response after lock.
-- [ ] Verify identity/default-key/ownership eligibility and existing review command routing. Build profile and joined app; record only actual observed states.
+- [x] Make Add résumé/project/job clear tasks. Move source fingerprints/spans/revision and correction-key tooling into Source details/Advanced review; preserve selected-file and explicit ownership/approval/reject/revoke actions.
+- [x] Generate a stable source/fact-bound default claim key when the user has not entered an advanced topic, without inventing ownership, changing claims or approving automatically. Keep explicit replacement lookup for advanced correction.
+- [x] Add the bounded active-approved-memory reader, native DTO/paging with lifecycle fencing and saved-fact selection for correction. Test rejected paging inputs, exact UTF8 byte bounds/no truncation, revocation/currentness and late response after lock.
+- [x] Verify identity/default-key/ownership eligibility and existing review command routing. Build profile and joined app; record only actual observed states.
 
 ## Task4: Review and join
 
-- [ ] Compare exact own deltas against frozen parents and reproduce material findings. Return fixes to original owners, then narrow re-review.
-- [ ] Join accepted source with clear dependency provenance. Run affected packages and one full meaningful synthetic integration/build gate, then publish HANDOFF/BUILD_STATUS and portable reviews.
+- [x] Compare exact own deltas against frozen parents and reproduce material findings. Return fixes to original owners, then narrow re-review.
+- [x] Join accepted source with clear dependency provenance. Run affected packages and one full meaningful synthetic integration/build gate, then publish HANDOFF/BUILD_STATUS and portable reviews.
 - [ ] Continue through the full REA parity inventory: real typed requests/quick actions, transcript/activity/modes, history and account setup are subsequent end-to-end feature tasks. The first UI/setup delivery does not close the full owner goal.
+
+## Joined checkpoint
+
+Tasks1–3 and scoped review/join are complete at controller sourcea4789b5 with automatic5aa correction accepted. Root panel85 collected/83pass/2render skips and setup23collected/22pass/1real-provision skip pass. Exact owner source comparisons and limitations live in [join evidence](../../evidence/2026-10-23-parity-join.md). The full-parity continuation task remains active; visible locked-Mac, account/capture/model-load and self-contained runtime are not implied by these checks.

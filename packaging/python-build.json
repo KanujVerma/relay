@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "python": "3.14.9",
+  "architecture": "arm64",
+  "sourceCommit": "ead82c07db1f111d613926ed1b6667411d768125",
+  "builderRelease": "20261021",
+  "builderCommit": "0c5e581b54a4736cdbbe68bdd6d7e571a1dca11e",
+  "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.14.9%2B20261021-aarch64-apple-darwin-install_only_stripped.tar.gz",
+  "size": 26705294,
+  "sha256": "9f8c3480b8f0db553c270db548e8a21ae8e39df412e5661d66e8050c5c6ed2a8"
+}

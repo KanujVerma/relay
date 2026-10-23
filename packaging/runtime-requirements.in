@@ -1,0 +1,10 @@
+# Production ports only. Comparator/OCR/model extras are deliberately absent.
+httpx==0.28.1
+PyJWT[crypto]==2.15.1
+cryptography==50.0.2
+docling-slim[format-pdf,format-docx]==2.142.0
+docling-core==2.104.0
+docling-parse==7.23.0
+pypdfium2==5.14.0
+python-docx==1.2.0
+defusedxml==0.7.1

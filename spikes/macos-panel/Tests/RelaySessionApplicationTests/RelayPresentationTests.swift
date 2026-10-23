@@ -28,6 +28,16 @@ import RelayControls
         XCTAssertNil(RelayPreparationPresentation(title:"Checking",fraction:1.1).fraction)
         XCTAssertEqual(RelayPreparationPresentation(title:"Preparing",fraction:0.45).fraction,0.45)
     }
+    func testReopenedHomeUsesCurrentSessionInsteadOfOfferingAnotherStart() {
+        var state=RelaySessionPresentation(running:true,ownerCanStart:true)
+        XCTAssertTrue(state.allows(.showSession));XCTAssertFalse(state.allows(.start))
+        state.running=false;state.paused=true;state.hasSelectedSource=true;state.authorizedConversation=true;state.ownerCanResume=true
+        XCTAssertTrue(state.allows(.showSession));XCTAssertTrue(state.allows(.resume));XCTAssertFalse(state.allows(.start))
+        state.paused=false;state.stopping=true
+        XCTAssertTrue(state.allows(.showSession));XCTAssertFalse(state.allows(.resume))
+        state.stopping=false
+        XCTAssertFalse(state.allows(.showSession))
+    }
     func testFixtureHomeReopenDoesNotAutomaticallyStartAnotherSession() {
         let shell=RelayWindowShell()
         XCTAssertTrue(shell.claimFixtureStart())
@@ -42,8 +52,9 @@ import RelayControls
     }
     func testCommandRouterUsesExistingPortsAndRechecksStateAtDispatch()async {
         var state=RelaySessionPresentation(running:true,hasQuestion:true,hasAnswer:true)
-        var controls:[ControlAction]=[],starts=0,context=0
-        let router=RelayCommandRouter(state:{state},control:{controls.append($0)},start:{starts+=1},cancelPreparation:{},retryPreparation:{},openContext:{context+=1},openSettings:{})
+        var controls:[ControlAction]=[],starts=0,context=0,shown=0
+        let router=RelayCommandRouter(state:{state},control:{controls.append($0)},start:{starts+=1},cancelPreparation:{},retryPreparation:{},openContext:{context+=1},openSettings:{},showSession:{shown+=1})
+        router.perform(.showSession);XCTAssertEqual(shown,1)
         router.perform(.help);router.perform(.copy);router.perform(.expand)
         XCTAssertEqual(controls,[.requestHelp,.copyAnswer,.expandAnswer])
         state.running=false;state.paused=true
@@ -59,7 +70,7 @@ import RelayControls
         let model=SessionApplicationModel(arguments:["relay","--fixture-suite","coding","--repository",root.path])
         let window=NSWindow(contentRect:NSRect(x:0,y:0,width:690,height:500),styleMask:[.titled],backing:.buffered,defer:false)
         window.isReleasedWhenClosed=false;model.attachWindow(window,scrollView:nil)
-        let router=RelayCommandRouter(state:{model.relayPresentation},control:model.performWindowAction,start:{await model.start()},cancelPreparation:model.cancelPreparation,retryPreparation:{await model.retryPreparation()},openContext:{},openSettings:{})
+        let router=RelayCommandRouter(state:{model.relayPresentation},control:model.performWindowAction,start:{await model.start()},cancelPreparation:model.cancelPreparation,retryPreparation:{await model.retryPreparation()},openContext:{},openSettings:{},showSession:{})
         if let operation=router.perform(.start){await operation.value}
         try await waitUntil{model.snapshot.card != nil}
         router.perform(.expand);XCTAssertTrue(model.expanded)

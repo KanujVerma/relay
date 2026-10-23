@@ -35,6 +35,16 @@ public final class HelperTransport: @unchecked Sendable {
     private var source:DispatchSourceRead?;private var stderrSource:DispatchSourceRead?;private var timer:DispatchSourceTimer?
     private var profileRequests:[UUID:CheckedContinuation<Data,any Error>]=[:]
     private var quiescenceRequests:[UUID:(UUID,UInt64,CheckedContinuation<Void,any Error>)]=[:]
+    private struct VisualWaiter {
+        let action:VisualInputAction
+        let continuation:CheckedContinuation<VisualInputResponse,any Error>
+        let progress:@Sendable(VisualInputResponse)->Void
+        var last:VisualInputResponse?
+    }
+    private var visualRequests:[UUID:VisualWaiter]=[:]
+    private var visualReplies:[UUID:VisualInputResponse]=[:]
+    private var visualReplyOrder:[UUID]=[]
+    private var visualRequestCount=0
     private var queuedFrames=0;private var queuedBytes=0;private var failed=false
     private let exitReceipt=OwnedChildExit()
     private let decoder=AnswerFrameDecoder();private var partialSince:UInt64?
@@ -72,6 +82,30 @@ public final class HelperTransport: @unchecked Sendable {
     public func sendJSON(_ data:Data) throws {
         _=try StrictJSON.decode(data);var n=UInt32(data.count).bigEndian
         var frame=withUnsafeBytes(of:&n) { Data($0) };frame.append(data);try enqueue(frame)
+    }
+    /// One producer-owned JSON frame, with bounded asynchronous backpressure.
+    /// Once admitted, its full frame must finish or fail the whole transport;
+    /// source cancellation never inserts an EOU into a partially written frame.
+    @MainActor public func sendJSONAwaitingWrite(_ data:Data,deadline:UInt64,isCurrent:@escaping @MainActor ()->Bool) async throws {
+        _=try StrictJSON.decode(data);var length=UInt32(data.count).bigEndian
+        var frame=withUnsafeBytes(of:&length){Data($0)};frame.append(data)
+        while true {
+            try Task.checkCancellation()
+            guard isCurrent() else{throw CancellationError()}
+            guard DispatchTime.now().uptimeNanoseconds<deadline else{throw PanelBridgeError.timedOut}
+            do {
+                try await withCheckedThrowingContinuation{(continuation:CheckedContinuation<Void,any Error>) in
+                    do{try enqueue(frame,completion:{continuation.resume(with:$0)})}
+                    catch{continuation.resume(throwing:error)}
+                }
+                try Task.checkCancellation()
+                guard isCurrent() else{throw CancellationError()}
+                guard DispatchTime.now().uptimeNanoseconds<deadline else{throw PanelBridgeError.timedOut}
+                return
+            } catch PanelBridgeError.overflow {
+                try await Task.sleep(for:.milliseconds(1))
+            }
+        }
     }
     public func requestProfile(_ command:Data) async throws -> Data {
         _=try StrictJSON.decode(command)
@@ -119,16 +153,73 @@ public final class HelperTransport: @unchecked Sendable {
             }
         }
     }
-    private func enqueue(_ frame:Data) throws {
+    /// The UI explicitly requests verify/disable/status. Status alone grants
+    /// no native image authority, and cancellation completion comes from the
+    /// original verify terminal reply rather than a local timer/Task flag.
+    public func requestVisualInput(_ action:VisualInputAction,onUpdate:@escaping @Sendable(VisualInputResponse)->Void) async throws -> VisualInputResponse {
+        let id=UUID()
+        let envelope=try JSONEncoder().encode(WireValue.object(["schemaVersion":.uint(1),"kind":.string("visual_input_request"),"requestID":.string(id.uuidString.lowercased()),"action":.string(action.rawValue)]))
+        return try await withCheckedThrowingContinuation { continuation in
+            let admitted=lock.withLock {
+                guard !failed,visualRequests.count<4,visualRequestCount<512 else{return false}
+                visualRequestCount+=1
+                visualRequests[id]=VisualWaiter(action:action,continuation:continuation,progress:onUpdate,last:nil)
+                return true
+            }
+            guard admitted else{continuation.resume(throwing:PanelBridgeError.closed);return}
+            do{try sendJSON(envelope)}catch{
+                let waiter=lock.withLock{visualRequests.removeValue(forKey:id)}
+                waiter?.continuation.resume(throwing:PanelBridgeError.closed);return
+            }
+            io.asyncAfter(deadline:.now() + .seconds(35)){[weak self] in
+                guard let self else{return}
+                let waiter=self.lock.withLock{self.visualRequests.removeValue(forKey:id)}
+                if let waiter{waiter.continuation.resume(throwing:PanelBridgeError.timedOut);self.fail()}
+            }
+        }
+    }
+    private enum VisualDelivery {
+        case ignored
+        case progress(@Sendable(VisualInputResponse)->Void)
+        case terminal(CheckedContinuation<VisualInputResponse,any Error>)
+    }
+    private func acceptVisual(_ reply:VisualInputResponse)throws {
+        let delivery:VisualDelivery=try lock.withLock {
+            guard !failed else{throw PanelBridgeError.closed}
+            guard var waiter=visualRequests[reply.requestID] else{
+                guard visualReplies[reply.requestID]==reply else{throw PanelBridgeError.malformed}
+                return .ignored
+            }
+            guard waiter.action==reply.action else{throw PanelBridgeError.malformed}
+            if waiter.last==reply{return .ignored}
+            if !reply.isTerminal {
+                guard waiter.last==nil else{throw PanelBridgeError.malformed}
+                waiter.last=reply;visualRequests[reply.requestID]=waiter
+                return .progress(waiter.progress)
+            }
+            // All fallible validation precedes removal of continuation ownership.
+            visualRequests.removeValue(forKey:reply.requestID)
+            visualReplies[reply.requestID]=reply;visualReplyOrder.append(reply.requestID)
+            while visualReplyOrder.count>8{visualReplies.removeValue(forKey:visualReplyOrder.removeFirst())}
+            return .terminal(waiter.continuation)
+        }
+        switch delivery {
+        case .ignored:break
+        case .progress(let callback):callback(reply)
+        case .terminal(let continuation):continuation.resume(returning:reply)
+        }
+    }
+    private func enqueue(_ frame:Data,completion:(@Sendable(Result<Void,any Error>)->Void)?=nil) throws {
         try lock.withLock {
             guard !failed,input != nil else { throw PanelBridgeError.closed }
             guard queuedFrames<32,queuedBytes+frame.count<=262144 else { throw PanelBridgeError.overflow }
             queuedFrames+=1;queuedBytes+=frame.count
         }
         writes.async { [weak self] in
-            guard let self else { return }
+            guard let self else { completion?(.failure(PanelBridgeError.closed));return }
             defer { self.lock.withLock { self.queuedFrames-=1;self.queuedBytes-=frame.count } }
-            do { try self.write(frame) } catch { self.fail() }
+            do { try self.write(frame);completion?(.success(())) }
+            catch { self.fail();completion?(.failure(PanelBridgeError.closed)) }
         }
     }
     private func write(_ frame:Data) throws {
@@ -179,6 +270,8 @@ public final class HelperTransport: @unchecked Sendable {
                             return pending.2
                         }
                         continuation.resume()
+                    } else if case .object(let fields)=node,case .string("visual_input_response")?=fields["kind"] {
+                        try acceptVisual(VisualInputResponse(data:frame))
                     } else { _=try SessionAnswerDecision(data:frame);try onFrame(frame) }
                 }
                 if decoder.hasPartial { if partialSince==nil { partialSince=DispatchTime.now().uptimeNanoseconds } } else { partialSince=nil }
@@ -210,6 +303,8 @@ public final class HelperTransport: @unchecked Sendable {
             failed=true;let pending=Array(profileRequests.values);profileRequests.removeAll()
             let sessions=Array(quiescenceRequests.values);quiescenceRequests.removeAll()
             sessions.forEach { $0.2.resume(throwing:PanelBridgeError.closed) }
+            let visual=Array(visualRequests.values);visualRequests.removeAll()
+            visual.forEach{$0.continuation.resume(throwing:PanelBridgeError.closed)}
             return (process,pending)
         }
         pending.forEach { $0.resume(throwing:PanelBridgeError.closed) }

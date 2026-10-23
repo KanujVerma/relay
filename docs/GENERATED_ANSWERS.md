@@ -2,6 +2,12 @@
 
 Status 2026-10-23: architecture proposal, not implemented or a relaxed current gate. The owner approved both automatic reviewed answers and open-ended technical model answers. The remaining substantive decision is whether to display completed validated output as an explicitly **AI-generated suggestion, not independently verified**, with the limits below. [SESSION_BRIDGE](SESSION_BRIDGE.md) owns the common result/display contract.
 
+## Full-experience clarification
+
+The owner wants one assistant on standby throughout an interview, answering technical, résumé/project and general explanation requests in context. Reviewed/generated states describe provenance, not separate product modes. The earlier technical-only milestone is insufficient for that experience. The contextual engine needs selected verified personal background in the first useful version, plus bounded live dialogue and follow-up context. This clarification does not claim real private imports or grounded personal generation already exist.
+
+General technical knowledge may be generated. A claim about the user's experience must be supported by actual approved source-backed facts and preserve individual/team attribution. The personal-context lane must specify claim binding, retrieval and revocation with the existing BrainStore before personal-answer publication is enabled. Never let model-created fact/source identifiers establish that authority. Missing biography can be stated honestly or turn into a useful clarification without fabricating a story.
+
 ## Recommended path and alternatives
 
 A full independently reviewed match uses the reviewed reference. An eligible unmatched general technical question makes one request through the existing official ChatGPT-plan OAuth route, asks for a bounded whole JSON card, waits for successful stream completion, validates locally, and produces generated_suggestion. No manual question acceptance, mandatory second critic, automatic repair retry or API-key fallback.

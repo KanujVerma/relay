@@ -4,7 +4,7 @@ Status 2026-10-23: approved goals, proposed implementation. No new native/sessio
 
 ## Approved target
 
-Automatic permitted audio -> question -> visible answer, with **both** a reviewed SQL/coding path and an open-ended model path. No manual question-confirmation milestone. GPT-6.1 Sol extra-high or higher for every worker. Controller manages dependencies, review, integration and durable GitHub documentation. Research relevant open-source source/tests before new architecture and record reuse/version/license. The owner also authorized frequent coherent commits/pushes within agreed scope; update the durable handoff at each checkpoint, with no repeated routine-publication approval.
+One automatic permitted interview companion: listen throughout the conversation, understand technical/résumé/explanation requests and natural follow-ups, retrieve the relevant user/job context, and present concise suggestions. This includes **both** reviewed technical references and open-ended generated answers behind one experience. No manual question-confirmation milestone. The first useful integrated version needs verified personal grounding as well as general technical answers. GPT-6.1 Sol extra-high or higher for every worker. Controller manages dependencies, review, integration and durable GitHub documentation. Research relevant open-source source/tests before new architecture and record reuse/version/license. The owner also authorized frequent coherent commits/pushes within agreed scope; update the durable handoff at each checkpoint, with no repeated routine-publication approval.
 
 ## Three worker slots and ownership
 
@@ -12,19 +12,22 @@ The current environment supports three simultaneous workers plus the controller.
 
 | Lane | Runnable end-to-end outcome | Exclusive write scope |
 | --- | --- | --- |
-| Existing fixes, first | PR46 quarantine diagnostic and PR49 stop/reset invalidation repaired and verified | Existing adapter/ASR fix files and their tests; no new features |
-| Native session | Selected app -> bounded owned PCM -> local VAD/ASR -> versioned source/control events | New native session package, native clock/serializer/lifecycle/VAD adapter/tests; coordinated ASR provenance seam after repairs |
-| Reviewed answers and panel | Typed final -> complete reviewed technical match -> actual visible SwiftUI card | Reviewed catalog/evaluations, Python host/bridge, native panel reducer/view/transport; single UI owner |
-| Open-ended answers | Typed technical question -> one existing authorized model request -> validated generated card | Dynamic answer orchestration, model-output assembly/validation and held-out evaluation; same router/card contract as reviewed lane |
+| Existing fixes, completed locally and published | PR46 quarantine diagnostic and PR49 stop/reset invalidation repaired and verified | Existing adapter/ASR repair files and tests; current published status is in HANDOFF |
+| Continuous conversation | Separate user/remote capture -> local transcript -> bounded conversation context and question/follow-up/correction events | Native session/audio/VAD/provenance and coordinated question-state seams; native inputs do not assert biometric speaker identity |
+| Personal and job context | Explicitly selected résumé/project/job inputs -> reviewed source-backed facts -> relevant per-question retrieval | Native preparation/import/approval boundary, existing Personal Brain/converters, retrieval and source-revocation tests; production storage/import design still required |
+| Contextual answers and panel | Current question + live conversation + relevant verified background -> concise technical/personal suggestion in the actual window | One answer/router/helper/display path, generated-answer policy, reviewed-reference integration, context/coverage/freshness evaluation |
+| Reviewed reference expansion, rotated slot | Reusable tested SQL/coding examples improve speed/quality inside the same engine | Catalog content and independent executable/labeled evaluation after a core lane frees capacity |
 | Controller | Joined integration and source-of-truth state | Shared schema/golden fixtures, manifest wiring, HANDOFF/ADRs/roadmap and review coordination |
 
-The fixes slot initially replaces native implementation capacity. After repair review, the steady state is native session, reviewed answers/panel, and open-ended answers. A finished worker becomes an independent reviewer. Never edit the same source file from two lanes; controller explicitly assigns small shared-file seams.
+This is the controller's revised recommendation after the owner clarified the full conversational goal. It changes the earlier steady-state split that assigned two slots to separate answer paths while postponing personal context. Both answer paths remain in scope and use the same engine; separate user-visible modes or a fixed question bank are not the product. The earlier dedicated-reference-worker preference can be satisfied by rotating that work into the next free slot rather than displacing the personal-context foundation.
+
+Three workers can build against agreed synthetic interfaces in parallel. Real private imports and capture remain gated by their explicit native permission, storage and source-approval implementation; the product requirement does not authorize loading private data into the current synthetic store. A finished worker becomes an independent reviewer. No simultaneous writers to the same shared source file.
 
 ## Proposed architecture for discussion
 
 Keep native permission/capture/transcription/window ownership in Swift. Reuse Relay's existing Python question state, OAuth and QA through one local child helper, with bounded framed messages on inherited pipes. No new server or full application framework is needed for this transport. Compare any proposed dependency with the existing implementation before adding it.
 
-One router selects a coverage-complete reviewed answer first; unmatched supported technical questions may use the open-ended model path under its new publication policy. Both paths produce one typed answer decision. The native panel clearly distinguishes reviewed-reference provenance from generated suggestions. Personal claims remain blocked without verified Personal Brain evidence.
+One contextual engine uses a bounded recent conversation and a compact running summary, the complete current request, relevant verified personal facts, and role/job context. It must understand references to the user's own latest answer and distinguish current constraints from superseded ones. A coverage-complete reviewed reference may be reused; other supported questions use the model path under an explicit publication policy. Both paths produce one typed answer decision. The normal panel stays consistent: concise lead, useful talking points, optional code/detail. Source and uncertainty details can be quiet provenance rather than extra user-operated modes. Personal assertions must be supported by the retrieved verified background; missing facts produce an honest limitation or useful clarification, not fabricated achievements.
 
 ### Shared contract and cancellation
 
@@ -46,15 +49,22 @@ The existing D02 reference proves the first connection only. The reviewed lane s
 
 The current blocking urllib SSE loop checks freshness only after another event arrives. Discuss a cancellable adapter that reuses official OAuth/payload semantics versus a single bounded blocking worker with slower recovery. Cancellation can suppress local output; it does not prove upstream compute or token use stopped. No automatic API-key fallback or hidden retry/repair model call.
 
+## Product decisions to discuss
+
+1. Before the interview, prepare selected résumé/projects/job description and resolve important factual gaps. The user should not reconfirm every question during the interview.
+2. During the session, retain bounded recent dialogue and a running summary of topic, user answers, question constraints and unresolved follow-ups. Live speech/model text is conversation evidence, never automatic biography verification.
+3. Detect requests and follow-ups automatically; allow silence/ordinary conversation without producing constant cards. Clear superseded suggestions on an observed correction or interruption.
+4. General knowledge and personal grounding feed the same answer writer. Provenance remains available without making the user manage reviewed/generated modes.
+
 ## Work order and acceptance
 
 1. Finish and independently review existing repairs. Publish and verify exact repaired heads; update HANDOFF with real links/checks. Current repaired PR heads are already published; remote gates remain distinct.
 2. Freeze the smallest shared session and answer fixtures, limits, ownership and provenance semantics. Agree the new generated-answer publication policy.
-3. Build the three lanes independently with fake source/model processes and offline tests. Panel work must run a real helper process with synthetic input, not only a mock sample-card button.
+3. Build the three core lanes independently with fake source/model/import interfaces and offline tests. Include selected source review/retrieval rather than indefinitely expanding prewritten question coverage. Panel work must run a real helper process with synthetic input, not only a mock sample-card button.
 4. Join on one exact integration head. Test already-visible answer cancellation while capture, helper, model completion, pipe delivery and MainActor commit are delayed independently. Stop/resume, overlap, blank finals, malformed/replayed events, source gaps and child exit must not resurrect content.
-5. Measure an explicitly authorized synthetic selected-app speech session on M2 Pro: transcript accuracy, automatic route outcomes, correct visible cards, final-to-display timing, resource use and drop/discontinuity counts. Keep first-text, ASR-final, model-complete and useful-visible-answer timings distinct. No p95 claim without an adequate observed sample.
+5. Run a natural authorized mock interview mixing technical questions, résumé/project questions, references to the user's previous answer, multi-part requests and corrections. This is the first useful end-to-end acceptance; a single D02 card is only a connection test. Measure on M2 Pro: transcript accuracy, automatic route outcomes, correct visible cards, final-to-display timing, resource use and drop/discontinuity counts. Keep first-text, ASR-final, model-complete and useful-visible-answer timings distinct. No p95 claim without an adequate observed sample.
 
-Current non-goals for these lanes: real private résumé imports, new connectors, automatic biography promotion, continuous-learning runtime, stealth behavior and wholesale app/framework replacement.
+Deferred breadth: bulk/new connectors, automatic biography promotion, a complete continuous-learning runtime, stealth behavior and wholesale app/framework replacement. Explicitly selected personal sources and verified retrieval are required for the first useful product, after the real import/storage/approval boundary is implemented.
 
 ## Evidence and continuation
 

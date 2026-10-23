@@ -6,6 +6,8 @@ Updated 2026-10-23. Snapshot base: `eb28d1586e52b7f0fd2e3b15580ae08ff295872e` on
 
 Deliver a permitted native Mac audio -> question -> visible answer flow. The owner explicitly requires **automatic routing from the first integrated version**, with both reviewed SQL/coding answers and open-ended technical model answers. A manual question-confirmation step is not the milestone.
 
+The owner clarified the end experience: one always-ready assistant listens to the whole authorized interview, including the user's answers, tracks natural follow-ups/corrections, and automatically suggests technical explanations and answers grounded in the user's résumé/projects. Personal grounding belongs in the first useful integrated version; it must not be deferred behind a growing fixed-question catalog. Broad coverage is the goal, with honest missing-context behavior and no invented personal history. Source/review labels are internal provenance, not user-operated answer modes.
+
 The owner requested parallel agents managed by a controller, with one agent first repairing existing work. The owner subsequently authorized frequent commits and pushes of agreed work at meaningful verified checkpoints; routine scoped publication does not require repeated confirmation. Merge approval and material scope expansion remain separate. Every worker for this effort must use **GPT-6.1 Sol with extra-high reasoning or higher**. Before creating new architecture, inspect relevant open-source source and tests, check version/license/platform requirements, and record actual reuse versus lessons or rejected alternatives.
 
 GitHub is the durable source of truth. A new chat or agent must be able to continue from this repository, not a preceding conversation. Update this file and the relevant contract/evidence in each slice. [PARALLEL_PLAN.md](docs/PARALLEL_PLAN.md) owns lane scope, write ownership, proposed interfaces and integration order. [UPSTREAM_REUSE.md](docs/research/UPSTREAM_REUSE.md) owns the new source-research record. Proposed detailed contracts are [SESSION_BRIDGE.md](docs/SESSION_BRIDGE.md) and [GENERATED_ANSWERS.md](docs/GENERATED_ANSWERS.md); [repair evidence](docs/evidence/2026-10-23-pr-fixes.md) records local verification.
@@ -37,7 +39,7 @@ The 21 Python skips are optional document-converter integration tests; their dep
 
 ## Proposed work, not implemented
 
-Three end-to-end lanes are planned: native selected-app session -> honest transcript/control events; reviewed technical question -> reviewed answer in the actual panel; open-ended technical question -> model-generated answer under a new explicit publication policy. All feed one router and one native display contract. The automatic/both-lanes goals are approved; the detailed transport, generated-answer publication policy and implementation briefs remain proposals for architecture discussion.
+Following the full-experience clarification, the recommended three core lanes are continuous conversation/session capture, selected personal/job context with verified retrieval, and one contextual answer engine plus the actual panel. Reviewed technical references remain reusable material in that engine; expanded reference coverage can take the next freed worker slot. This rebalanced assignment is proposed for discussion, not implemented. All answer paths feed one router and one native display contract. The automatic/both-lanes goals are approved; the detailed transport, generated-answer publication policy and implementation briefs remain proposals for architecture discussion.
 
 Important current gaps:
 
@@ -65,4 +67,4 @@ Complete and verify exact-head review for published PR46 head 7cba4e1 and PR49 h
 3. Inspect Git status and the published repair commits plus evidence before reusing local artifacts. Do not reapply superseded patches to a repaired branch or assume an old unresolved comment proves the current source is still broken.
 4. Continue the next action above, or an explicitly approved disjoint lane. Do not repeat merged prototypes or turn proposed architecture into a completion claim.
 
-Open architecture decisions: generated-answer release rules, cancelable transport choice, and exact shared session/answer schema. The owner invited discussion. Real source/ASR/UI/inference acceptance remains separately measured on the target M2 Pro.
+Open architecture decisions: complete-session context and personal-grounding scope, generated-answer release rules, cancelable transport choice, and exact shared session/answer schema. The owner invited discussion. Real source/ASR/UI/inference acceptance remains separately measured on the target M2 Pro.

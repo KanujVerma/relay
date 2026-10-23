@@ -1,0 +1,22 @@
+{
+  "originHash" : "3d0e0b5d201466c4e632a3f32678924032a3db486b8c7172b9406bfa35b00c8f",
+  "pins" : [
+    {
+      "identity" : "fluidaudio",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/FluidInference/FluidAudio.git",
+      "state" : {
+        "revision" : "c79c4106b954f81205113c3343e5a7e59a1089b5"
+      }
+    },
+    {
+      "identity" : "tpcircularbuffer",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/michaeltyson/TPCircularBuffer.git",
+      "state" : {
+        "revision" : "cc520397504bb72bc6df79ff03eb72988a6dc50d"
+      }
+    }
+  ],
+  "version" : 3
+}

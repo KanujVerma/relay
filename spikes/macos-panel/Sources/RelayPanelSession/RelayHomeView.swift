@@ -23,7 +23,7 @@ struct RelayHomeView<SourceControls:View>:View {
                 HStack{Text("SESSION").font(.system(size:11,weight:.semibold)).tracking(1.5).foregroundStyle(RelayTheme.muted);Spacer();Label(aiEnabled ? "AI suggestions":"Local reference cards",systemImage:aiEnabled ? "sparkles":"book.closed").font(.system(size:11)).foregroundStyle(RelayTheme.muted)}
                 Spacer(minLength:0)
                 VStack(alignment:.leading,spacing:12){
-                    Text("Ready when you are.").font(.system(size:30,weight:.semibold)).tracking(-0.7)
+                    Text(state.stopping ? "Finishing the session…":state.paused ? "Take your time.":state.running ? "Your session is live.":state.visualBusy ? "Updating image settings…":"Ready when you are.").font(.system(size:30,weight:.semibold)).tracking(-0.7)
                     Text("Listen to the conversation. Get clear talking points, with your own experience close at hand.").font(.system(size:14)).lineSpacing(5).foregroundStyle(RelayTheme.secondary).fixedSize(horizontal:false,vertical:true)
                 }
                 VStack(alignment:.leading,spacing:16){
@@ -32,8 +32,14 @@ struct RelayHomeView<SourceControls:View>:View {
                     else{Text("Speech is prepared automatically on first use. About 225 MB is downloaded once.").font(.system(size:12)).foregroundStyle(RelayTheme.muted)}
                     if let error{Label(error,systemImage:"exclamationmark.circle").font(.system(size:12)).foregroundStyle(.orange).fixedSize(horizontal:false,vertical:true)}
                     HStack(spacing:12){
-                        if state.preparing || state.starting {
+                        if state.stopping || state.running {
+                            Button("Show session"){onAction(.showSession)}.buttonStyle(RelayPrimaryButtonStyle())
+                        }else if state.preparing || state.starting {
                             Button(state.cancellingPreparation ? "Finishing…":"Cancel preparation"){onAction(.cancelPreparation)}.buttonStyle(RelayQuietButtonStyle()).disabled(!state.allows(.cancelPreparation))
+                        }else if state.paused{
+                            Button("Resume session"){onAction(.resume)}.buttonStyle(RelayPrimaryButtonStyle()).disabled(!state.allows(.resume))
+                        }else if state.visualBusy{
+                            Text("Finish image setup in Settings before starting.").font(.system(size:12)).foregroundStyle(RelayTheme.muted)
                         }else if preparation?.recovery == .retry{
                             Button("Try again"){onAction(.retryPreparation)}.buttonStyle(RelayPrimaryButtonStyle()).disabled(!state.allows(.retryPreparation))
                         }else if preparation?.recovery == .openSettings{

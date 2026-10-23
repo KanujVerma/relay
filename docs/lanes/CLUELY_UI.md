@@ -35,3 +35,7 @@ Declared dependency: exact automatic API foundation d3a0ca3bd4bf0f844880d9126f23
 - The actual `relay-panel-session` product is built separately. Local compiler is Swift6.4/Xcode27; hosted Swift6.2.3 and visible-window interaction remain separate checks.
 
 Locked Mac prevents actual visible acceptance, keyboard/drag/resize inspection and native permission dialogs. No real model assets were downloaded/loaded, audio/screen/AX captured, account queried, image uploaded or private memory read. Typed chat, quick actions, transcript, activity/history, modes and account onboarding remain functional parity gaps for their assigned next lanes; no inert controls claim them here.
+
+### Reopened Home follow-up
+
+Reopening Home during an actual active/paused/stopping session now offers the real Show session or Resume port. A paused state cannot expose generic Start; Resume still needs real owner/source/consent admission and is unavailable during starting/stopping/probe work. Busy image settings are reflected in Home/menu copy instead of an unexplained disabled Start. The current real session remains the single owner. Eight focused presentation/actual-command tests passed after a red missing-route/eligibility regression. First-checkpoint73-test and render evidence above remains attributed to15e0178; no claim of a repeated full suite from this small follow-up.

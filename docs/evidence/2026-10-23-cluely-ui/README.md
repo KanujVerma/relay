@@ -1,6 +1,6 @@
 # Synthetic native UI exports
 
-These are Relay view renders from the Swift sources and pure fixture inputs in this commit. They are not desktop screenshots or evidence of a live interview, permission, sign-in, model download, capture or inference. No competitor assets/code are included. The UI lane uses measured Cluely2.1.24 proportions with Relay branding and native SF symbols/type.
+These are Relay view renders from the Swift sources and pure fixture inputs frozen at15e017825dc547b4e2011174ecb6603a71266744. They are not desktop screenshots or evidence of a live interview, permission, sign-in, model download, capture or inference. No competitor assets/code are included. The UI lane uses measured Cluely2.1.24 proportions with Relay branding and native SF symbols/type.
 
 | Export | Pure input |
 | --- | --- |

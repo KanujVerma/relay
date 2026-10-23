@@ -2,23 +2,24 @@ import Foundation
 import RelayControls
 
 /// Presentation/eligibility only. The real owner rechecks every action and lease.
-enum RelayUIAction:CaseIterable { case start,pause,resume,end,help,copy,expand,hide,context,settings,cancelPreparation,retryPreparation }
+enum RelayUIAction:CaseIterable { case start,pause,resume,end,help,copy,expand,hide,context,settings,cancelPreparation,retryPreparation,showSession }
 struct RelaySessionPresentation {
     var running=false,starting=false,paused=false,stopping=false,preparing=false,visualBusy=false
     var cancellingPreparation=false
     var hasQuestion=false,hasAnswer=false,hasSelectedSource=false,authorizedConversation=false
     var ownerCanStart=false,ownerCanResume=false
-    var status:String{stopping ? "Stopping":paused ? "Paused":running ? "Listening":starting || preparing ? "Preparing":"Ready"}
+    var status:String{stopping ? "Stopping":paused ? "Paused":running ? "Listening":starting || preparing ? "Preparing":visualBusy ? "Image setup busy":"Ready"}
     func allows(_ action:RelayUIAction)->Bool {
         switch action {
-        case .start:return ownerCanStart && hasSelectedSource && authorizedConversation && !running && !starting && !stopping && !preparing && !visualBusy
-        case .resume:return ownerCanResume && hasSelectedSource && authorizedConversation && !preparing && !visualBusy
+        case .start:return ownerCanStart && hasSelectedSource && authorizedConversation && !paused && !running && !starting && !stopping && !preparing && !visualBusy
+        case .resume:return ownerCanResume && paused && hasSelectedSource && authorizedConversation && !running && !starting && !stopping && !preparing && !visualBusy
         case .pause:return (running || starting) && !stopping
         case .end:return running || starting || paused || stopping || preparing || visualBusy
         case .help:return running && !stopping && hasQuestion
         case .copy,.expand:return running && !stopping && hasAnswer
         case .cancelPreparation:return (preparing || starting) && !stopping && !cancellingPreparation
         case .retryPreparation:return allows(.start)
+        case .showSession:return running || paused || stopping
         case .hide,.context,.settings:return true
         }
     }
@@ -43,6 +44,7 @@ struct RelayPreparationPresentation {
     let retryPreparation:()async->Void
     let openContext:()->Void
     let openSettings:()->Void
+    let showSession:()->Void
     @discardableResult func perform(_ action:RelayUIAction)->Task<Void,Never>? {
         guard state().allows(action) else{return nil}
         switch action {
@@ -56,6 +58,7 @@ struct RelayPreparationPresentation {
         case .hide:control(.hidePanel)
         case .context:openContext()
         case .settings:openSettings()
+        case .showSession:showSession()
         case .cancelPreparation:cancelPreparation()
         case .retryPreparation:return Task{@MainActor in await retryPreparation()}
         }

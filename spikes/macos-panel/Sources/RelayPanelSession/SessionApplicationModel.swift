@@ -403,6 +403,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
         defer { if startIdentity==identity { starting=false } }
         guard !running,!stopping else { return };error=nil
         var captureAttempted=false
+        var preparingManaged=false
         do {
             if !fixture && capture.phase != .idle { error="Waiting for capture to finish stopping.";return }
             if fixture { _=try ensureHelper();try startFixture();return }
@@ -418,7 +419,9 @@ private actor FixtureRecognizer: ActivityRecognizer {
                 guard !asrFolder.isEmpty,!vadFolder.isEmpty,modelLicensesAcknowledged else{throw SpeechSetupError.advancedOverrideInvalid}
                 configuration=NativeCaptureConfiguration(microphoneEnabled:microphone,selectedBundleID:bundle.isEmpty ? nil:bundle,asrModelRoot:URL(fileURLWithPath:asrFolder),vadCompiledModel:URL(fileURLWithPath:vadFolder),authorizedConversation:true,localModelLicensesAcknowledged:modelLicensesAcknowledged)
             }else{
+                preparingManaged=true
                 let assets=try await speechSetup.prepare()
+                preparingManaged=false
                 guard ownsStart(identity) else{throw CancellationError()}
                 configuration=NativeCaptureConfiguration(microphoneEnabled:microphone,selectedBundleID:bundle.isEmpty ? nil:bundle,preparedSpeechAssets:assets,authorizedConversation:authorizedConversation)
             }
@@ -438,7 +441,8 @@ private actor FixtureRecognizer: ActivityRecognizer {
                 failSession()
                 self.error="Audio could not start. Check microphone and meeting-app access, then start again."
             }else{
-                self.error=(error as? SpeechSetupError)?.localizedDescription ?? SpeechSetupError.advancedOverrideInvalid.localizedDescription
+                self.error=preparingManaged ? speechSetup.snapshot.userMessage:
+                    ((error as? SpeechSetupError)?.localizedDescription ?? SpeechSetupError.advancedOverrideInvalid.localizedDescription)
             }
         }
     }

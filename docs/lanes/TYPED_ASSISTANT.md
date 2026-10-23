@@ -14,6 +14,12 @@ Nine new tests passed after a missing-module red run. Affected semantic/helper/r
 
 Private native UserQuestion/AnswerCancel values now issue under the same controller lock, with a fresh actual lease/UUID and original native sequence anchor. Cancel targets the controller's actual issued request and carries original-target retirement data. Existing ManualHelp behavior remains unchanged. The new API first failed compilation because NativeUserQuestionRequest was absent; after implementation,6 targeted native UserQuestion/ManualHelp tests passed,0.009s after14.40s build, using an isolated copy-on-write baseline build cache with offline dependency resolution. No audio/model/permission action occurred. Forwarder/receipt/adapter integration is still in progress.
 
+## Ordered forwarding and cancellation checkpoint
+
+ExplicitContextForwardingPorts supplies required actual host capture/retire/send closures over a private forwarder item wrapper. Existing SessionIngress and SessionApplicationModel stay unchanged. Retirement is enqueued before held-request release. The helper transport registers targeted cancellation ownership before sending, validates the exact terminal against original target/session/generation, and retains a bounded replay cache.
+
+Forwarder tests first failed on the absent explicit port;7 new/existing forwarding tests pass,0.007s. Cancellation tests first failed on the absent parser/waiter;2 targeted tests pass,0.416s, including actual NativeSessionController + OrderedContextForwarder + actual helper with forced HTTPX MockTransport and zero POST for a stopped held typed request. That test is not the yet-required held audio EOU/PNG proof or joined UI test. An added old-target regression failed before strengthening helper generation/target matching;11 typed tests now pass, including the512-operation bound. Draft/activity reducers and expanded actual transport proof remain in progress.
+
 ## Intended reuse
 
 Actual runtime reuse is existing NativeSessionController/ordered ingress, ActiveTurns, ConversationContext correction grammar, SessionHost one-worker/newest-pending routing, Personal Brain authority, reference/card QA, HTTPX0.28.1/SSEDecoder/ResponseAssembler and verified image ports. No model/framework/dependency added.

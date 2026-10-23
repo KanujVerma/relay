@@ -141,6 +141,28 @@ class UserQuestionHostTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.out[-1]['quiesced'])
         self.assertEqual(self.out[-1]['targetRequestID'],request['requestID'])
 
+    async def test_old_target_cannot_cancel_or_advance_a_newer_request(self):
+        host=await self.prepared();first=question(host)
+        await host.handle_user_question(first);await host.drain()
+        host.handle_answer_retirement(retirement(first))
+        newer=question(host,'Explain the newer topic.')
+        await host.handle_user_question(newer);await host.drain()
+        before=host.presentation
+        self.assertFalse(host.handle_answer_cancel(cancel(host,first)))
+        self.assertEqual(host.presentation,before)
+        self.assertEqual(host.active.native['requestID'],newer['requestID'])
+
+    async def test_session_operation_budget_stays_bounded_without_model_calls(self):
+        host=await self.prepared()
+        for index in range(512):
+            await host.handle_user_question(question(host,'What did you personally do on Atlas?'))
+        self.assertEqual(len(host.used_requests),512)
+        self.assertLessEqual(len(host.user.bases),8)
+        self.assertLessEqual(len(host.user.replies),8)
+        with self.assertRaises(WireError):
+            await host.handle_user_question(question(host))
+        self.assertFalse(host.live);self.assertEqual(self.prompts,[])
+
     async def test_cancel_receipt_waits_for_target_and_newest_pending_does_not_overlap(self):
         entered=asyncio.Event();release=asyncio.Event();calls=[]
         async def stubborn(prompt,instructions):

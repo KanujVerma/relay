@@ -1,6 +1,6 @@
 # Proposed native session and answer bridge
 
-Status 2026-10-23: design for discussion, not implemented or approved as an exact protocol. The automatic/both-answer-lanes target is approved. [PARALLEL_PLAN](PARALLEL_PLAN.md) owns write scope; this file is the single proposed interface definition.
+Status 2026-10-23: accepted implementation direction. Exact current fields and ownership are frozen in [BUILD_CONTRACT](BUILD_CONTRACT.md); this document preserves rationale. Implementations are in progress and not yet accepted as a joined product. [PARALLEL_PLAN](PARALLEL_PLAN.md) owns write scope; this file is the single proposed interface definition.
 
 ## Ownership and framing
 
@@ -35,7 +35,7 @@ Proposed `resultRevision`: optional pending 1, exactly one immutable terminal 2.
 
 Answer kinds are reviewed_reference and generated_suggestion. The reviewed catalog owns canonical content and its approved full match contract. A model cannot supply reviewed status, reference IDs, approval records or personal evidence. Generated provenance records actual completion/checks and explicit lack of independent review.
 
-Proposed card bounds: lead <=280 UTF-8 bytes, 0-2 points <=180 bytes each, optional detail `{kind:prose|code, language:null|python|sql, text}` <=900 bytes. Reviewed entries require 1-2 points. Code detail permits LF/tab and preserves whitespace; other controls and overflow reject. Never truncate. The existing 500-byte native question bound remains separate from the larger transcript/context bounds; overflow clears with a fixed status instead of rewriting the semantic question.
+Proposed card bounds: lead <=280 UTF-8 bytes, 0-2 points <=180 bytes each, optional detail `{kind:prose|code, language:null|python|sql, text}` <=4096 bytes. Reviewed entries require 1-2 points. Code detail permits LF/tab and preserves whitespace; other controls and overflow reject. Never truncate. The existing 500-byte native question bound remains separate from the larger transcript/context bounds; overflow clears with a fixed status instead of rewriting the semantic question.
 
 ## Display and cancellation contract
 

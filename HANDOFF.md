@@ -12,6 +12,12 @@ The owner requested parallel agents managed by a controller, with one agent firs
 
 GitHub is the durable source of truth. A new chat or agent must be able to continue from this repository, not a preceding conversation. Update this file and the relevant contract/evidence in each slice. [PARALLEL_PLAN.md](docs/PARALLEL_PLAN.md) owns lane scope, write ownership, proposed interfaces and integration order. [UPSTREAM_REUSE.md](docs/research/UPSTREAM_REUSE.md) owns the new source-research record. Proposed detailed contracts are [SESSION_BRIDGE.md](docs/SESSION_BRIDGE.md) and [GENERATED_ANSWERS.md](docs/GENERATED_ANSWERS.md); [repair evidence](docs/evidence/2026-10-23-pr-fixes.md) records local verification.
 
+## Active implementation, approved by owner
+
+The owner approved the three core features and directed agents to build them in parallel. Current delivery is tracked in [BUILD_STATUS](docs/BUILD_STATUS.md), with frozen implementation interfaces in [BUILD_CONTRACT](docs/BUILD_CONTRACT.md) and the [execution plan](docs/superpowers/plans/2026-10-23-parallel-implementation.md). Feature work is now code in progress, not just a proposed architecture. Personal draft PR #63 is available; conversation and answer/panel checkpoints are published, and screen-context work is starting. Independent review and real joined/hardware acceptance remain open.
+
+Additional accepted requirements include coding with an engineer, feature case studies, optional screen context and useful global shortcuts/app controls. A separate agent completed the requested [REA/Cluely investigation](docs/research/CLUELY_LESSONS.md); its observed implementation details and unknowns inform these features. No proprietary app code or private user material is copied into Relay.
+
 ## Implemented on the snapshot main
 
 | Component | Actual scope |
@@ -39,7 +45,7 @@ The 21 Python skips are optional document-converter integration tests; their dep
 
 ## Proposed work, not implemented
 
-Following the full-experience clarification, the recommended three core lanes are continuous conversation/session capture, selected personal/job context with verified retrieval, and one contextual answer engine plus the actual panel. Reviewed technical references remain reusable material in that engine; expanded reference coverage can take the next freed worker slot. This rebalanced assignment is proposed for discussion, not implemented. All answer paths feed one router and one native display contract. The automatic/both-lanes goals are approved; the detailed transport, generated-answer publication policy and implementation briefs remain proposals for architecture discussion.
+Following the full-experience clarification, the recommended three core lanes are continuous conversation/session capture, selected personal/job context with verified retrieval, and one contextual answer engine plus the actual panel. Reviewed technical references remain reusable material in that engine; expanded reference coverage can take the next freed worker slot. This rebalanced assignment is proposed for discussion, not implemented. All answer paths feed one router and one native display contract. The owner approved building the clarified experience; BUILD_CONTRACT now governs implementation. This planning history does not claim the joined runtime is complete.
 
 Important current gaps:
 
@@ -58,7 +64,7 @@ For each subsequent checkpoint, record exact commit/PR links and observed check/
 
 ## One exact next action
 
-Complete and verify exact-head review for published PR46 head 7cba4e1 and PR49 head cf30aaa; their remote CI is green. Then agree the proposed generated-answer/shared-session contract before starting new feature code. Main merges remain separately approved actions.
+Complete and verify exact-head review for published PR46 head 7cba4e1 and PR49 head cf30aaa; their remote CI is green. In parallel, continue the owner-approved implementation under BUILD_CONTRACT and the tracked lane reviews. Main merges remain separately approved actions.
 
 ## Resume procedure and open decisions
 
@@ -67,4 +73,4 @@ Complete and verify exact-head review for published PR46 head 7cba4e1 and PR49 h
 3. Inspect Git status and the published repair commits plus evidence before reusing local artifacts. Do not reapply superseded patches to a repaired branch or assume an old unresolved comment proves the current source is still broken.
 4. Continue the next action above, or an explicitly approved disjoint lane. Do not repeat merged prototypes or turn proposed architecture into a completion claim.
 
-Open architecture decisions: complete-session context and personal-grounding scope, generated-answer release rules, cancelable transport choice, and exact shared session/answer schema. The owner invited discussion. Real source/ASR/UI/inference acceptance remains separately measured on the target M2 Pro.
+Implementation decisions and changes are recorded in BUILD_CONTRACT/BUILD_STATUS. Remaining acceptance includes independent lane review, joined native app behavior, actual source/model permissions and live quality/latency. The owner invited discussion. Real source/ASR/UI/inference acceptance remains separately measured on the target M2 Pro.

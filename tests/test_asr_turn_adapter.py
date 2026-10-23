@@ -390,6 +390,68 @@ class EOUAdapterTests(unittest.TestCase):
         self.assertIsNone(self.machine.current())
         self.assertFalse(self.machine.turns.is_current(root.token))
 
+    def test_blank_eou_overlapping_root_invalidates_corrected_answer(self):
+        first = self.bridge.ingest(final(
+            "root", "Explain customer revenue.", start_ms=0, end_ms=1000,
+        ), context=AUTHORIZED)
+        self.assertEqual(first.disposition, "ready")
+        correction = self.bridge.ingest(final(
+            "fix", "No, use distinct orders.",
+            start_ms=1100, end_ms=1200,
+        ), context=AUTHORIZED)
+        self.assertEqual(correction.disposition, "ready")
+        self.assertEqual(correction.question.snapshot.dependency_intervals,
+                         (("root", 0, 1000), ("fix", 1100, 1200)))
+        blank = self.bridge.ingest(final(
+            "unclear-speech", "", start_ms=500, end_ms=800,
+        ), context=AUTHORIZED)
+        self.assertEqual(blank.disposition, "needs_review")
+        self.assertEqual(blank.reason, "empty_eou_final")
+        self.assertFalse(self.machine.turns.is_current(correction.token))
+        self.assertIsNone(self.machine.current())
+
+    def test_blank_eou_while_correction_pending_retires_old_context(self):
+        first = self.bridge.ingest(final(
+            "root", "Explain SQL joins.", start_ms=0, end_ms=1000,
+        ), context=AUTHORIZED)
+        self.assertEqual(first.disposition, "ready")
+        pending = self.bridge.ingest(final(
+            "fix", "", stage="processing",
+            start_ms=1100, end_ms=1200,
+        ), context=AUTHORIZED)
+        self.assertEqual(pending.disposition, "pending")
+        blank = self.bridge.ingest(final(
+            "unclear", "", start_ms=500, end_ms=800,
+        ), context=AUTHORIZED)
+        self.assertEqual(blank.disposition, "needs_review")
+        self.assertIsNone(self.machine._interrupted)
+        late_fix = self.bridge.ingest(final(
+            "fix", "No, use a different join.",
+            start_ms=1100, end_ms=1250,
+        ), context=AUTHORIZED)
+        self.assertNotEqual(late_fix.disposition, "ready")
+        self.assertFalse(self.machine.turns.is_current(first.token))
+        self.assertIsNone(self.machine.current())
+
+    def test_truly_unrelated_old_blank_eou_preserves_independent_question(self):
+        first = self.bridge.ingest(final(
+            "earlier", "Explain indexes.", start_ms=0, end_ms=100,
+        ), context=AUTHORIZED)
+        self.assertEqual(first.disposition, "ready")
+        newer = self.bridge.ingest(final(
+            "newer", "Explain hash joins.", start_ms=300, end_ms=500,
+        ), context=AUTHORIZED)
+        self.assertEqual(newer.disposition, "ready")
+        blank = self.bridge.ingest(final(
+            "unrelated-old-blank", "", start_ms=30, end_ms=60,
+        ), context=AUTHORIZED)
+        self.assertEqual(blank.disposition, "needs_review")
+        self.assertEqual(blank.reason, "empty_eou_final")
+        # A blank final is still terminal, but old unrelated source time may
+        # be recognized as stale and must not cancel this newer question.
+        self.assertEqual(self.machine.current().token, newer.token)
+        self.assertTrue(self.machine.turns.is_current(newer.token))
+
     def test_late_unknown_eou_overlapping_root_cancels_corrected_turn(self):
         root = self.bridge.ingest(final(
             "root-A", "Explain the top five customers by revenue.",

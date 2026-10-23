@@ -16,7 +16,9 @@ Baseline ordinary Python: **460 tests, 23 optional skips**, no failures. Initial
 
 Full Python+HTTPX suite: **503 tests, 21 optional converter skips**, no failures. Existing ResourceWarnings and expected negative CLI messages remain. EVALS: **26 synthetic questions**; documentation: **20 required files and local links**; diff whitespace check passed. These checks used only synthetic inputs. The ordinary interpreter lacks optional HTTPX; the reviewed existing `/private/tmp/relay-answers-venv/bin/python` reports HTTPX0.28.1 and ran the full socket-inclusive suite. No dependency was installed.
 
-The source commit follows this record; root will review the exact frozen head. Consume only the root-accepted answer-policy successor before joined integration. Root independent exact-head review, the final composition adapter/staging/UI, native pixel-recheck wiring, hosted CI and actual account/window acceptance remain separate.
+Published source checkpoint: `ad9f587cc83c7239865a0cf758fab185cccba72e`. Draft [PR #74](https://github.com/KanujVerma/relay/pull/74) targets the controller's build branch, not main. The exact own patch is that one source commit against parent `819e4ae6b88aca4b2cd97c0f508af31c82207fae`: six files only. GitHub's aggregate PR comparison includes accepted dependency history under different integration ancestry and initially reported 88 files/23 commits with `mergeable:false`; do not mistake that aggregate for the scoped visual patch. Root should review/cherry-pick the single source commit or explicitly reconcile the PR base. No main merge occurred.
+
+Consume only the root-accepted answer-policy successor before joined integration. Root independent exact-head review, the final composition adapter/staging/UI, native pixel-recheck wiring, hosted CI and actual account/window acceptance remain separate. This handoff-only successor does not change the tested source.
 
 ## Exact next action
 

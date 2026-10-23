@@ -2,8 +2,8 @@ import XCTest
 @testable import RelayPanelState
 
 final class PanelStateTests: XCTestCase {
-    private func turn(_ id: String = "D02", _ generation: UInt64) -> TurnKey {
-        TurnKey(identifier: id, revision: 1, generation: generation)!
+    private func turn(_ id: String = "D02", _ generation: UInt64, epoch: UInt64 = 1) -> TurnKey {
+        TurnKey(identifier: id, revision: 1, generation: generation, sessionEpoch: epoch)!
     }
 
     private func card() -> PanelCard {
@@ -55,10 +55,11 @@ final class PanelStateTests: XCTestCase {
         XCTAssertFalse(state.apply(.publish(turn: first, card: card())))
         XCTAssertFalse(state.apply(.begin(turn: turn("stopped", 8), question: "While stopped?")))
         XCTAssertTrue(state.apply(.resume))
+        XCTAssertEqual(state.sessionEpoch, 2)
         XCTAssertEqual(state.status, .idle)
         XCTAssertFalse(state.apply(.begin(turn: first, question: "Replayed after resume?")))
         XCTAssertFalse(state.apply(.begin(turn: turn("old-pre-resume", 8), question: "Replayed after resume?")))
-        XCTAssertTrue(state.apply(.begin(turn: turn("new", 9), question: "New authorized turn?")))
+        XCTAssertTrue(state.apply(.begin(turn: turn("new", 9, epoch: 2), question: "New authorized turn?")))
         XCTAssertEqual(state.status, .waiting)
         XCTAssertNil(state.card)
     }
@@ -78,17 +79,18 @@ final class PanelStateTests: XCTestCase {
 
     func testTurnVersionMismatchCannotPublish() {
         var state = PanelState()
-        let current = TurnKey(identifier: "D02", revision: 3, generation: 4)!
-        let stale = TurnKey(identifier: "D02", revision: 2, generation: 4)!
+        let current = TurnKey(identifier: "D02", revision: 3, generation: 4, sessionEpoch: 1)!
+        let stale = TurnKey(identifier: "D02", revision: 2, generation: 4, sessionEpoch: 1)!
         XCTAssertTrue(state.apply(.begin(turn: current, question: "Current?")))
         XCTAssertFalse(state.apply(.publish(turn: stale, card: card())))
         XCTAssertTrue(state.apply(.publish(turn: current, card: card())))
     }
 
     func testBoundedContentRejectsControlsAndEmptyItems() {
-        XCTAssertNil(TurnKey(identifier: "x y", revision: 1, generation: 1))
-        XCTAssertNil(TurnKey(identifier: "x", revision: 0, generation: 1))
-        XCTAssertNil(TurnKey(identifier: "x", revision: 1, generation: 0))
+        XCTAssertNil(TurnKey(identifier: "x y", revision: 1, generation: 1, sessionEpoch: 1))
+        XCTAssertNil(TurnKey(identifier: "x", revision: 0, generation: 1, sessionEpoch: 1))
+        XCTAssertNil(TurnKey(identifier: "x", revision: 1, generation: 0, sessionEpoch: 1))
+        XCTAssertNil(TurnKey(identifier: "x", revision: 1, generation: 1, sessionEpoch: 0))
         XCTAssertNil(PanelCard(lead: String(repeating: "a", count: 281), points: ["valid"]))
         XCTAssertNil(PanelCard(lead: "hello\u{0001}", points: ["valid"]))
         XCTAssertNil(PanelCard(lead: "hello", points: []))
@@ -99,7 +101,72 @@ final class PanelStateTests: XCTestCase {
         var state = PanelState()
         XCTAssertFalse(state.apply(.begin(turn: turn("a", 1), question: String(repeating: "q", count: 501))))
         XCTAssertNil(state.currentTurn)
-        XCTAssertTrue(state.apply(.begin(turn: turn("a", 1), question: "Valid?")))
+        XCTAssertEqual(state.status, .needsReview)
+        // Invalid new turns consume their generation, so a revised payload
+        // cannot resurrect a previously unsafe interval under the same key.
+        XCTAssertFalse(state.apply(.begin(turn: turn("a", 1), question: "Valid?")))
+        XCTAssertTrue(state.apply(.begin(turn: turn("b", 2), question: "Valid?")))
+    }
+
+
+    func testInvalidNewQuestionClearsPreviouslyVisibleCard() {
+        var state = PanelState()
+        let old = turn("old", 1)
+        let invalid = turn("invalid", 2)
+        let fresh = turn("fresh", 3)
+        XCTAssertTrue(state.apply(.begin(turn: old, question: "Original?")))
+        XCTAssertTrue(state.apply(.publish(turn: old, card: card())))
+        XCTAssertNotNil(state.card)
+        XCTAssertFalse(state.apply(.begin(
+            turn: invalid, question: String(repeating: "oversized", count: 70)
+        )))
+        XCTAssertNil(state.card)
+        XCTAssertNil(state.question)
+        XCTAssertNil(state.currentTurn)
+        XCTAssertEqual(state.reason, .validationRequired)
+        XCTAssertEqual(state.status, .needsReview)
+        XCTAssertFalse(state.apply(.publish(turn: old, card: card())))
+        XCTAssertFalse(state.apply(.begin(turn: invalid, question: "Same generation retry?")))
+        XCTAssertTrue(state.apply(.begin(turn: fresh, question: "Fresh question?")))
+        XCTAssertNil(state.card)
+        XCTAssertTrue(state.apply(.publish(turn: fresh, card: card())))
+    }
+
+    func testControlCharacterReplacementAlsoClearsVisibleCard() {
+        var state = PanelState()
+        let old = turn("old", 4)
+        let invalid = turn("bad", 5)
+        XCTAssertTrue(state.apply(.begin(turn: old, question: "Old question?")))
+        XCTAssertTrue(state.apply(.publish(turn: old, card: card())))
+        XCTAssertFalse(state.apply(.begin(turn: invalid, question: "Untrusted\u{0000}question")))
+        XCTAssertNil(state.card)
+        XCTAssertNil(state.currentTurn)
+        XCTAssertEqual(state.status, .needsReview)
+        XCTAssertFalse(state.apply(.publish(turn: old, card: card())))
+    }
+
+    func testPreStopQueuedButUnobservedTurnCannotEnterAfterResume() {
+        var state = PanelState()
+        let current = turn("current", 1)
+        // This event exists BEFORE stop, but is not delivered until AFTER resume.
+        // It may have a higher generation than anything the UI has observed.
+        let delayed = turn("delayed", 900, epoch: 1)
+        XCTAssertTrue(state.apply(.begin(turn: current, question: "Original?")))
+        XCTAssertTrue(state.apply(.publish(turn: current, card: card())))
+        XCTAssertTrue(state.apply(.stop))
+        XCTAssertTrue(state.apply(.resume))
+        XCTAssertEqual(state.sessionEpoch, 2)
+        XCTAssertFalse(state.apply(.begin(turn: delayed, question: "Queued before stop?")))
+        XCTAssertFalse(state.apply(.publish(turn: delayed, card: card())))
+        XCTAssertNil(state.currentTurn)
+        XCTAssertNil(state.card)
+        XCTAssertEqual(state.status, .idle)
+        // Rejecting stale epochs does not poison new authorized generations.
+        let newTurn = turn("fresh", 2, epoch: 2)
+        XCTAssertTrue(state.apply(.begin(turn: newTurn, question: "New session?")))
+        XCTAssertTrue(state.apply(.publish(turn: newTurn, card: card())))
+        XCTAssertFalse(state.apply(.withhold(turn: delayed, reason: .interrupted)))
+        XCTAssertNotNil(state.card)
     }
 
     func testWithheldTextNeverEntersPresentationState() {

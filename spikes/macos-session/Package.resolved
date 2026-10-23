@@ -1,0 +1,14 @@
+{
+  "originHash" : "de6cfbface3445ee9531edc2c877610936c82fd50487c7e0abdfaf330ecdc139",
+  "pins" : [
+    {
+      "identity" : "tpcircularbuffer",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/michaeltyson/TPCircularBuffer.git",
+      "state" : {
+        "revision" : "cc520397504bb72bc6df79ff03eb72988a6dc50d"
+      }
+    }
+  ],
+  "version" : 3
+}

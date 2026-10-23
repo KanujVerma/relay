@@ -14,3 +14,5 @@ Current accepted heads, hosted checks and remaining integration gates live in [B
 - [Visual service](review-visual-ad9f587-report.md):ad9f587 accepted within its exact six-file service scope; app/helper consumers and real account acceptance remain separate.
 
 - [Prospective build routing review](review-hypothetical-a5827dc.md): sourcea5827dc accepted, final PR77 head62b30c4 has identical source/tests; [builder evidence](fix-hypothetical-routing-report.md) records48 focused tests and the original seven red failures.
+
+- [Visual helper backend review](review-visual-host-1c2d8ef.md):1c2d8ef accepted;30 focused tests and an independent held-cleanup cancellation schedule pass. [Builder checkpoint](visual-host-1c2d8ef-report.md) records554 Python tests/21 optional skips and six synthetic helper subprocesses. Native consumer remains separate.

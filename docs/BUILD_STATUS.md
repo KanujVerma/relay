@@ -1,6 +1,6 @@
 # Parallel build status, 2026-10-23
 
-Main remains `eb28d15`. Existing PR46/49 repairs and documentation PR59 are published but unmerged. The owner approved implementation, frequent scoped commits/pushes and GPT-6.1 Sol extra-high workers. The five core feature drafts passed scoped independent review and are assembled locally, including answer b33292f. App-composition PR75 passed scoped correction re-review; the accepted visual service PR74 is assembled, while two new branches implement its helper and Swift consumers. Personal scoped and shutdown reviews passed; its complete controller native suite passes. No real private source, Keychain, capture/model or account-inference acceptance is claimed.
+Main remains `eb28d15`. Existing PR46/49 repairs and documentation PR59 are published but unmerged. The owner approved implementation, frequent scoped commits/pushes and GPT-6.1 Sol extra-high workers. The five core feature drafts passed scoped independent review and are assembled locally, including answer b33292f. App-composition PR75 passed scoped correction re-review; the accepted visual service PR74 and helper backend PR78 are assembled; the new Swift consumer is still in progress. Personal scoped and shutdown reviews passed; its complete controller native suite passes. No real private source, Keychain, capture/model or account-inference acceptance is claimed.
 
 ## Branch topology
 
@@ -32,7 +32,7 @@ The owner added coding-with-an-engineer and feature-case-study scenarios. Test e
 
 ## Next controller action
 
-Review and join the two forthcoming frozen image-consumer heads; the accepted e45549a text/control app assembly has passed controller verification. Two disjoint workers continue the helper and Swift image consumers; the completed third review accepted the app corrections. All use GPT-6.1 Sol extra-high. Publish the current controller source/evidence and docs mirror. Final image consumers require their own frozen-head review; main merge and actual hardware/account acceptance remain separate.
+Finish, independently review and join the forthcoming Swift visual-consumer head; the accepted e45549a text/control app assembly has passed controller verification. The Python helper consumer is accepted and assembled; its native Swift consumer remains active; the completed third review accepted the app corrections. All use GPT-6.1 Sol extra-high. Publish the current controller source/evidence and docs mirror. Final image consumers require their own frozen-head review; main merge and actual hardware/account acceptance remain separate.
 
 
 ## Review and hosted-check ledger
@@ -63,4 +63,8 @@ Controller joined e45549a+ad9f587 verification: complete Python524 tests,21 opti
 
 Joined app packaging: `spikes/macos-panel/scripts/build-session-app.sh` exited0; `codesign --verify --deep --strict` and Info.plist lint passed. The ignored local bundle is synthetic-test ready; this is not live capture/account acceptance.
 
-Visual helper backend checkpoint1c2d8ef2ce5d6207fd74f126845ebab48024537c is published on feature/visual-host-adapter-2026-10-23, frozen against c20e1eb3287397caa15205e0c036afbc6e21deb7. Independent eight-file review is active. Builder:554 Python tests/21 optional converter skips,30 focused tests including6 actual helper subprocesses with mocked HTTP, EVALS/docs checks passed. It includes pre-EOU staged retirement and the case-study fixture-content correction. It is not yet accepted or assembled. Swift visual controls remain in progress on their separate e45549a-based branch.
+Visual helper backend checkpoint1c2d8ef2ce5d6207fd74f126845ebab48024537c is published on feature/visual-host-adapter-2026-10-23, frozen against c20e1eb3287397caa15205e0c036afbc6e21deb7. Independent eight-file review accepted the patch with no actionable findings. Builder:554 Python tests/21 optional converter skips,30 focused tests including6 actual helper subprocesses with mocked HTTP, EVALS/docs checks passed. It includes pre-EOU staged retirement and the case-study fixture-content correction. It is accepted and assembled at1f1d75a. Swift visual controls remain in progress in work/relay-build-visual-app on their separate e45549a-based branch.
+
+Joined helper/routing controller verification at1f1d75a:558 Python tests,21 optional converter skips, zero failures;8 focused native app/shared-helper tests passed. Native source/test comparison to e45549a is empty, preserving accepted OCR/waiter fixes. New helper source exactly matches reviewed1c2d8ef. Prospective routing source exactly matches accepted a5827dc. The corrected case fixture has a passing actual-helper test; its final visible recheck was blocked by macOS locking. No account/permission/capture operation started.
+
+Hosted exact checkpoint5bde19b: [native/Python40014242743](https://github.com/KanujVerma/relay/actions/runs/40014242743) and [contract40014242744](https://github.com/KanujVerma/relay/actions/runs/40014242744) succeeded. Logs independently show524 Python/21 optional skips; native32+17+28+18+12+37 =144 tests and app compilation. Swift6.2.3 passed the actual joined app source. Longer duration was compilation progress, not an established test hang. This older hosted result does not certify subsequent Python/routing code or unfinished native image code.

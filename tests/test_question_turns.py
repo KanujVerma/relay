@@ -788,6 +788,75 @@ class TurnSafety(unittest.TestCase):
         self.assertFalse(self.machine.turns.is_current(initial.token))
         self.assertIsNone(self.machine.current())
 
+    def test_late_unknown_inside_original_root_invalidates_corrected_turn(self):
+        root = self.machine.ingest(remote(
+            "A", "Explain top customer revenue in 2025.",
+            start_ms=0, end_ms=1000,
+        ))
+        self.assertEqual(root.state, "ready")
+        correction = self.machine.ingest(remote(
+            "B", "No, use distinct orders instead.",
+            intent="correction", start_ms=1100, end_ms=1200,
+        ))
+        self.assertEqual(correction.state, "ready")
+        self.assertEqual(correction.snapshot.dependency_segment_ids, ("A", "B"))
+        self.assertEqual(correction.snapshot.dependency_intervals,
+                         (("A", 0, 1000), ("B", 1100, 1200)))
+        self.assertTrue(self.machine.turns.is_current(correction.token))
+        # The unknown final is late relative to B but overlaps source A,
+        # which B still quotes and depends on. It must invalidate B.
+        unknown = self.machine.ingest(remote(
+            "unknown-within-A", "There's another constraint.",
+            intent="unknown", start_ms=500, end_ms=800,
+        ))
+        self.assertEqual(unknown.state, "needs_review")
+        self.assertEqual(unknown.reason,
+                         "unclassified_overlapping_remote_utterance")
+        self.assertFalse(self.machine.turns.is_current(correction.token))
+        self.assertIsNone(self.machine.current())
+
+    def test_late_unknown_inside_middle_correction_invalidates_final_chain(self):
+        self.assertEqual(self.machine.ingest(remote(
+            "A", "Explain SQL joins.", start_ms=0, end_ms=200,
+        )).state, "ready")
+        self.assertEqual(self.machine.ingest(remote(
+            "B", "No, focus on LEFT JOIN and duplicates.",
+            intent="correction", start_ms=300, end_ms=400,
+        )).state, "ready")
+        last = self.machine.ingest(remote(
+            "C", "Make that LEFT JOIN and NULL handling.",
+            intent="correction", start_ms=500, end_ms=600,
+        ))
+        self.assertEqual(last.state, "ready")
+        self.assertEqual(last.snapshot.dependency_intervals,
+                         (("A", 0, 200), ("B", 300, 400), ("C", 500, 600)))
+        late = self.machine.ingest(remote(
+            "unknown-in-B", "Maybe that's incorrect.",
+            intent="unknown", start_ms=325, end_ms=350,
+        ))
+        self.assertEqual(late.reason,
+                         "unclassified_overlapping_remote_utterance")
+        self.assertFalse(self.machine.turns.is_current(last.token))
+        self.assertIsNone(self.machine.current())
+
+    def test_independent_new_question_does_not_inherit_old_overlap_intervals(self):
+        self.assertEqual(self.machine.ingest(remote(
+            "A", "Explain an index.", start_ms=0, end_ms=200,
+        )).state, "ready")
+        independent = self.machine.ingest(remote(
+            "B", "Explain a binary heap.", start_ms=300, end_ms=500,
+        ))
+        self.assertEqual(independent.state, "ready")
+        self.assertEqual(independent.snapshot.dependency_intervals,
+                         (("B", 300, 500),))
+        delayed = self.machine.ingest(remote(
+            "late-old", "A vague earlier statement.",
+            intent="unknown", start_ms=100, end_ms=150,
+        ))
+        self.assertEqual(delayed.state, "ignored")
+        self.assertEqual(delayed.reason, "late_final_after_newer_utterance")
+        self.assertEqual(self.machine.current().token, independent.token)
+
     def test_discontinuity_cancels_and_blocks_old_generation(self):
         initial = self.machine.ingest(remote(
             "question", "Explain a query plan.", end_ms=300

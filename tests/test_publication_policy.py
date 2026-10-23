@@ -202,7 +202,7 @@ class PublicationPolicyTests(unittest.TestCase):
         spec = load_cases(("D02",))[0]
         with patch("relay_spike.publication_policy.load_cases",
                    return_value=[{**spec, "question": "Changed by unknown source."}]):
-            out = decide()
+            out = decide(spec["question"])
         self.assertEqual(out.state, "unavailable")
         self.assertEqual(out.reason_code, "reviewed_fixture_changed")
 

@@ -8,6 +8,7 @@ on:
       - 'spikes/macos-profile/**'
       - 'spikes/macos-context/**'
       - 'spikes/macos-controls/**'
+      - 'spikes/macos-composition/**'
       - 'spikes/macos-audio/**'
       - 'relay_spike/**'
       - 'tests/**'
@@ -45,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           export RELAY_TEST_PYTHON="$(command -v python3)"
-          for package in macos-session macos-profile macos-context macos-controls macos-panel; do
+          for package in macos-session macos-profile macos-context macos-controls macos-composition macos-panel; do
             if [[ -f "spikes/$package/Package.swift" ]]; then
               swift test --package-path "spikes/$package"
             else

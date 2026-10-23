@@ -32,6 +32,8 @@ public actor PipeProfilePort: ProfilePort {
     private let python: URL
     private let repository: URL
     private var process: Process?
+    private var exitReceipt: ProfileProcessExitReceipt?
+    private var shutdownTask: Task<Void, Never>?
     private var input: FileHandle?
     private var output: FileHandle?
     private var retired = false
@@ -44,6 +46,7 @@ public actor PipeProfilePort: ProfilePort {
             return
         }
         let child = Process()
+        let receipt = ProfileProcessExitReceipt()
         let toChild = Pipe(), fromChild = Pipe()
         child.executableURL = python
         child.arguments = ["-m", "relay_spike.profile_bridge"]
@@ -52,12 +55,17 @@ public actor PipeProfilePort: ProfilePort {
         child.standardInput = toChild
         child.standardOutput = fromChild
         child.standardError = FileHandle.nullDevice
+        // Launch can occur on a different cooperative thread from shutdown.
+        // Default termination notifications and waitUntilExit use run loops;
+        // the prelaunch callback supplies an executor-independent exit receipt.
+        child.terminationHandler = { receipt.record($0.terminationStatus) }
         try child.run()
         toChild.fileHandleForReading.closeFile()
         fromChild.fileHandleForWriting.closeFile()
         input = toChild.fileHandleForWriting
         output = fromChild.fileHandleForReading
         process = child
+        exitReceipt = receipt
     }
 
     private func wait(_ fd: Int32, event: Int16, until deadline: UInt64) throws {
@@ -104,7 +112,7 @@ public actor PipeProfilePort: ProfilePort {
     }
 
     public func request(_ data: Data) async throws -> Data {
-        guard !retired else { throw ProfileError.unavailable }
+        guard !retired, shutdownTask == nil else { throw ProfileError.unavailable }
         guard !data.isEmpty, data.count <= 16 * 1024 else { throw ProfileError.invalidPayload }
         do {
             try start()
@@ -120,29 +128,37 @@ public actor PipeProfilePort: ProfilePort {
             guard size > 0, size <= 16 * 1024 else { throw ProfileError.transport }
             return try readExact(Int(size), fd: output.fileDescriptor, deadline: deadline)
         } catch {
-            shutdown()
+            await shutdown()
             throw ProfileError.transport
         }
     }
 
-    private func shutdown() {
+    private func shutdown() async {
+        if let shutdownTask { await shutdownTask.value; return }
         try? input?.close(); try? output?.close()
         input = nil; output = nil
-        if let process, process.isRunning {
-            process.terminate()
+        guard let child = process, let receipt = exitReceipt else { return }
+        let task = Task {
+            if !receipt.hasExited, child.isRunning { child.terminate() }
             let deadline = DispatchTime.now().uptimeNanoseconds + 500_000_000
-            while process.isRunning && DispatchTime.now().uptimeNanoseconds < deadline {
-                Thread.sleep(forTimeInterval: 0.01)
+            while !receipt.hasExited && DispatchTime.now().uptimeNanoseconds < deadline {
+                try? await Task.sleep(for: .milliseconds(10))
             }
-            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-            process.waitUntilExit()
+            if !receipt.hasExited, child.isRunning { kill(child.processIdentifier, SIGKILL) }
+            // Grace expiration escalates the signal; it never proves quiescence.
+            // Keep ownership/admission closed until Foundation confirms exit.
+            _ = await receipt.wait()
         }
+        shutdownTask = task
+        await task.value
         process = nil
+        exitReceipt = nil
+        shutdownTask = nil
     }
-    public func close() async { shutdown() }
+    public func close() async { await shutdown() }
     public func emergencyShutdown() async {
         retired = true
-        shutdown()
+        await shutdown()
     }
 }
 

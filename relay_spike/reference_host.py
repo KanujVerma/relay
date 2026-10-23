@@ -15,7 +15,8 @@ from threading import Lock
 from typing import Callable, Literal
 
 from .publication_policy import (
-    PolicyInput, PublicationDecision, _REFERENCES, evaluate_publication,
+    PolicyInput, PublicationDecision, _REFERENCES, _REASONS_BY_STATE,
+    evaluate_publication,
 )
 from .streaming_qa import ActiveTurns, TurnToken
 
@@ -58,6 +59,12 @@ class ReferenceRoute:
     def __post_init__(self) -> None:
         if self.model_requests != 0 or self.first_useful_verified_ms is not None:
             raise ValueError("Direct references never request models or claim useful latency.")
+        if (type(self.reason_code) is not str
+                or self.reason_code not in (
+                    _FAIL_REASONS if self.state == "suppressed"
+                    else _REASONS_BY_STATE.get(self.state, ())
+                )):
+            raise ValueError("Route reasons must be local, state-specific codes.")
         if self.state == "reviewed_reference":
             if not isinstance(self.card, ReferenceCard) or self.reason_code != "reviewed_full_question":
                 raise ValueError("Only an authorized reviewed reference can be published.")
@@ -118,6 +125,25 @@ class ReferencePermission:
             return self._turns._publish_if_current(token, action)
 
 
+@dataclass(frozen=True)
+class ReferencePreview:
+    """Dry-run metadata only; never contains a displayable reference string."""
+    state: Literal[
+        "reviewed_reference", "model_suggestion_unverified",
+        "needs_revision", "unavailable",
+    ]
+    would_publish: bool
+    reason_code: str
+    model_requests: Literal[0] = 0
+
+    def __post_init__(self) -> None:
+        if (self.would_publish != (self.state == "reviewed_reference")
+                or type(self.reason_code) is not str
+                or self.reason_code not in _REASONS_BY_STATE.get(self.state, ())
+                or self.model_requests != 0):
+            raise ValueError("Dry-run metadata must use fixed policy states.")
+
+
 def _prepare_authorized(request: PolicyInput, *, consent: ReferencePermission,
                         turns: ActiveTurns, token: TurnToken) -> PublicationDecision:
     if not isinstance(request, PolicyInput):
@@ -134,10 +160,12 @@ def _prepare_authorized(request: PolicyInput, *, consent: ReferencePermission,
 
 def preview_reference(request: PolicyInput, *, turns: ActiveTurns,
                       token: TurnToken, consent: ReferencePermission
-                      ) -> ReferenceRoute:
-    """Dry-run only: no callbacks and no model/network use."""
+                      ) -> ReferencePreview:
+    """Dry-run only: no callbacks, text, model or network use."""
     decision = _prepare_authorized(request, turns=turns, token=token, consent=consent)
-    return ReferenceRoute(decision.state, decision.reason_code)
+    return ReferencePreview(
+        decision.state, decision.state == "reviewed_reference", decision.reason_code
+    )
 
 
 def publish_reference(request: PolicyInput, *, turns: ActiveTurns,
@@ -152,6 +180,10 @@ def publish_reference(request: PolicyInput, *, turns: ActiveTurns,
     if not callable(on_present):
         raise TypeError("A synchronous host presentation callback is required.")
     decision = _prepare_authorized(request, turns=turns, token=token, consent=consent)
+    if (type(decision) is not PublicationDecision
+            or type(decision.reason_code) is not str
+            or decision.reason_code not in _REASONS_BY_STATE.get(decision.state, ())):
+        return ReferenceRoute("needs_revision", "question_context_unresolved")
     if decision.state != "reviewed_reference":
         return ReferenceRoute(decision.state, decision.reason_code)
 

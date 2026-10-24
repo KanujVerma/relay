@@ -43,12 +43,12 @@ class BrainStoreTests(unittest.TestCase):
         )
 
     def test_zero_dependency_sqlite_integrity_and_migration_idempotent(self):
-        self.assertEqual(self.brain.db.execute("PRAGMA user_version").fetchone()[0], 2)
+        self.assertEqual(self.brain.db.execute("PRAGMA user_version").fetchone()[0], 3)
         self.assertEqual(self.brain.db.execute("PRAGMA foreign_keys").fetchone()[0], 1)
         self.assertEqual(self.brain.db.execute("PRAGMA secure_delete").fetchone()[0], 1)
         self.assertIsNone(self.brain.db.execute("PRAGMA foreign_key_check").fetchone())
         self.brain._migrate()
-        self.assertEqual(self.brain.db.execute("PRAGMA user_version").fetchone()[0], 2)
+        self.assertEqual(self.brain.db.execute("PRAGMA user_version").fetchone()[0], 3)
 
     def test_version_reopens_on_disk_and_rejects_future_migration(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -80,7 +80,7 @@ class BrainStoreTests(unittest.TestCase):
                 )
             with BrainStore(path) as migrated:
                 self.assertEqual(migrated.db.execute(
-                    "PRAGMA user_version").fetchone()[0], 2)
+                    "PRAGMA user_version").fetchone()[0], 3)
                 self.assertEqual(migrated.db.execute(
                     "SELECT id FROM source WHERE id=?",
                     ("existing-v1-id",)).fetchone()[0], "existing-v1-id")
@@ -89,7 +89,7 @@ class BrainStoreTests(unittest.TestCase):
                 ).fetchone())
                 migrated._migrate()
                 self.assertEqual(migrated.db.execute(
-                    "PRAGMA user_version").fetchone()[0], 2)
+                    "PRAGMA user_version").fetchone()[0], 3)
 
     def test_corrupt_legacy_v1_migration_rolls_back_schema_and_version(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -154,7 +154,7 @@ class BrainStoreTests(unittest.TestCase):
                 legacy.execute("PRAGMA user_version=1")
             with BrainStore(path) as upgraded:
                 self.assertEqual(upgraded.db.execute(
-                    "PRAGMA user_version").fetchone()[0], 2)
+                    "PRAGMA user_version").fetchone()[0], 3)
                 self.assertEqual(upgraded.verified_claims(actor="self")[0].fact_id,
                                  "fact-legacy")
 

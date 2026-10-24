@@ -7,14 +7,15 @@ accidental misuse, not malicious code already executing in the helper.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from hashlib import sha256
 import sqlite3
 
 from .document_conversion import MAX_INPUT_BYTES, convert_document, stage_converted, _validate_for_staging
 from .personal_brain import BrainError, BrainStore, MissingEvidence, _observed, _required
 from .personal_context import BrainContextProvider
-from .resume_candidates import ReviewCard, ReviewGateway, MAX_SELECTED_CHARS
+from .resume_candidates import ReviewCard, ReviewCardV2, ReviewGateway, MAX_SELECTED_CHARS
+from .resume_structure import CLAIM_KINDS, canonical, digest, extract_resume_structure
 
 MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
 MAX_SOURCES = 32
@@ -32,6 +33,13 @@ CREATE TABLE IF NOT EXISTS profile_job_context (
     source_id TEXT PRIMARY KEY REFERENCES source(id), text TEXT,
     fingerprint TEXT, confirmed_at TEXT
 );
+CREATE TABLE IF NOT EXISTS profile_resume_coverage (
+    source_id TEXT PRIMARY KEY REFERENCES source(id), coverage_json TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS profile_resume_coverage_redact AFTER UPDATE OF revoked_at ON source
+WHEN NEW.revoked_at IS NOT NULL BEGIN
+    DELETE FROM profile_resume_coverage WHERE source_id=NEW.id;
+END;
 CREATE TRIGGER IF NOT EXISTS profile_redact_source AFTER UPDATE OF revoked_at ON source
 WHEN NEW.revoked_at IS NOT NULL BEGIN
     UPDATE profile_source SET label=NULL,role=NULL,project_hint=NULL WHERE source_id=NEW.id;
@@ -130,15 +138,54 @@ class ProfilePreparation:
             conversion = convert_document(data, file_type=file_type, backend="native")
             if conversion.status != "converted":
                 raise BrainError("Selected document cannot be converted with source locations.")
-            _validate_for_staging(conversion)
+            _validate_for_staging(conversion, allow_no_candidates=purpose == 'resume')
             text = conversion.text
         if not text.strip() or len(text) > MAX_SELECTED_CHARS or "\x00" in text:
             raise BrainError("Selected text is empty, invalid or too large.")
         if purpose == "job" and (len(text) > MAX_JOB_CHARS or len(text.encode()) > 10_000 or
                 any(ord(char) < 32 and char not in "\n\r\t" for char in text)):
             raise BrainError("Select a bounded plain-text job excerpt.")
+        def locate(start, end):
+            if not 0 <= start < end <= len(text):
+                raise MissingEvidence('Résumé source span is unavailable.')
+            if conversion is None:
+                if '\n' in text[start:end] or '\r' in text[start:end]:
+                    raise MissingEvidence('Résumé source span crosses lines.')
+                return 'text:line:' + str(text.count('\n', 0, start)+1)
+            matches = [s for s in conversion.segments if s.start <= start < end <= s.end]
+            if len(matches) != 1: raise MissingEvidence('Résumé source location is ambiguous.')
+            item = matches[0]
+            return 'pdf:page:' + str(item.page) if item.page is not None else 'docx:paragraph:' + str(item.paragraph)
+        structured = extract_resume_structure(text, locate) if purpose == 'resume' else None
         with self.store._transaction():
-            if purpose == "job" or conversion is None:
+            if structured is not None:
+                source_id = self.gateway.select_source(text, observed_at=stamp,
+                    capability=capability, raw_document_sha256=sha256(data).hexdigest())
+                cards = []
+                for item in structured.candidates:
+                    item.context.validate()
+                    if (item.claim_kind not in CLAIM_KINDS or
+                            text[item.span_start:item.span_end] != item.snippet or
+                            locate(item.span_start, item.span_end) != item.locator):
+                        raise MissingEvidence('Résumé primary claim does not match selected text.')
+                    for field in item.context.fields:
+                        if (text[field.span_start:field.span_end] != field.text or
+                                locate(field.span_start, field.span_end) != field.locator):
+                            raise MissingEvidence('Résumé entry field does not match selected text.')
+                    fact_id = self.store.stage_resume_candidate(source_id=source_id,
+                        claim_key='resume.pending.'+source_id+'.'+str(item.span_start),
+                        claim_text=item.snippet, actor=item.actor_hint, observed_at=stamp,
+                        document_sha256=sha256(text.encode()).hexdigest(),
+                        span_start=item.span_start, span_end=item.span_end)
+                    self.store.db.execute('INSERT INTO profile_locator VALUES (?,?)', (fact_id, item.locator))
+                    self.store.db.execute('INSERT INTO candidate_resume_context VALUES (?,?,?,?,?,?,?)',
+                        (fact_id, 2, item.claim_kind, canonical(asdict(item.context)),
+                         digest(asdict(item.context)), None, None))
+                    cards.append(self.gateway.preview(fact_id))
+                cards = tuple(cards)
+                self.store.db.execute('INSERT INTO profile_resume_coverage VALUES (?,?)',
+                    (source_id, canonical(structured.coverage())))
+            elif purpose == "job" or conversion is None:
                 source_id = self.gateway.select_source(text, observed_at=stamp,
                         capability=capability, raw_document_sha256=sha256(data).hexdigest())
                 cards = () if purpose == "job" else self.gateway.stage(source_id, text, observed_at=stamp)
@@ -149,6 +196,7 @@ class ProfilePreparation:
                 "INSERT INTO profile_source VALUES (?,?,?,?,?)",
                 (source_id, purpose, label, role, project_hint))
             for card in cards:
+                if isinstance(card, ReviewCardV2): continue
                 locator = "text:line:" + str(text.count("\n", 0, card.span_start) + 1)
                 if conversion is not None:
                     matching = [s for s in conversion.segments
@@ -196,6 +244,18 @@ class ProfilePreparation:
             from datetime import datetime, timezone
             self.store.db.execute("UPDATE profile_job_context SET confirmed_at=? WHERE source_id=?",
                                   (datetime.now(timezone.utc).isoformat(), source_id))
+
+    def decide_v2(self, fact_id, fingerprint, *, decision, actor, claim_key,
+                  replaces_fact_id, card_version, context_sha256, capability):
+        self._host(capability)
+        if type(card_version) is not int or card_version != 2:
+            raise MissingEvidence('Unsupported résumé review version.')
+        card = self.gateway.preview(fact_id)
+        if not isinstance(card, ReviewCardV2) or card.card_fingerprint != fingerprint:
+            raise MissingEvidence('Displayed résumé card is stale.')
+        self.gateway.decide_v2(card, decision=decision, capability=capability,
+            context_sha256=context_sha256, approved_actor=actor, claim_key=claim_key,
+            replaces_fact_id=replaces_fact_id)
 
     def revoke(self, source_id: str, *, capability: object) -> None:
         self._host(capability)

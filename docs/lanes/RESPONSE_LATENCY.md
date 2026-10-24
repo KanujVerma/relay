@@ -99,6 +99,89 @@ prompt must retain multi-part/code requirements and personal-grounding guards.
 Native telemetry must be descriptive only, bounded and separate from currentness
 authority, and must measure after the actual Model reentrant snapshot drain.
 
+## Checkpoint 2: stage measurement and compact prompt foundation
+
+The second checkpoint adds an optional top-level decision `timing` member. It
+contains only integer monotonic timestamps, explicit nulls, a fixed schema and
+a fixed transport outcome. Existing decision IDs and native 13-key EOU payload
+are unchanged. The helper records the read of the chunk completing the input
+frame, generation entry, transport entry, valid first delta, validated provider
+completion, successful helper format/visual checks and decision emission. A
+rejected later request cannot borrow the preceding attempt's transport snapshot.
+Reviewed references, missing personal evidence and disabled inference never
+acquire invented provider timestamps. A valid provider completion followed by
+a format or continuity failure remains a withheld/failed result.
+
+Native measurement joins the original calibrated speech end, endpoint event
+emission, ASR finalization, native EOU emission, enqueue to the bounded helper
+writer, terminal receipt before final native context checks and panel commit.
+The recorder retains at most **32 memory-only rows**, with no question, card,
+transcript, personal source, image, credential or persistent log. It never
+participates in admission. Malformed optional telemetry is discarded while all
+existing required decision validation remains strict. Accepted panel commit,
+post-drain Model availability and observed visible-window state are distinct
+marks. Window visibility is not pixel paint or a usefulness rating.
+
+The Learning Memory owner owns the single actual Model observation seam. Source
+inspection found a lock hazard: `panel.onChange` runs inside
+`SessionPresentationAuthority.withCurrentLease`'s nonrecursive lock. Completing
+the reentrant `@Published` drain does not release that lock. A synchronous
+observer cannot call `authority.snapshot()` there. Root and the Memory owner
+will place full currentness checks after the outer `panel.accept` returns, or
+defer and recheck original ownership/currentness. The latency recorder itself
+has no locks, callbacks or authority reads. An actual Model watchdog is a
+required joined gate; this source-only finding is not an app verification claim.
+
+The compact prompt uses **soft** targets of a 20–35 word complete lead and
+35–70 spoken words overall, with zero to two points. Optional detail is omitted
+unless explicitly requested or necessary for correctness. Every requested part,
+required code, critical assumption and grounding rule takes precedence over
+brevity. Parser/byte/code limits, personal classification and currentness rules
+are unchanged. This is a generation instruction, not a proven speed result.
+
+`EVALS/benchmark_answer_latency.py` prints its synthetic plan when run directly;
+it cannot obtain credentials or create a client. Root may supply the existing
+explicit protected product stream to compare six bounded model attempts on
+identical SQL, coding and feature-case questions, alternating prompt order.
+Missing-personal-evidence controls make no model attempt. Results preserve
+transport errors, format withholds, first-delta/completion times and output
+length. Deterministic format/syntax checks leave correctness **unreviewed**;
+the listed rubrics require human inspection. The frozen baseline prompt comes
+from `a8fb232`; no model/effort change or second review call is introduced.
+
+Five helper-stage tests failed before telemetry;
+the native API-first gate failed on absent timing/recorder APIs in 56.596 s,
+under the shared two-compiler-job limit and 180 s deadline. That is expected
+failure evidence. The following native gate succeeds: **94 collected, 93 passed,
+one explicit packaged-artifact resolver skip, 7.625 s**. It includes all six new
+timing cases, the full native panel test target, actual source Python helper
+delivery, typed/visual/guide and currentness controls. The overall command took
+74.526 s including compilation. App/state targets compiled but selected zero
+test cases; no actual Model/GUI measurement is claimed by this gate. Fresh
+sampled budget was 23.155 GiB Relay temporary allocation and 48.792 GiB free,
+with 0.75 GiB reserved. Both gates reused the retained shared cache, two compiler
+jobs and the 180 s external deadline; the heavy lease was released afterward.
+
+Final Python discovery: **777 collected, 745 passed, 32 explicit optional skips,
+10.027 s**. The existing converter/package optional gates remain disabled and
+the existing HTTP-error/SQLite ResourceWarnings remain. The three offline
+benchmark tests verify identical paired prompts, required runnable binary-search
+behavior, zero personal inference, missing credential fallback, failed streams,
+and retained refusal/incomplete observations. Refusal markers are observations,
+not successful completion or proof of valid provider lifecycle. The preceding
+two-test image-retirement correction is frozen separately in `3f634c0`;
+its exact focused gate passed 141 tests in 3.957 s before broader work resumed.
+`git diff --check` passes. Actual Model seam, GUI/paint, packaged artifact, real
+account and full speech-end latency gates remain pending and root-coordinated.
+
+The larger source bottleneck remains measured only in the next permitted gate:
+the sole current reviewed fixture is D02; other general supported questions use
+generation. `SourcePipeline` starts recognition only after closed VAD activity,
+and the adapter feeds the whole closed span sequentially. Lagged incremental
+preprocessing could reduce finalization work, but feeding ahead of the eventual
+VAD end index would break exact-span provenance. No speculative ASR, silence
+change, new model, download or architecture is included here.
+
 No real account, Keychain, private source, audio/screen capture, model inference,
 download or full-app latency result is claimed. Product goals from speech-end
 remain first visible text under 1 s median, useful advice by 2 s median, and a

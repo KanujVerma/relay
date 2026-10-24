@@ -196,6 +196,10 @@ class OAuthAnswerStream:
                 if len(chunk) > 65536:
                     raise AnswerTransportError('stream_budget')
                 for event in decoder.feed(chunk):
+                    if timing is not None:
+                        terminal={'response.failed':'failed','response.incomplete':'incomplete',
+                            'response.refusal.delta':'refused','response.refusal.done':'refused'}.get(event.get('type'))
+                        if terminal is not None:timing.provider_terminal=terminal
                     if event.get('type') in ('response.failed', 'response.incomplete', 'error'):
                         payload = event.get('response') if isinstance(event.get('response'), dict) else event
                         raise _response_error(payload)
@@ -209,6 +213,7 @@ class OAuthAnswerStream:
                             guard()
                         if timing is not None:
                             timing.mark('response_completed_ms')
+                            timing.provider_terminal='completed'
                             timing.output_bytes=len(answer.encode('utf-8'))
                         return answer
             decoder.finish(); assembler.finish()

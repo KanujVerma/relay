@@ -14,6 +14,8 @@ class AnswerTransportTiming:
     response_completed_ms: float | None
     finished_ms: float
     output_bytes: int
+    started_uptime_nanoseconds: int
+    provider_terminal: str | None
     # A valid delta, complete JSON or format check cannot establish usefulness.
     first_useful_verified_ms: None = None
 
@@ -24,6 +26,7 @@ class AnswerTimingAttempt:
         self.start = clock()
         self.marks = {}
         self.output_bytes = 0
+        self.provider_terminal = None
 
     def mark(self, name):
         if name not in self.marks:
@@ -33,4 +36,33 @@ class AnswerTimingAttempt:
         return AnswerTransportTiming(self.request_index, outcome,
             *(self.marks.get(name) for name in ('token_ready_ms', 'client_ready_ms',
                 'request_started_ms', 'response_headers_ms', 'first_text_ms', 'response_completed_ms')),
-            (self.clock() - self.start) * 1000, self.output_bytes)
+            (self.clock() - self.start) * 1000, self.output_bytes, int(self.start * 1_000_000_000),
+            self.provider_terminal)
+
+
+class HelperRequestTiming:
+    """One original request's descriptive marks, never consulted by admission."""
+    def __init__(self, received_ns):
+        self.received_ns = received_ns
+        self.marks = {}
+        self.transport_outcome = None
+
+    def mark(self, name, when_ns):
+        self.marks.setdefault(name, when_ns)
+
+    def note_transport(self, previous, current):
+        if current is previous or not isinstance(current, AnswerTransportTiming):
+            return
+        self.transport_outcome = current.outcome
+        for source, target in (('first_text_ms', 'firstTextUptimeNanoseconds'),
+                               ('response_completed_ms', 'responseCompletedUptimeNanoseconds')):
+            value = getattr(current, source)
+            if value is not None:
+                self.mark(target, current.started_uptime_nanoseconds + int(value * 1_000_000))
+
+    def snapshot(self, emitted_ns):
+        return dict(schemaVersion=1, helperReceivedUptimeNanoseconds=self.received_ns,
+            **{name: self.marks.get(name) for name in ('generationStartedUptimeNanoseconds',
+                'transportStartedUptimeNanoseconds', 'firstTextUptimeNanoseconds',
+                'responseCompletedUptimeNanoseconds', 'validationFinishedUptimeNanoseconds')},
+            helperEmittedUptimeNanoseconds=emitted_ns, transportOutcome=self.transport_outcome)

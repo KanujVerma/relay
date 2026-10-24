@@ -184,3 +184,8 @@ Strict notes response/result DATA and anchored read-only snapshot types now pass
 
 
 Synthetic Notes backend test launcher is now available for actual held-writer native proofs. Explicit test-only flag/temp paths and fixture tail are required; actual Host/permit/SSE are reused with synthetic token+MockTransport, never account/network fallback. Six Python cases pass/zero skips1.135s. Native controller API-red fixtures remain the next queued heavy gate; no controller runtime implementation is claimed by this launcher.
+
+
+## Actual Notes protected commit checkpoint
+
+The actual helper-issued completion now enters a typed, one-use original-source/helper/intent/deadline/CAS path through the existing History run and Store. Genuine positive save outcome is latched before publication; later Lock/cleanup can deny painting without erasing it. Unknown thrown save never latches and requires actual close/reopen. Anchored read is protected/read-only and does not migrate absent v1 notes.45focused native tests pass/zero skips8.216s after8missing-API reds; Store/codec/Learning factory block stay unchanged at approved05. Next is generated-only deletion/edit and actual Model/History UI/export/bundled acceptance. Heavy released.

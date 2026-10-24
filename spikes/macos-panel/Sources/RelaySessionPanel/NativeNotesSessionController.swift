@@ -42,11 +42,12 @@ enum NotesEncoding {
 final class NotesNativeGate:@unchecked Sendable {
     private let lock=NSLock(),sourceGate:HistoryAdmission
     private let helper:HelperTransport,close:Data
+    private let deadline:UInt64
     private var retired=false,opened=false,closeSent=false,cancel:Data?
-    init(sourceGate:HistoryAdmission,helper:HelperTransport,close:Data){self.sourceGate=sourceGate;self.helper=helper;self.close=close}
-    var allowed:Bool{lock.withLock{!retired} && sourceGate.allowed}
-    func reserveOpen()->Bool{lock.withLock{guard !retired,sourceGate.allowed,!opened else{return false};opened=true;return true}}
-    func reserveRequest(cancel:Data)->Bool{lock.withLock{guard !retired,sourceGate.allowed,opened,self.cancel==nil else{return false};self.cancel=cancel;return true}}
+    init(sourceGate:HistoryAdmission,helper:HelperTransport,close:Data,deadline:UInt64){self.sourceGate=sourceGate;self.helper=helper;self.close=close;self.deadline=deadline}
+    var allowed:Bool{lock.withLock{!retired} && sourceGate.allowed && DispatchTime.now().uptimeNanoseconds<deadline}
+    func reserveOpen()->Bool{lock.withLock{guard !retired,sourceGate.allowed,DispatchTime.now().uptimeNanoseconds<deadline,!opened else{return false};opened=true;return true}}
+    func reserveRequest(cancel:Data)->Bool{lock.withLock{guard !retired,sourceGate.allowed,DispatchTime.now().uptimeNanoseconds<deadline,opened,self.cancel==nil else{return false};self.cancel=cancel;return true}}
     var wasOpened:Bool{lock.withLock{opened}}
     func retire(){send(retiring:true)}
     func closeNormally(){send(retiring:false)}
@@ -87,12 +88,29 @@ struct NotesNativeRequest:Sendable {
 public final class NotesCompletedOperation:@unchecked Sendable,CustomStringConvertible {
     let source:HistoryNotesSource,output:HistoryNotesOutputData,modelID:String,generation:HistoryNotesGenerationData
     let sourceData:HistoryNotesSourceData,gate:NotesNativeGate,helper:HelperTransport
+    private let lock=NSLock()
+    private var claimed=false,committed:HistoryNotesCommitOutcome?
+    /// An actual positive Store return, not an inference or painting grant.
+    public var actualCommittedOutcome:HistoryNotesCommitOutcome?{lock.withLock{committed}}
     public var description:String{"NotesCompletedOperation(<private>)"}
     init(result:NotesResultData,request:NotesNativeRequest,helper:HelperTransport,gate:NotesNativeGate,model:String)throws{
         guard result.status=="completed",let output=result.notes,request.matches(result),gate.allowed else{throw NotesSessionError.retired}
         source=request.source;sourceData=request.sourceData;self.output=output;modelID=model;self.gate=gate;self.helper=helper
         generation=HistoryNotesGenerationData(scopeID:request.scopeID,scopeEpoch:request.epoch,operationID:request.operationID,
             requestID:request.requestID,requestSequence:1,transferID:request.transferID,completedAt:try HistoryNotesDocuments.timestamp(Date()))
+    }
+    @MainActor func claim(using history:SessionHistoryCoordinator)throws{
+        guard gate.allowed,helper.notesPublicationAllowed,history.ownsNotesSource(source),gate.allowed,helper.notesPublicationAllowed else{throw HistoryError.stale}
+        try lock.withLock{guard !claimed else{throw HistoryError.stale};claimed=true}
+    }
+    var saveAdmission:Bool{gate.allowed && helper.notesPublicationAllowed}
+    func recordActualSave(_ outcome:HistoryNotesCommitOutcome){
+        guard outcome.receipt.operationID==generation.operationID,outcome.receipt.recordID==sourceData.recordID,
+              outcome.receipt.sourceRecordRevision==sourceData.recordRevision,outcome.document.generation==generation,
+              outcome.document.modelID==modelID else{return}
+        // Actual save already returned positively. This cannot throw or invoke
+        // actor callbacks before the one History flight publishes its result.
+        lock.withLock{if committed==nil{committed=outcome}}
     }
 }
 
@@ -110,7 +128,7 @@ public final class NotesCompletedOperation:@unchecked Sendable,CustomStringConve
         let scope=UUID();opening=NotesScopeCommand(scopeID:scope,epoch:1,operationID:source.intentID,action:"open")
         closing=NotesScopeCommand(scopeID:scope,epoch:1,operationID:UUID(),action:"close")
         // Fixed bounded mechanical fields, so construction cannot fail or do IO.
-        gate=NotesNativeGate(sourceGate:source.gate,helper:helper,close:try! closing.json())
+        gate=NotesNativeGate(sourceGate:source.gate,helper:helper,close:try! closing.json(),deadline:deadline)
     }
     private var current:Bool{
         guard gate.allowed,DispatchTime.now().uptimeNanoseconds<deadline,history.ownsNotesSource(source),isCurrent() else{return false}

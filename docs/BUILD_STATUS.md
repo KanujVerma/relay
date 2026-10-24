@@ -22,6 +22,10 @@ Joined History82e plus manual editor463, Learning wire5e048eb, transport-close f
 
 The accepted Notes component reads the complete bounded original saved source rather than the64-row view page and validates native DATA/citations. It is not yet generation, schema2 saving or notes UI. Speed23bf native timing/compact and Learning matcher corrections/derivation are in progress in [PR101](https://github.com/KanujVerma/relay/pull/101) and[PR102](https://github.com/KanujVerma/relay/pull/102). All full-app, live account/device, useful-answer latency and final installer gates remain open. The persistent end-to-end goal remains active.
 
+## Accepted storage and timing foundation
+
+Source3b3ee29 includes accepted Notesv2 e19 and timing/compact23 plus canonical optional-wire documentation591. Root complete Python gate:786collected/754pass/32optional skips,9.340seconds. Root independent combined native gate:89collected/88pass/oneexisting opt-in render skip,98.315seconds. No failures. Actual protected notes saving, source CAS/restart/delete and indeterminate-versus-positive-save/cleanup outcomes are now verified as internal components. SourceCoordinator, protected generation and UI remain pending. Corrected Learning matching/derivation, schema3 and actualModel hooks also remain pending. The full active goal is still incomplete; no live latency improvement is established by these tests.
+
 ## Historical and preceding checkpoints
 
 ## New active product target

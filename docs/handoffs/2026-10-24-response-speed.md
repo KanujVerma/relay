@@ -147,6 +147,9 @@ root's lease. Retain Root's immutable broader speech acceptance above.
 Keep generic injected fixtures on closedSpan. Run the protected account gate only
 after root coordinates current setup/authorization. The normal local factory
 selection has passed its approved activation check; full app acceptance has not.
+The [prepared protected-gate procedure](../superpowers/plans/2026-10-24-protected-response-speed-gates.md)
+keeps the isolated six-attempt comparison separate from a proposed one-attempt
+normal account/helper/Model/window check, using existing APIs. Neither is run.
 
 ## OPEN QUESTIONS
 

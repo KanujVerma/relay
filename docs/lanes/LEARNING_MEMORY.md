@@ -54,6 +54,14 @@ Sixty-six focused Python cases pass0.795s. An explicitly opted-in offline helper
 
 Actual CF preference persistence/fresh-process outcomes, encrypted schema3 mutations and actual History/Model/UI source-deletion/currentness/visibility/12-Help/End-to-later-session gates remain unfinished. The current source does not claim these delivery milestones from simulated ports or fixed tags.
 
+## Actual CF control outcome
+
+The production content-free CF control backend is now separately verified. It uses the documented CFPreferencesSetAppValue/AppSynchronize success outcome and exact readback, with bounded canonical2048byte receipts. Actual CF IO runs off MainActor; original control ownership is rechecked after awaits. Default construction/missing read creates no owned control value. An actual malformed preference and failed byte write cannot return a positive receipt.
+
+The committed enabled receipt and pending denial were each read by a separately spawned owned xctest process, which had to produce an exact proof file. The subprocess has a10second owned watchdog and a unique fictional preference domain; no production account, history key, capture or private text was used. Thirty Learning cases collected,29passed/1intentional child-only witness skip/0failures in0.464s (command15.978s). The initial Ledger API phase separately failed on missing actual Store read/mutation methods. Ledger fixtureSHA946473a05d7c1831910e53d437351271cee902521434b4dfb49dd21ad1a07f4e was restored unchanged.
+
+This proves the preference component's sampled process persistence/failure behavior, not completed encrypted-ledger or application control durability. Schema3 source is now in progress after the actual missing-Store API red; encrypted Store and actual Model/UI/end-to-end acceptance remain required.
+
 ## Next exact action
 
 Obtain accepted Notesv2 storage ref, then complete pure deterministic derivation and schema3 with exact source support validation/deletion/expiry/undo/restart tests. Wire one after-drain actual Model availability seam shared with descriptive latency, request bridge/currentness, and inspectable opt-in/why/undo controls. No store/schema/current Model integration or later-session end-to-end claim is made at this checkpoint.

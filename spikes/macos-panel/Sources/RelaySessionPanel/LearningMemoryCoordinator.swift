@@ -91,13 +91,16 @@ public final class LearningProjectionSnapshot:Sendable {
     public func restore()async throws{
         try Task.checkCancellation()
         guard control==nil else{throw HistoryError.inUse}
+        let original=retentionEpoch
         let preference:LearningControlReceipt
-        do{preference=try preferences.read();try preference.validate()}
+        do{preference=try await preferences.read();try preference.validate()}
         catch{
-            _=retireRetention();state.phase = .unavailable;state.message="Learning controls could not be read. Retained memory is unavailable.";publish();throw error
+            if retentionEpoch==original,control==nil{_=retireRetention();state.phase = .unavailable;state.message="Learning controls could not be read. Retained memory is unavailable.";publish()};throw error
         }
+        try Task.checkCancellation();guard retentionEpoch==original,control==nil else{throw HistoryError.stale}
         guard preference.enabled || preference.pending != nil else{
-            if ready{_=retireRetention()};lastReceipt=preference;state.phase = .off;publish();return
+            if ready{let next=retireRetention();guard retentionEpoch==next,control==nil else{throw HistoryError.stale}}
+            lastReceipt=preference;state.phase = .off;publish();return
         }
         if preference.pending==nil,retentionAvailable,lastReceipt==preference{return}
         try await perform(.restore(preference))
@@ -147,7 +150,7 @@ public final class LearningProjectionSnapshot:Sendable {
             sourceEpoch=scope?.workspaceEpoch
             var loaded:LearningArchiveReceipt?
             if let scope{loaded=try await persistence.load();try current(flight,scope:scope);try checked(loaded!,scope:scope)}
-            let observed=try preferences.read();try observed.validate()
+            let observed=try await preferences.read();try observed.validate()
             try current(flight,scope:scope)
             var proposed:LearningPendingControl?
             switch action{
@@ -170,17 +173,18 @@ public final class LearningProjectionSnapshot:Sendable {
                 case .restore:throw HistoryError.invalid
                 }
                 proposed=LearningPendingControl(target:LearningControlRecord(revision:UUID(),enabled:enabled,suppressedRuleIDs:suppressed),expectedRevision:base?.revision ?? observed.revision,clearExamples:clear)
-                let denial=try preferences.deny(proposed!);try denial.validate()
+                let denial=try await preferences.deny(proposed!);try current(flight,scope:scope);try denial.validate()
                 guard denial.pending==proposed,!denial.enabled else{throw HistoryError.unavailable}
                 lastReceipt=denial;try current(flight,scope:scope)
             }
             if let proposed{
                 guard let scope else{throw HistoryError.closed}
                 // Pending intent must still be the exact user-owned control.
-                guard try preferences.read().pending==proposed else{throw HistoryError.stale}
+                let intent=try await preferences.read();try current(flight,scope:scope)
+                guard intent.pending==proposed else{throw HistoryError.stale}
                 let result=try await persistence.mutate(.control(proposed));try current(flight,scope:scope);try checked(result,scope:scope)
                 guard result.archive.control==proposed.target else{throw HistoryError.stale}
-                let committed=try preferences.commit(proposed.target);try current(flight,scope:scope)
+                let committed=try await preferences.commit(proposed.target);try current(flight,scope:scope)
                 guard committed.matches(proposed.target) else{throw HistoryError.unavailable}
                 try adopt(result,preference:committed,scope:scope)
             }

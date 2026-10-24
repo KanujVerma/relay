@@ -47,9 +47,9 @@ public struct LearningControlReceipt:Codable,Equatable,Sendable {
     func matches(_ control:LearningControlRecord?)->Bool{pending==nil && revision==control?.revision && enabled==control?.enabled}
 }
 @MainActor public protocol LearningControlPreferences:AnyObject {
-    func read()throws->LearningControlReceipt
-    func deny(_ pending:LearningPendingControl)throws->LearningControlReceipt
-    func commit(_ control:LearningControlRecord)throws->LearningControlReceipt
+    func read()async throws->LearningControlReceipt
+    func deny(_ pending:LearningPendingControl)async throws->LearningControlReceipt
+    func commit(_ control:LearningControlRecord)async throws->LearningControlReceipt
 }
 
 /// These read views never authorize a store write or a native request. Only the

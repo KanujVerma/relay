@@ -111,7 +111,9 @@ class UserQuestionCoordinator:
         self.seen[identity]=sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).digest()
         self.invalidate_retired_help()
 
-    async def question(self,raw):
+    async def question(self,raw,*,received_ns=None):
+        from .answer_timing import HelperRequestTiming
+        timing=HelperRequestTiming(time.monotonic_ns() if received_ns is None else received_ns)
         try:n=decode_user_question(raw)
         except Exception:self.host.close();raise WireError('invalid_user_request') from None
         if self._replay(n):return False
@@ -126,7 +128,7 @@ class UserQuestionCoordinator:
         self._spend(n);h.presentation=n['presentationGeneration'];h._invalidate()
         if self.key(n) in self.retired:return False
         if n['baseRequestID'] is not None and not valid:
-            h._withhold_native(n,'user_request_context_unavailable');return False
+            h._withhold_native(n,'user_request_context_unavailable',timing=timing);return False
         text=n['question'] if n['intent']=='ask' else basis.display_question
         if n['intent']=='help_current':
             semantic,semantic_context=basis.semantic_question,basis.semantic_context
@@ -138,7 +140,7 @@ class UserQuestionCoordinator:
             semantic=text if not valid else ('Current user question (verbatim): '+text
                 +'\nChosen earlier questions (context only):\n'+'\n'.join(semantic_context[:-1]))
         if len(semantic.encode())>_MAX_SEMANTIC_BYTES:
-            h._withhold_native(n,'user_request_context_unavailable');return False
+            h._withhold_native(n,'user_request_context_unavailable',timing=timing);return False
         projection=(h.context.project_user_request(text,basis=basis.projection if valid else None)
             if n['intent']=='ask' else basis.projection.fork())
         token=h.machine.begin_explicit_request(n['requestID'])
@@ -146,7 +148,7 @@ class UserQuestionCoordinator:
         try:bundle=h.provider.retrieve(semantic,h.role) if h.provider else None
         except ValueError:bundle=None
         from .session_host import Request
-        req=Request(n,token,uuid.uuid4().hex,semantic,text,bundle,time.monotonic(),'explicit_user',projection)
+        req=Request(n,token,uuid.uuid4().hex,semantic,text,bundle,time.monotonic(),'explicit_user',projection,timing=timing)
         h.active=req;self.note_request(req,projection,semantic_context=semantic_context);h._route(req);return True
 
     def retire(self,raw):
@@ -158,6 +160,7 @@ class UserQuestionCoordinator:
         owner=h._worker if h._worker_request is not None and self.key(h._worker_request.native)==key else None
         self.retired[key]=owner
         h.response_preferences.retire_native(n)
+        h.learning_memory.retire_native(n)
         if h.active is not None and self.key(h.active.native)==key:
             original=h.active.native
             token=h.active.token

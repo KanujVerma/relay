@@ -210,7 +210,7 @@ def copy_native_resources(binary_directory,resources):
 
 
 def assemble(work,helper,native_scratch,environment,output,configuration):
-    arguments=["swift","build","--disable-sandbox","--disable-automatic-resolution","--configuration",configuration,"--jobs","4","--package-path",ROOT/"spikes/macos-panel","--scratch-path",native_scratch,"--cache-path",work/"swift-cache","--product","relay-panel-session"]
+    arguments=["swift","build","--disable-sandbox","--disable-automatic-resolution","--configuration",configuration,"--jobs","2","--package-path",ROOT/"spikes/macos-panel","--scratch-path",native_scratch,"--cache-path",work/"swift-cache","--product","relay-panel-session"]
     run(arguments,env=environment)
     binary_directory=Path(run(arguments[:-2]+["--show-bin-path"],env=environment,capture=True).strip())
     expected=ROOT/"spikes/macos-panel/.build/Relay.app"

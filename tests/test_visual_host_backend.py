@@ -149,8 +149,11 @@ class VisualBackendTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, stream=httpx.ByteStream(completed_wire(text)), headers={'content-type': 'text/event-stream'})
 
         self.handler = handler
+        async def dispatch(request):
+            # Swap the synthetic server behavior, not the retained HTTP client.
+            return await self.handler(request)
         self.stream = OAuthAnswerStream(model=MODEL, token_provider=lambda: self.token,
-            client_factory=lambda **kw: httpx.AsyncClient(transport=httpx.MockTransport(self.handler), **kw))
+            client_factory=lambda **kw: httpx.AsyncClient(transport=httpx.MockTransport(dispatch), **kw))
         self.host = SessionHost(complete=self.stream.complete, visual_transport=self.stream, emit=self.out.append)
         self.provider = SupplementalContextProvider(current_request=self.host.supplemental_request_current,
                                                    on_invalidation=self.host.supplemental_context_changed)
@@ -159,6 +162,7 @@ class VisualBackendTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         self.host.close()
         await self.host.drain()
+        await self.stream.aclose()
 
     async def verify(self):
         value = control('verify')
@@ -321,6 +325,8 @@ class VisualBackendTests(unittest.IsolatedAsyncioTestCase):
         answer=await self.question()
         self.assertEqual(answer['disposition'],'abstain')
         self.assertEqual([method for method,_ in self.calls],['GET','POST','POST'])
+        self.assertEqual(self.stream.last_timing.outcome,'failed')
+        self.assertIsNotNone(self.stream.last_timing.response_completed_ms)
 
     async def test_token_config_or_consent_changes_at_publication_veto_image_answer(self):
         for change in ('token','config','consent'):

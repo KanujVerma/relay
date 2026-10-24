@@ -10,6 +10,8 @@ One automatic permitted interview companion: listen throughout the conversation,
 
 The current environment supports three simultaneous workers plus the controller. Rotate a slot for fixes or independent review rather than creating a fourth concurrent writer. Each lane is one issue/branch/isolated checkout and reviewable PR. The owner approved the three core features and directed implementation. Runtime changes still require verification and independent review.
 
+2026-10-24 resource correction: these are concurrent ownership slots, not permission for simultaneous compilers, environment installs or packaging. Follow [LOCAL_RESOURCE_BUDGET](LOCAL_RESOURCE_BUDGET.md): one heavy job at a time, reused bounded inputs/caches and a30GiB free-space floor. The owner resumed after the recorded disk recovery; do not automatically restart old interrupted commands.
+
 | Lane | Runnable end-to-end outcome | Exclusive write scope |
 | --- | --- | --- |
 | Existing fixes, completed locally and published | PR46 quarantine diagnostic and PR49 stop/reset invalidation repaired and verified | Existing adapter/ASR repair files and tests; current published status is in HANDOFF |
@@ -29,10 +31,10 @@ This table supersedes historical lane assignments above for the active feature w
 
 | Worker | Feature and branch | Current review boundary |
 | --- | --- | --- |
-| research_visual_inputs | Protected account/idle join, PR95 `feature/account-idle-integration-2026-10-23` | Accepted300c joined15d6f6d, exact715Python/188native gates. Complete frozen300c artifact; next first-launch Connect entry design only. Preserve immutable ownerBox/max4profileflight, account helper-only retirement and no real account calls. |
-| review_composition | Response preferences, PR96 `feature/response-preferences-2026-10-23` | Idle4972 and terminala37 accepted/joined, actual bundled UI checked. Full modes design5e095 approved on frozen3e83; own protected preferences/coordinator/Settings/Model/helper/prompt/retirement end to end. General automatic; explicit built-in Use shares Save/use creation action. Reuse accepted194. |
-| compose_context_controls | Local history, PR93 `feature/local-session-history-2026-10-23` | Résumé complete/joined. Frozenac70 history primitive194 accepted55profile+independent GRDB probe; ledger269 under separate review. Own coordinator/issued observation/Model/Home/Settings/manual notes/export/delete. Generated notes require separate contract. |
-| Root | Joined PR71, documentation and independent verification | Integration checkout is root-only. Freeze author checkpoints before review; publish evidence, reconcile accepted changes and preserve actual child/source lifetime checks. Main merge remains separate. |
+| research_visual_inputs | Frozenb270 standalone artifact and actual bundled response-guide gate | Sole initial heavy-job owner after resource-driver review. Reuse existing verified inputs/partial staging and retained root cache, two compiler jobs, no new environment/download. Sourceb270 frozen; tests separate. Completed300c artifact remains preserved. |
+| review_composition | AI notes design, `feature/generated-session-notes-design-2026-10-24` | Corrected preferencesb270 accepted/joined. Design7daf is being revised for complete saved-record coverage, exact bounded source/derived schemas and original source/worker/save ownership. No notes runtime before exact contract and final History dependency acceptance. |
+| compose_context_controls | Local history, PR93 `feature/local-session-history-2026-10-23` | Primitive194/timing772/scoped owner leased9 accepted. Preserved merge68ca imports accepted account/160/b270. Finish full app join and actual capture-stop-or-unknown metadata, then queued serial native gates. Source-only while artifact owns heavy slot. |
+| Root | Joined PR71, documentation, learning milestone and independent verification | Root-only integration. Review frozen source, notes architecture and lifecycle, queue shared heavy work, publish verified checkpoints. Cross-meeting learning remains a distinct required slice after its source/retention and evaluation contract. Main merge remains separate. |
 
 ## Accepted implementation direction
 

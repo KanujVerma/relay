@@ -1,6 +1,6 @@
 # Relay product vision and UX contract
 
-Last reviewed: 2026-10-22. Status: accepted intent; implementation is not yet built.
+Intent reviewed2026-10-22; delivery status reconciled2026-10-24. This is accepted product intent with partial implementation. [BUILD_STATUS](BUILD_STATUS.md) and [HANDOFF](../HANDOFF.md) distinguish built source, accepted tests and unfinished product gates. Automatic cross-meeting Learning Memory is still an explicit pending milestone.
 
 ## Meaning
 Like Flick captures game clips, Derive derives personalized skincare recommendations and Manifest converts BCI signals into output, Relay receives a question, locates the right context and relays relevant information back in the moment.

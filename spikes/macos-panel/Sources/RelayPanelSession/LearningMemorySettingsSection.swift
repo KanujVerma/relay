@@ -25,6 +25,8 @@ import RelaySessionPanel
             )).toggleStyle(.switch).disabled(memory.snapshot.isBusy)
             Text("Learn tentative preferences from saved meetings and apply them automatically. You can see why, undo a preference or clear what was learned.")
                 .font(.system(size:12)).foregroundStyle(RelayTheme.secondary)
+            Text("When enabled, saved learning examples include the question, available suggestion, microphone reply and what followed, as text.")
+                .font(.system(size:11)).foregroundStyle(RelayTheme.muted)
             Text("New résumé and career facts still need your confirmation. Turning this off clears learned examples and preferences; your saved meetings stay in History.")
                 .font(.system(size:11)).foregroundStyle(RelayTheme.muted)
             if memory.snapshot.phase == .ready{

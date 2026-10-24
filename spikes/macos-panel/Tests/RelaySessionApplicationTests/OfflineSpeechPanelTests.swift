@@ -53,7 +53,7 @@ import RelaySessionPanel
         try helper.start()
         do {
             try native.start(selectedBundleID:"com.example.offline-synthetic",microphoneEnabled:false,
-                components:[2:SourceComponents(vad:vad,recognizer:recognizer)])
+                components:[2:NativeCaptureSession.productionSpeechComponents(vad:vad,recognizer:recognizer)])
             let samples=Array(repeating:Float(0),count:8_000)+speech+Array(repeating:Float(0),count:32_000)
             var sequence:UInt64=1
             // Pace the file like real 32ms PCM delivery; no real source/permission.

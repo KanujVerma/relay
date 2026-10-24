@@ -10,6 +10,7 @@ from .panel_wire import exact, u64, uuid_string, WireError
 from .generated_answer import bounded_text, CardError
 
 _IDENTITY=('captureSessionID','sessionEpoch','presentationGeneration','requestID')
+_MAX_SEMANTIC_BYTES=6000  # Same bounded text domain as the existing dialogue ring.
 
 def _common(value, fields, kind):
     exact(value, fields)
@@ -46,7 +47,9 @@ def decode_cancel(value):
 @dataclass(frozen=True)
 class _Basis:
     session: tuple
-    question: str
+    display_question: str
+    semantic_question: str
+    semantic_context: tuple[str, ...]
     projection: object
 
 class UserQuestionCoordinator:
@@ -61,8 +64,9 @@ class UserQuestionCoordinator:
     def close(self):
         self.bases.clear();self.seen.clear();self.replies.clear();self.retired.clear()
 
-    def note_request(self,request,projection):
-        self.bases[request.native['requestID'].lower()]=_Basis(self.host.session,request.display_question,projection.fork())
+    def note_request(self,request,projection,*,semantic_context=None):
+        context=(request.question,) if semantic_context is None else semantic_context
+        self.bases[request.native['requestID'].lower()]=_Basis(self.host.session,request.display_question,request.question,context,projection.fork())
         while len(self.bases)>8:self.bases.popitem(last=False)
 
     def note_result(self,value):
@@ -109,18 +113,27 @@ class UserQuestionCoordinator:
         if self.key(n) in self.retired:return False
         if n['baseRequestID'] is not None and not valid:
             h._withhold_native(n,'user_request_context_unavailable');return False
-        text=n['question'] if n['intent']=='ask' else basis.question
+        text=n['question'] if n['intent']=='ask' else basis.display_question
+        if n['intent']=='help_current':
+            semantic,semantic_context=basis.semantic_question,basis.semantic_context
+        else:
+            # Preserve original supplied questions, never recursively embed an
+            # earlier rendered semantic wrapper or silently lose a personal
+            # ancestor. The existing unavailable-basis result recovers drafts.
+            semantic_context=(*(basis.semantic_context if valid else ()),text)
+            semantic=text if not valid else ('Current user question (verbatim): '+text
+                +'\nChosen earlier questions (context only):\n'+'\n'.join(semantic_context[:-1]))
+        if len(semantic.encode())>_MAX_SEMANTIC_BYTES:
+            h._withhold_native(n,'user_request_context_unavailable');return False
         projection=(h.context.project_user_request(text,basis=basis.projection if valid else None)
             if n['intent']=='ask' else basis.projection.fork())
-        semantic=text if not valid or n['intent']=='help_current' else (
-            'Current user question (verbatim): '+text+'\nChosen earlier question (context only): '+basis.question)
         token=h.machine.begin_explicit_request(n['requestID'])
         if token is None:return False
         try:bundle=h.provider.retrieve(semantic,h.role) if h.provider else None
         except ValueError:bundle=None
         from .session_host import Request
         req=Request(n,token,uuid.uuid4().hex,semantic,text,bundle,time.monotonic(),'explicit_user',projection)
-        h.active=req;self.note_request(req,projection);h._route(req);return True
+        h.active=req;self.note_request(req,projection,semantic_context=semantic_context);h._route(req);return True
 
     def retire(self,raw):
         n=decode_retirement(raw);h=self.host

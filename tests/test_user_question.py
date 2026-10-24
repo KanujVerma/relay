@@ -107,6 +107,71 @@ class UserQuestionHostTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.prompts[-1]['conversation']['task']['known_problem'],['Explain event loops.'])
         self.assertEqual(self.prompts[-1]['conversation']['task']['constraints'],[])
 
+    async def test_help_current_keeps_personal_followup_semantics_without_general_model(self):
+        host=await self.prepared()
+        first=question(host,'What did you personally do on your Atlas project?')
+        await host.handle_user_question(first);await host.drain()
+        follow=question(host,'What else?',basis=first['requestID'])
+        await host.handle_user_question(follow);await host.drain()
+        self.assertEqual(self.out[-1]['reasonCode'],'personal_context_missing')
+        help_request=question(host,basis=follow['requestID'],intent='help_current')
+        self.assertTrue(await host.handle_user_question(help_request));await host.drain()
+        self.assertEqual(self.out[-1]['reasonCode'],'personal_context_missing')
+        self.assertEqual(self.out[-1]['question'],'What else?')
+        self.assertEqual(self.prompts,[]);self.assertEqual(host.model_requests,0)
+        repeated=question(host,basis=help_request['requestID'],intent='help_current')
+        self.assertTrue(await host.handle_user_question(repeated));await host.drain()
+        self.assertEqual(self.out[-1]['reasonCode'],'personal_context_missing')
+        self.assertEqual(self.prompts,[]);self.assertEqual(host.model_requests,0)
+
+    async def test_help_current_keeps_technical_followup_semantics_and_task_with_fresh_token(self):
+        host=await self.prepared();first=question(host,'Implement an LRU cache. Capacity is 2.')
+        await host.handle_user_question(first);await host.drain()
+        follow=question(host,'Which eviction approach fits?',basis=first['requestID'])
+        await host.handle_user_question(follow);await host.drain()
+        semantic=self.prompts[-1]['semantic_request'];task=self.prompts[-1]['conversation']['task']
+        old_token=self.out[-1]['pythonToken']
+        self.assertTrue(await host.handle_user_question(question(host,basis=follow['requestID'],intent='help_current')))
+        await host.drain()
+        self.assertEqual(self.prompts[-1]['semantic_request'],semantic)
+        self.assertEqual(self.prompts[-1]['current_request'],follow['question'])
+        self.assertEqual(self.prompts[-1]['conversation']['task'],task)
+        self.assertEqual(self.out[-1]['disposition'],'answer')
+        self.assertEqual(self.out[-1]['question'],follow['question'])
+        self.assertNotEqual(self.out[-1]['pythonToken'],old_token)
+
+    async def test_short_ask_chain_keeps_original_personal_semantics_without_nested_labels(self):
+        host=await self.prepared();first=question(host,'What did you personally do on your Atlas project?')
+        await host.handle_user_question(first);await host.drain()
+        basis=first['requestID']
+        for text in ('What else?','Why?','How so?'):
+            follow=question(host,text,basis=basis)
+            self.assertTrue(await host.handle_user_question(follow));await host.drain()
+            self.assertEqual(self.out[-1]['reasonCode'],'personal_context_missing')
+            self.assertEqual(self.out[-1]['question'],text)
+            self.assertIn(first['question'],host.active.question)
+            self.assertEqual(host.active.question.count('Current user question (verbatim):'),1)
+            basis=follow['requestID']
+        self.assertEqual(self.prompts,[]);self.assertEqual(host.model_requests,0)
+
+    async def test_semantic_ancestry_budget_withholds_instead_of_dropping_personal_basis(self):
+        host=await self.prepared()
+        text='What did you personally do on your Atlas project? '
+        first=question(host,text+'x'*(500-len(text)))
+        await host.handle_user_question(first);await host.drain();basis=first['requestID']
+        for index in range(12):
+            follow=question(host,str(index)+'x'*(500-len(str(index))),basis=basis)
+            admitted=await host.handle_user_question(follow);await host.drain()
+            if not admitted:
+                self.assertEqual(self.out[-1]['reasonCode'],'user_request_context_unavailable')
+                break
+            self.assertEqual(self.out[-1]['reasonCode'],'personal_context_missing')
+            self.assertLessEqual(len(host.active.question.encode()),6000)
+            self.assertLessEqual(len(host.user.bases),8)
+            basis=follow['requestID']
+        else:self.fail('semantic ancestry did not hit its bounded budget')
+        self.assertEqual(self.prompts,[]);self.assertEqual(host.model_requests,0)
+
     async def test_evicted_basis_and_noncurrent_help_never_reactivate_old_permission(self):
         host=await self.prepared()
         first=question(host)

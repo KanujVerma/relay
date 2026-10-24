@@ -22,7 +22,7 @@ All inputs and responses were synthetic. HTTPX0.28.1 came from the existing `/pr
 
 | Check | Result | Evidence boundary |
 |---|---|---|
-| Affected Python user/helper/semantic/context/reference suites |133 passed,1.393s | Actual SessionHost and no-network child; complete mocked OAuth additionally covered below |
+| Affected Python user/helper/semantic/context/reference suites |137 passed,1.632s | Actual SessionHost and no-network child; complete mocked OAuth additionally covered below |
 | Native session package |27 passed,0.881s | Native source lock/sequence/issuance and existing lifecycle; includes last-source-loss rejection |
 | Explicit and existing ordered forwarder suites |7 passed,0.013s | Original denial before held release, no reorder, bounded queue and optional-work deadline |
 | New/affected panel foundation suites |20 passed,1.631s | Draft/controller, transcript, real transport receipt and actual helper/MockTransport proofs |
@@ -50,3 +50,9 @@ Actual runtime reuse is existing NativeSessionController/ordered ingress, Active
 Primary reference inspected: Vercel AI SDK commit `84d788027f44a87a489d14bb2aea194b284ac1d0`, Apache-2.0, [chat cancellation source](https://github.com/vercel/ai/blob/84d788027f44a87a489d14bb2aea194b284ac1d0/packages/ai/src/ui/chat.ts#L769) and [tests](https://github.com/vercel/ai/blob/84d788027f44a87a489d14bb2aea194b284ac1d0/packages/ai/src/ui/chat.test.ts#L1224). Reference only; no SDK source copied or invoked.
 
 Root must independently review the final delta, wire actual app enum/receive/bind/commands through the same ordered queue, and run a joined app/helper held-EOU/PNG regression plus positive control before UI exposure. Current tests prove the foundation ports, not that future app callback join. Standalone idle Ask, broader modes/history and actual physical capture/account acceptance remain separate. Locked-Mac visible runtime acceptance is not claimed.
+
+## Narrow semantic-basis review correction
+
+Review of `0bbe896` reproduced personal q1 -> short basis follow-up q2 -> Help incorrectly reaching the general model. A second Ask based on q2 had the same issue. Retained basis now stores exact display text and the actual semantic request separately, plus a flat tuple of original supplied question contexts. Help uses the current stored semantic request with fresh token/retrieval; chained Ask renders that flat context once. No old bundle, lease, pixel or personal approval is retained. The rendered semantic context is bounded to6000 UTF-8 bytes, matching the existing dialogue text budget; overflow withholds via `user_request_context_unavailable` before provider/model work instead of dropping a personal ancestor. Toolbar Help for typed requests must use new `help_current`, while legacy ManualHelp remains audio compatibility behavior.
+
+Four added regressions ran red before the correction: personal follow-up Help, technical follow-up semantic/task preservation, a second short personal Ask, and bounded ancestry exhaustion. They now pass within137 affected Python tests,1.632s (`/private/tmp/relay-typed-ancestry-green.log`); unchanged actual helper/native proofs passed5 tests,1.290s with the new Python runtime (`/private/tmp/relay-typed-helper-semantic-fix.log`). Existing stale-original Cancel, old-target/newer rejection, actual target join and draft recovery remain covered. No wire, native source, Model or UI file changed in this correction.

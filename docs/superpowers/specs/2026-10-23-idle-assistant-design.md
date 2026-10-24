@@ -129,7 +129,7 @@ Vercel AI SDK is a reference for request lifecycle, not an adopted dependency. E
 
 Current [official AI SDK chat documentation](https://ai-sdk.dev/docs/ai-sdk-ui/chatbot) separately describes local input/status and explicit Send/Stop controls. Its UI streaming semantics are not adopted: Relay keeps completed-response/card QA and current native final publication. Current [Cluely Quickstart](https://docs.cluely.com/quickstart) remains call-oriented and does not by itself establish idle server behavior; the scoped renderer evidence above is the actual client premise.
 
-No implementation, speculative model/API call, capture, OS permission, private file/profile/account/Keychain read, model download/load, source/index/HEAD mutation, commit/push or additional agent occurred. Research read public upstream source/docs and the already authorized local REA artifact. The source checkout remains clean. Pending root decisions are the explicit assistant control/legacy-envelope namespace compatibility and optional owned preparation API; after those are frozen, implementation can be assigned without changing recording guards.
+No implementation, speculative model/API call, capture, OS permission, private file/profile/account/Keychain read, model download/load, source/index/HEAD mutation, commit/push or additional agent occurred. Research read public upstream source/docs and the already authorized local REA artifact. The source checkout remains clean. The controller has now approved explicit assistant control/legacy-envelope namespace compatibility and the optional owned preparation API, as amended below. Implementation proceeds without changing recording guards.
 
 ## Controller approval amendment
 

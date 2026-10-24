@@ -275,11 +275,17 @@ final class HistoryAdmission:@unchecked Sendable {
         }catch{if original==epoch{fail(error)};throw error}
     }
     public func beginSession(intentID:UUID,resuming:Bool,isCurrent:@escaping @MainActor ()->Bool)async throws->HistorySessionPermit?{
-        let oldNotes=denyNotes();oldNotes?.notifyRetired();onSourceDenial?(.workspace(retiredEpoch:epoch,reason:.sessionStarting))
         try Task.checkCancellation()
-        guard !isBusy,isCurrent() else{throw HistoryError.stale}
+        let admittedEpoch=epoch,admittedPermit=current
+        guard !isBusy,isCurrent(),epoch==admittedEpoch,!isBusy else{throw HistoryError.stale}
+        if preferences.savingEnabled,resuming{
+            guard let admittedPermit,admittedPermit.paused,!admittedPermit.retiring,owns(admittedPermit) else{throw HistoryError.unavailable}
+        }
+        let oldNotes=denyNotes();oldNotes?.notifyRetired();onSourceDenial?(.workspace(retiredEpoch:admittedEpoch,reason:.sessionStarting))
+        try Task.checkCancellation()
+        guard epoch==admittedEpoch,!isBusy,isCurrent(),epoch==admittedEpoch,!isBusy else{throw HistoryError.stale}
         guard preferences.savingEnabled else{return nil}
-        if resuming{guard let current,current.paused,!current.retiring,owns(current) else{throw HistoryError.unavailable}}
+        if resuming{guard let current,current === admittedPermit,current.paused,!current.retiring,owns(current) else{throw HistoryError.unavailable}}
         let original=epoch,old=current
         let permit=HistorySessionPermit(recordID:resuming ? old!.recordID:UUID(),intentID:intentID,resuming:resuming)
         old?.gate.retire();current=permit;state.phase = .opening;publish()
@@ -377,7 +383,9 @@ final class HistoryAdmission:@unchecked Sendable {
         if permit.preparing{permit.gate.retire()};publish();return permit
     }
     public func finishSession(_ permit:HistorySessionPermit,paused:Bool)async throws{
-        let oldNotes=denyNotes();oldNotes?.notifyRetired();onSourceDenial?(.record(retiredEpoch:epoch,recordID:permit.recordID,reason:.recordChanged))
+        guard current === permit,retirement==nil,!tombstones.contains(permit.recordID) else{return}
+        let admittedEpoch=epoch,oldNotes=denyNotes();oldNotes?.notifyRetired();onSourceDenial?(.record(retiredEpoch:admittedEpoch,recordID:permit.recordID,reason:.recordChanged))
+        guard epoch==admittedEpoch,current === permit,retirement==nil,!tombstones.contains(permit.recordID) else{return}
         permit.acceptsNew=false;permit.retiring=true
         await waitForQuiescence()
         guard current === permit,retirement==nil,!tombstones.contains(permit.recordID) else{return}

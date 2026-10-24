@@ -131,4 +131,40 @@ private final class NotesReadStorage:HistoryOwnedSnapshotStorage,@unchecked Send
         XCTAssertFalse(history.ownsNotesSource(next));XCTAssertEqual(calls,2)
         try await deletion.value;XCTAssertEqual(history.snapshot.selected?.record.note,"User manual note")
     }
+    func testStaleStartCannotDenyAnActuallyIssuedCurrentNotesSource()async throws{
+        let(history,_,id,_)=try fixture(),revision=try await opened(history,id);var retired=0,denials=0
+        let source=try await history.prepareNotesSource(recordID:id,expectedRevision:revision,selection:.fullSavedTranscript,intentID:UUID(),isCurrent:{true},onRetired:{_ in retired+=1})
+        history.onSourceDenial={_ in denials+=1}
+        XCTAssertTrue(history.ownsNotesSource(source))
+        do{_=try await history.beginSession(intentID:UUID(),resuming:false,isCurrent:{false});XCTFail("Stale start was admitted")}catch{}
+        XCTAssertTrue(history.ownsNotesSource(source));XCTAssertEqual(retired,0);XCTAssertEqual(denials,0)
+    }
+    func testAlreadyCancelledStartCannotDenyCurrentNotesSource()async throws{
+        let(history,_,id,_)=try fixture(),revision=try await opened(history,id);var retired=0
+        let source=try await history.prepareNotesSource(recordID:id,expectedRevision:revision,selection:.fullSavedTranscript,intentID:UUID(),isCurrent:{true},onRetired:{_ in retired+=1})
+        let start=Task{try await history.beginSession(intentID:UUID(),resuming:false,isCurrent:{true})};start.cancel()
+        do{_=try await start.value;XCTFail("Cancelled start was admitted")}catch{}
+        XCTAssertTrue(history.ownsNotesSource(source));XCTAssertEqual(retired,0)
+    }
+    func testPreviouslyFinishedActualPermitCannotDenyANewerNotesSource()async throws{
+        let(history,_,_,_)=try fixture();try await history.enableSaving()
+        let started=try await history.beginSession(intentID:UUID(),resuming:false,isCurrent:{true})
+        let permit=try XCTUnwrap(started)
+        let transcript=SessionTranscriptStore();transcript.onHistoryObservation=history.observe
+        var events=HistoryTestEvents();events.start(transcript);events.final(1,text:"Fictional earlier audio question.",into:transcript);events.stop(into:transcript)
+        try await history.finishSession(permit,paused:false);await history.waitForQuiescence()
+        try await history.openRecord(permit.recordID);let revision=try XCTUnwrap(history.snapshot.selected?.record.revision);var retired=0
+        let source=try await history.prepareNotesSource(recordID:permit.recordID,expectedRevision:revision,selection:.fullSavedTranscript,intentID:UUID(),isCurrent:{true},onRetired:{_ in retired+=1})
+        XCTAssertTrue(history.ownsNotesSource(source))
+        try await history.finishSession(permit,paused:false)
+        XCTAssertTrue(history.ownsNotesSource(source));XCTAssertEqual(retired,0)
+    }
+    func testValidCurrentStartStillDeniesOriginalSourceBeforeReturning()async throws{
+        let(history,_,id,_)=try fixture(),revision=try await opened(history,id);var retired=0
+        let source=try await history.prepareNotesSource(recordID:id,expectedRevision:revision,selection:.fullSavedTranscript,intentID:UUID(),isCurrent:{true},onRetired:{original in
+            retired+=1;XCTAssertFalse(history.ownsNotesSource(original))
+        })
+        let result=try await history.beginSession(intentID:UUID(),resuming:false,isCurrent:{true});XCTAssertNil(result)
+        XCTAssertFalse(history.ownsNotesSource(source));XCTAssertEqual(retired,1)
+    }
 }

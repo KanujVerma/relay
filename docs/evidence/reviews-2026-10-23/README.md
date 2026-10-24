@@ -35,3 +35,14 @@ Current accepted heads, hosted checks and remaining integration gates live in [B
 
 - [Saved-context API foundation](review-saved-context-foundation-56f9558.md): accepted API56,5 independent boundary tests pass; later coordinator/View and actual app reopening remain separate.
 - [Typed stale-original finding](review-typed-stale-original-c7a4a57.md): P2 expired typed frame blocked fresh Stop receipt; author correctionbe4fbef awaits final scoped root re-review with the rest of typed source.
+
+## Typed and saved-context app continuation
+
+- [review-typed-3f18299-rereview.md](review-typed-3f18299-rereview.md)
+- [review-typed-72ed859-rereview.md](review-typed-72ed859-rereview.md)
+- [review-typed-app-b431914.md](review-typed-app-b431914.md)
+- [review-typed-app-d969249-rereview.md](review-typed-app-d969249-rereview.md)
+- [review-saved-context-352703e-rereview.md](review-saved-context-352703e-rereview.md)
+- [review-saved-context-app-2b73674.md](review-saved-context-app-2b73674.md)
+
+These are local scoped independent reviews, not GitHub approval or a main merge. The b431 report preserves its original P2; d969 closes it. Joined root source db768fd independently passes129 panel/app cases collected,124pass/5opt-in skips.

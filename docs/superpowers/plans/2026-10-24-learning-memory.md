@@ -46,10 +46,10 @@
 
 **Interfaces:** `LearningArchive` episodes/rules; `LearningMutation.save(episode)`, `.suppress(ruleID)`, `.reset`; `HistoryStore.learningArchive()` and `.mutateLearning(_:admission:)` execute within sole serialized owned store. `LearningLedger` validates/copies/rebuilds against exact surviving finals in the same candidate.
 
-- [ ] Import root-accepted frozen Notesv2 storage; test default-off no migration and candidate-only schema3 creation.
-- [ ] Derive fixed tentative tags only after3 clean episodes/2 saved sessions in same scope, retain representative wording and dated unresolved prep with support IDs.
-- [ ] Verify encrypted restart, exact source deletion/expiry rebuild, suppression persists across restart, reset/disable and held cancellation fail closed.
-- [ ] Commit/publish storage green before Model/UI joins.
+- [x] Import root-accepted frozen Notesv2 storage; test default-off no migration and candidate-only schema3 creation.
+- [x] Derive fixed tentative tags only after3 clean episodes/2 saved sessions in same scope, retain representative wording and dated unresolved prep with support IDs.
+- [x] Verify actual encrypted Store restart, exact source deletion/expiry rebuild, suppression/reset/stale control CAS and indeterminate cache denial. Simulated coordinator held/cancel tests and actual CF process proofs are separate; actual History factory/lifecycle integration remains required in Task4.
+- [x] Commit/publish storage green before Model/UI joins. Actual90case gate passes; root independent review/replay remains a separate gate.
 
 ### Task4: Actual Model, request bridge and inspectable controls
 

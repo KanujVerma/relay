@@ -62,6 +62,14 @@ The committed enabled receipt and pending denial were each read by a separately 
 
 This proves the preference component's sampled process persistence/failure behavior, not completed encrypted-ledger or application control durability. Schema3 source is now in progress after the actual missing-Store API red; encrypted Store and actual Model/UI/end-to-end acceptance remain required.
 
+## Actual protected schema3 component
+
+The original6case Ledger fixture first failed on missing actual Store read/mutation methods. Schema3 now extends the existing owned protected History snapshot with exact known learning tables and one bounded content-free control row. V1/v2 reads remain schema/byte inert; only an explicit Learning control write creates schema3, preserving the exact Notes table. Every retained question/reply/continuation must match the original stored final byte-for-byte under the same record/expiry. Learning writes do not bump record/manual/Notes CAS or change consent revision for ordinary observations. Source/record deletion and expiry copy only surviving original support and rebuild fixed rules; no old-summary fallback is used.
+
+Actual90case gate:89passed/1intentional CF child-witness skip/0failures, external90.873s. The6new encrypted Store cases pass1.380s, covering inert old schemas, Notes/CAS preservation, encrypted restart with3examples/2sessions, source deletion/expiry, wrong-record/forged original rejection, control suppression/reset/staleCAS and before/after-save indeterminate recovery. Unchanged accepted Notes12, full1024-row source4, SourceCoordinator11, History13, receipt6 and actual manual-draft8 regressions also pass. The panel82cases ran14.789s; app draft8ran2.062s. Original fixtureSHA946473a05d7c1831910e53d437351271cee902521434b4dfb49dd21ad1a07f4e is unchanged.
+
+Preflight23.360GiB Relay temp/46.636GiB free with1GiB reserve; existing History cache/jobs2/external180-second owned deadline. Candidate sourceSHA: Store d267b14874a6c05e7f8d58a8e6c511f47654c963359d17c8b7751d521f91c2d5; LearningLedger610afe3a96ed6b02d1c585a14bf115b46bf27ba1aeb4c32103d973207588e1c7. The Store frontier is frozen for independent review and narrow Notes-delete composition. Actual History factory/private ports, Model publication/request bridge, visible why/undo and later-session app acceptance remain unfinished.
+
 ## Next exact action
 
 Obtain accepted Notesv2 storage ref, then complete pure deterministic derivation and schema3 with exact source support validation/deletion/expiry/undo/restart tests. Wire one after-drain actual Model availability seam shared with descriptive latency, request bridge/currentness, and inspectable opt-in/why/undo controls. No store/schema/current Model integration or later-session end-to-end claim is made at this checkpoint.

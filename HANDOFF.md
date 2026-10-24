@@ -185,3 +185,8 @@ The actual helper-issued completion now enters a typed, one-use original-source/
 ## Generated-only Store deletion checkpoint
 
 Exact record/note CAS now deletes only derived AI notes with a private actual metadata receipt. Transcript/captures/manual fields/schema3 Learning survive. Five original missing-API tests now pass with42affected native cases/zero skips8.806s, including real encrypted unknown-after-write and old SQLite-close failure outcomes. Only43Store production lines were added; no Coordinator/Model/UI mutation API is claimed by this checkpoint. Next: anchored user edit/delete wrappers and actual disjoint App controller/Model/citation/export/bundle gates. Heavy released.
+
+
+## Reused Root Notes presentation
+
+Exact accepted Root e165ab34209778787f1d19bddda0d407aad4baf5 Draft/Section/presentation tests and review note are imported for the disjoint App controller. Existing local Notes backend/native/save/delete status is preserved above; UI remains unexposed until actual controller/Model wiring. The three Root source/test files are unchanged. This dependency import does not claim an additional native run or completed product.

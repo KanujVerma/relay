@@ -94,3 +94,12 @@ eligible. It adds no name/technology registry and preserves exact qualifiers.
 Two actual restored-provider/Host regressions fail five assertions on f353;
 the corrected new/legacy personal-context/host/typed subset passes all 60 tests
 in 1.388 s. Native work and real-format fixtures are separate pending changes.
+
+The narrow re-review identified a prefix-name variant: Harbor matched inside
+Harbor Labs. The next correction retains maximal nonoverlapping occurrences,
+so an explicitly separate “Harbor and Harbor Labs” still selects both, while
+the longer name alone selects only its own entry. Distinct entries whose
+normalized names are equal withhold as ambiguous; unique Unicode-normalized
+lookup retains exact source text. Employer/project prefix and Unicode/case
+actual-Host regressions fail three assertions on082; all62 affected cases pass
+after correction. No authority or displayed source text is normalized.

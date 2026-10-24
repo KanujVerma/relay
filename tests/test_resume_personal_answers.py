@@ -176,3 +176,38 @@ class ResumePersonalAnswers(unittest.IsolatedAsyncioTestCase):
         for name in ('Harbor', 'Harbor Archive'):
             result = await self.ask(host, out, 'What did you personally do on '+name+'?')
             self.assertEqual(result['reasonCode'], 'personal_context_missing')
+
+    async def test_longer_employer_or_project_name_does_not_select_its_embedded_short_name(self):
+        for section, short, long, relation in (('Experience','Harbor','Harbor Labs','at'),
+                                               ('Projects','Atlas','Atlas Monitor','on')):
+            def header(name, date):
+                return name+' | Engineer | '+date if section == 'Experience' else name+' | '+date
+            text = (section+'\n'+header(short,'2023')+'\n- I implemented a cache using C++.\n'+
+                    header(long,'Expected 2027')+'\n- I built a dashboard using R.\n')
+            host, out, prep, _ = await self.prepared(text)
+            for name, literal, absent in ((short,'cache using C++','dashboard using R'),
+                                           (long,'dashboard using R','cache using C++')):
+                with self.subTest(section=section, name=name):
+                    request = 'What did you personally do '+relation+' '+name+'?'
+                    result = await self.ask(host, out, request)
+                    self.assertEqual(result['reasonCode'], 'grounded_personal')
+                    self.assertEqual(len(result['card']['points']), 1)
+                    self.assertIn(literal, str(result['card'])); self.assertNotIn(absent, str(result['card']))
+                    self.assertEqual(len(prep.provider.retrieve(request, 'developer').facts), 1)
+            explicit = await self.ask(host, out, 'What did you personally do '+relation+' '+short+' and '+long+'?')
+            self.assertEqual(explicit['reasonCode'], 'grounded_personal')
+            self.assertEqual(len(explicit['card']['points']), 2)
+
+    async def test_normalization_equal_entry_names_do_not_silently_merge_authority(self):
+        for first, second in (('Café Labs','Cafe\u0301 Labs'), ('Harbor Labs','HARBOR LABS')):
+            text = ('Experience\n'+first+' | Engineer | 2023\n- I implemented cache checks.\n'+
+                    second+' | Analyst | Expected 2027\n- I built dashboard checks.\n')
+            host, out, prep, _ = await self.prepared(text)
+            request = 'What did you personally do at '+first+'?'
+            result = await self.ask(host, out, request)
+            self.assertEqual(result['reasonCode'], 'personal_context_missing')
+            self.assertEqual(prep.provider.retrieve(request, 'developer').facts, ())
+        host, out, _, _ = await self.prepared('Experience\nCafe\u0301 Labs | Engineer | 2023\n- I wrote Python checks.\n')
+        unique = await self.ask(host, out, 'What did you personally do at Café Labs?')
+        self.assertEqual(unique['reasonCode'], 'grounded_personal')
+        self.assertIn('Cafe\u0301 Labs', str(unique['card']))

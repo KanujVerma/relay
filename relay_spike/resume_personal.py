@@ -57,11 +57,36 @@ def context_words(context):
     return ' '.join(field.text for field in context.context.fields if field.kind != 'section_heading')
 
 
+def normalize_entry(value):
+    return ' '.join(unicodedata.normalize('NFKC', value).casefold().split())
+
+
 def mentions_entry(question, name):
     # Names come only from reviewed entry fields, never a person/technology
     # registry. Lookup normalization does not rewrite stored source evidence.
-    fold = lambda value: ' '.join(unicodedata.normalize('NFKC', value).casefold().split())
-    return re.search(r'(?<!\w)'+re.escape(fold(name))+r'(?!\w)', fold(question)) is not None
+    return re.search(r'(?<!\w)'+re.escape(normalize_entry(name))+r'(?!\w)', normalize_entry(question)) is not None
+
+
+def resolve_entry_mentions(question, aliases):
+    """Resolve maximal full-name occurrences; overlapping/equal owners abstain.
+
+    A separate short-name occurrence remains valid in “Harbor and Harbor Labs”.
+    An embedded Harbor inside Harbor Labs does not create a second target.
+    """
+    owners = {}
+    for entry_id, name in aliases:
+        owners.setdefault(normalize_entry(name), set()).add(entry_id)
+    question = normalize_entry(question)
+    matches = {(match.start(), match.end(), name) for name in owners
+        for match in re.finditer(r'(?<!\w)'+re.escape(name)+r'(?!\w)', question)}
+    maximal = [item for item in matches if not any(
+        other[0] <= item[0] and item[1] <= other[1] and other[1]-other[0] > item[1]-item[0]
+        for other in matches)]
+    ambiguous = any(len(owners[item[2]]) > 1 for item in maximal)
+    ambiguous |= any(left != right and left[0] < right[1] and right[0] < left[1]
+                     for left in maximal for right in maximal)
+    names = {item[2] for item in maximal}
+    return {owner for name in names for owner in owners[name]}, names, ambiguous
 
 
 def render_personal(bundle):

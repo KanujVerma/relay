@@ -729,7 +729,14 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     private func receive(_ ingress:SessionIngress,owner:ConversationOwner) {
         guard owns(owner,allowRetired:true),owner.kind == .capture else{return}
-        do{if let binding=ingress.binding,owner.authority.snapshot()==binding.lease{try owner.presentation.responsePreferences?.freeze(binding)}}
+        do{if let binding=ingress.binding,owner.authority.snapshot()==binding.lease{
+            // A fresh native Manual Help lease supersedes only its original
+            // request record. Keep the selected guide available to this request.
+            if case .manual=ingress,let original=owner.presentation.currentBinding,original != binding{
+                owner.presentation.responsePreferences?.retireNative(original)
+            }
+            try owner.presentation.responsePreferences?.freeze(binding)
+        }}
         catch{if owns(owner,allowRetired:true){failSession()};return}
         switch ingress {
         case .audio(let event):

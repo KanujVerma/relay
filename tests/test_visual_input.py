@@ -101,8 +101,12 @@ class VisualInputTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, stream=httpx.ByteStream(completed_wire(text)), headers={'content-type': 'text/event-stream'})
 
         self.handler = handler
+        async def dispatch(request):
+            # Keep failure/retirement injection live with the helper-owned client.
+            return await self.handler(request)
         self.stream = OAuthAnswerStream(model=MODEL, token_provider=lambda: self.token,
-            client_factory=lambda **kw: httpx.AsyncClient(transport=httpx.MockTransport(self.handler), **kw))
+            client_factory=lambda **kw: httpx.AsyncClient(transport=httpx.MockTransport(dispatch), **kw))
+        self.addAsyncCleanup(self.stream.aclose)
 
     async def verified(self):
         consent = self.visual.begin_enable(MODEL)

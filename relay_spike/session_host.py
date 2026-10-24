@@ -593,8 +593,16 @@ async def run_stdio(args,*,oauth_stream=None):
         return 2
     finally:
         host.close();profile.close();output_task.cancel()
-        await asyncio.gather(output_task,return_exceptions=True)
-        writer.close()
+        try:
+            # Keep the actual answer/probe owner until cancellation finishes;
+            # a retained HTTP client may not outlive this helper/account owner.
+            await host.drain()
+            await host.assistant.drain()
+            if visual_transport is not None:
+                await visual_transport.aclose()
+        finally:
+            await asyncio.gather(output_task,return_exceptions=True)
+            writer.close()
     return 0
 
 

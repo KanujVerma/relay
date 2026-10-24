@@ -130,14 +130,14 @@ final class HistoryStore:@unchecked Sendable {
         let ids=try required().read{try String.fetchAll($0,sql:"SELECT id FROM history_record WHERE expires_at<=?",arguments:[now])}
         if !ids.isEmpty{try remove(records:Set(ids),admission:admission)}
     }
-    func createRecord(admission:@Sendable()->Bool={true})throws->HistoryRecord{
+    func createRecord(id:UUID=UUID(),admission:@Sendable()->Bool={true})throws->HistoryRecord{
         try lock.withLock{
             try expire(admission:admission)
             let q=try required()
             guard try q.read({try Int.fetchOne($0,sql:"SELECT count(*) FROM history_record") ?? 0})<HistoryBounds.records,
                   try HistorySnapshotCodec.encode(q).count<contentLimitBytes else{throw HistoryError.capacity}
             let now=clock().timeIntervalSince1970
-            let record=HistoryRecord(id:UUID(),revision:1,createdAt:now,expiresAt:now+HistoryBounds.retention,endedAt:nil,state:.recording,title:"Session",note:"",gaps:[],blockedSources:[])
+            let record=HistoryRecord(id:id,revision:1,createdAt:now,expiresAt:now+HistoryBounds.retention,endedAt:nil,state:.recording,title:"Session",note:"",gaps:[],blockedSources:[])
             return try commit(content:true,admission:admission){db in try Self.put(db,record);return record}
         }
     }

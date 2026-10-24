@@ -294,10 +294,11 @@ provided 79,360 paced samples/source including the disclosed identical silence
 and 448 final-packet zeros. All 21 existing cache hashes remained valid. Fresh
 budget: 23.356 GiB temporary / 46.860 GiB free / 0.75 GiB reserve. No download,
 account, real driver/capture, app/window or usefulness measurement occurred.
-The factory is still closedSpan. Root independently read the measured receipt
-and approved only a next narrow actual-factory selection change/test; no real
-gate rerun or automatic activation occurred. Cloud-model latency remains the
-dominant separate end-to-end gate and 95 ms is not whole-app latency.
+At that measured checkpoint the factory was still closedSpan. Root independently
+read the receipt and approved the next narrow actual-factory selection
+change/test; no real gate rerun or automatic activation occurred. Cloud-model
+latency remains the dominant separate end-to-end gate and 95 ms is not whole-app
+latency.
 
 ## Normal local-source selection
 

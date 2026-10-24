@@ -1,0 +1,31 @@
+# Source-linked Learning Memory
+
+Approved target: automatic tentative wording and length adaptation with visible why/undo. This slice keeps confirmed Personal Brain separate. Neither phrase overlap nor a follow-up proves reading, skill, correctness, approval or hiring success.
+
+## Ownership and source chain
+
+The actual Model issues availability only after its publication loop has drained, its actual owner/binding and final panel snapshot still match, and the native lease is current. The receipt records request/capture/epoch/generation/event sequence, card replacement/hash, guide revision, monotonic availability time and whether the attached live window is visible. No helper result or will-set subscriber can issue this receipt. Hidden cards remain inspectable observations but cannot support automatic adaptation.
+
+The existing validated-final observer is the only speech producer. The native learner joins original final IDs and calibrated speech intervals to the exact originating question. Eligible microphone speech begins after availability, ends before the subsequent remote continuation, has no competing card, gap, overlap or source change, and stays within 120 seconds. Ambiguous or late speech remains source-labelled current-session context; it cannot become a clean learning example. New requests never revive old publication/capture authority.
+
+## Current-session continuity
+
+Retain at most eight complete interaction episodes / 32 KiB plus sixteen exact source-linked constraint/decision/unresolved-follow-up excerpts / 4 KiB. These quotes preserve what was actually spoken and stay distinct from suggestions. A new request receives at most two relevant projections / 2 KiB total. Prefer explicit source-linked constraints and unresolved questions, then concept-matching prior interactions. Current instructions override older quotes. Eviction sets a visible evidence-gap flag. Pause preserves read-only semantic context for the same logical meeting; End clears it. A new capture cannot use the old capture's authority.
+
+## Protected cross-session storage
+
+History must be enabled and unlocked before the separate explicit Learning Memory enable action. Construction/status/render and History saving alone create no learning storage/key. Schema3 follows accepted Notes schema2, preserving all older tables. Learning adds `learning_episode(id TEXT PRIMARY KEY, record_id TEXT NOT NULL REFERENCES history_record(id) ON DELETE CASCADE, payload BLOB NOT NULL CHECK(typeof(payload)='blob'))` and `learning_rule(id TEXT PRIMARY KEY, payload BLOB NOT NULL CHECK(typeof(payload)='blob'))`. Existing encrypted History snapshot/key and serialized storage owner are reused; there is no second database, plaintext index, model, daemon or dependency.
+
+Each episode stores the native availability identity and exact original question/reply/continuation source references, dated record expiry, scope, uncertainty vector and bounded representative text. Maximum100 retained episodes /1 MiB, maximum32 derived rules. Supports expire no later than their source History record's 30-day deadline. A store commit validates the exact surviving source finals, not only matching IDs. Learning save cannot bump transcript/manual-note CAS or invent a source receipt.
+
+Source/session deletion and expiry remove dependent episodes and rebuild derived rules transactionally in a fresh bounded snapshot. A derivation failure leaves the rule unavailable; no old-summary fallback. Lock/source retirement disables dependent in-flight projections synchronously before callbacks/awaits. Disabling Learning clears learned data and turns future capture off. Reset removes rules/examples; undo suppresses the exact rule so surviving examples cannot immediately reactivate it. Unsuppression is explicit. Confirmed biography is never modified.
+
+## Derivation and request application
+
+One debounced deterministic reflection runs outside the live request critical path after episode completion. V1 makes zero background/provider calls. Fixed presentation adjustments are concise lead, stepwise wording and example-first wording, each requiring at least three clean possible-uptake episodes across at least two retained sessions in the same technical or recruiter scope. Labels remain tentative. Recurring source-linked remote follow-ups can become preparation suggestions with support count and date; they are not proof of a user gap or wrong answer. No technical assertion is learned as truth.
+
+The native request bridge freezes one read-only revision/support projection for the actual binding and sends it before the request. The Python host validates strict schema, bounds, exact native identity, expiry and replay constraints; it cannot create or mutate durable memory. The existing protected request factory makes the one answer call. Current request and explicit response guide precede inferred adjustments. The unchanged whole prompt budget is32 KiB; learning is dropped before mandatory/current grounding on overflow. Final provenance returns the native-issued revision, which the Model rechecks before actual card publication. Deletion/undo/disable retires the exact dependent request and joins its existing worker.
+
+## Required evidence
+
+Test actual publication drain including reentrant retirement; original-final timing, gaps/overlap/source switch/delayed finals; long-session decision/follow-up continuity after the raw12-utterance window evicts; opt-in no-I/O default; encrypted restart; exact-source delete/expiry; undo/reset/disable; held cancelled worker; later-session prompt/advice change with no new model call; held-out technical and personal-authority regressions. Native heavy tests require the controller lease, existing cache, two compiler jobs and external180-second deadline. Real account/Keychain/capture and model latency remain controller-owned acceptance gates.

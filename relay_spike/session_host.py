@@ -80,9 +80,12 @@ class SessionHost:
         self.assistant=AssistantScopeCoordinator(self)
         from .response_preferences import HostResponsePreferences
         self.response_preferences=HostResponsePreferences(self)
+        from .learning_memory import HostLearningMemory
+        self.learning_memory=HostLearningMemory(self)
 
     def _invalidate(self):
         self.response_preferences.retire_request()
+        self.learning_memory.retire_request()
         self.user.invalidate_retired_help()
         self.visual.retire_request()
         if self.active is not None:
@@ -99,6 +102,7 @@ class SessionHost:
 
     def close(self,*,preserve_visual=False):
         self.response_preferences.close()
+        self.learning_memory.close()
         if not preserve_visual:self.visual.disable(cancel_work=False)
         self.user.close()
         self._clear_context_provider()
@@ -140,7 +144,7 @@ class SessionHost:
             return False
 
     def _current(self,request):
-        return self._current_base(request) and self.response_preferences.current_for(request)
+        return self._current_base(request) and self.response_preferences.current_for(request) and self.learning_memory.current_for(request)
 
     def _result(self,request,disposition,reason,card=None,*,kind=None,provenance=None,pending=False):
         if not self._current(request): return False
@@ -347,6 +351,7 @@ class SessionHost:
             self.response_preferences.discard(req.native)
             self._result(req,'abstain','inference_disabled');return
         self.response_preferences.claim(req.native)
+        self.learning_memory.claim(req.native)
         self._result(req,'pending','generating_with_task_context' if supplemental is not None else 'generating',pending=True)
         self._queue_work(req,dialogue)
 
@@ -365,6 +370,21 @@ class SessionHost:
         # can be withheld after optional preferences retire, while every other
         # native/source/personal/visual base guard remains mandatory.
         if self._current_base(request):self._emit_result(request,'abstain','response_preferences_changed')
+        if self._pending_work is not None and self._pending_work[0] is request:self._pending_work=None
+        if self._worker_request is request and self._worker is not None and not self._worker.done():self._worker.cancel()
+
+    def handle_learning_memory(self,value):
+        try:return self.learning_memory.stage(value)
+        except Exception:self.close();raise WireError('invalid_learning_memory') from None
+
+    def handle_learning_memory_retirement(self,value):
+        try:return self.learning_memory.retire(value)
+        except Exception:self.close();raise WireError('invalid_learning_retirement') from None
+
+    def learning_memory_changed(self,native):
+        request=self.active
+        if request is None or request.native is not native:return
+        if self._current_base(request):self._emit_result(request,'abstain','learning_memory_changed')
         if self._pending_work is not None and self._pending_work[0] is request:self._pending_work=None
         if self._worker_request is request and self._worker is not None and not self._worker.done():self._worker.cancel()
 
@@ -451,7 +471,9 @@ class SessionHost:
                 supplemental=self._supplemental.get(req.native['requestID'])
                 permit=self.visual.prepare(req,supplemental)
                 preferences=self.response_preferences.prompt_for(req)
-                prompt=make_prompt(req.question,dialogue,req.bundle,supplemental=supplemental,current_utterance=req.display_question,response_preferences=preferences)
+                learning=self.learning_memory.prompt_for(req,has_explicit_guide=preferences is not None)
+                prompt=make_prompt(req.question,dialogue,req.bundle,supplemental=supplemental,current_utterance=req.display_question,response_preferences=preferences,learning_memory=learning)
+                if learning is not None and 'learning_memory' not in json.loads(prompt):self.learning_memory.omitted(req)
                 candidate=await self.complete(prompt,INSTRUCTIONS,visual_attachment=permit) if permit is not None else await self.complete(prompt,INSTRUCTIONS)
                 if not await self.visual.validate_publication(req,permit=permit):
                     self.visual.failed_request(req);self._result(req,'abstain','answer_unavailable');return
@@ -461,6 +483,8 @@ class SessionHost:
             provenance={'model':getattr(getattr(self.complete,'__self__',None),'model','injected_fixture_transport'),'checks':list(card.checks),'independentlyReviewed':False}
             preference_revision=self.response_preferences.used_revision(req)
             if preference_revision is not None:provenance['responsePreferencesRevision']=preference_revision
+            learning_revision=self.learning_memory.used_revision(req)
+            if learning_revision is not None:provenance['learningMemoryRevision']=learning_revision
             if supplemental is not None:
                 provenance['taskContext']={'provenance':supplemental.provenance,'source':supplemental.source,'capturedUptimeNanoseconds':supplemental.captured_uptime_ns}
                 digest=self.visual.used_image_digest(req)
@@ -534,6 +558,10 @@ async def run_stdio(args,*,oauth_stream=None):
             for value in decoder.feed(chunk):
                 if isinstance(value,dict) and value.get('kind')=='assistant_scope_request':
                     host.handle_assistant_scope(value)
+                elif isinstance(value,dict) and value.get('kind')=='learning_memory':
+                    host.handle_learning_memory(value)
+                elif isinstance(value,dict) and value.get('kind')=='learning_memory_retired':
+                    host.handle_learning_memory_retirement(value)
                 elif isinstance(value,dict) and value.get('kind')=='response_preferences':
                     host.handle_response_preferences(value)
                 elif isinstance(value,dict) and value.get('kind')=='response_preferences_retired':

@@ -36,9 +36,15 @@ private struct ResumeAppKey: ProfileKeyProvider {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("relay-resume-app-"+UUID().uuidString)
         let preferences = ResumeAppPreferences()
         let python = try XCTUnwrap(ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"])
-        let model = SessionApplicationModel(arguments: ["relay","--repository",root.path,"--python",python,
-            "--fixture-suite","personal-memory"], contextPreferences: preferences,
-            profileVaultFactory: { ProfileVault(directory: directory, keys: ResumeAppKey()) })
+        let runtimeBundle = ProcessInfo.processInfo.environment["RELAY_BUNDLED_RUNTIME_APP"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+        var arguments = runtimeBundle == nil ? ["relay","--repository",root.path,"--python",python] : ["Relay"]
+        arguments += ["--fixture-suite","personal-memory"]
+        let model = SessionApplicationModel(arguments: arguments, contextPreferences: preferences,
+            profileVaultFactory: { ProfileVault(directory: directory, keys: ResumeAppKey()) },
+            bundleURL: runtimeBundle ?? Bundle.main.bundleURL, workingDirectory: URL(fileURLWithPath: "/"))
+        if let runtimeBundle {
+            XCTAssertTrue(model.root.path.hasPrefix(runtimeBundle.path + "/"), "the actual app must own its helper and resources")
+        }
         addTeardownBlock { await model.stop(); try? FileManager.default.removeItem(at: directory) }
         XCTAssertFalse(preferences.useInSessions)
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))

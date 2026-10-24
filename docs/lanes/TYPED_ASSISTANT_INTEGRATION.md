@@ -93,6 +93,8 @@ The helper retains the original semantic request separately from exact display t
 
 ## Wire forms
 
+Keep feeding original matching-session consent-revocation controls to the transcript reducer while paused. Its sealed path permits source-specific removal only, preserves the paused phase, rejects replay/wrong scope and never inserts late finals. A prior session's revocation cannot clear a replacement session. End still clears all rows explicitly.
+
 All frames use the existing BE32 length prefix and16 KiB action budget. The typed request has exactly11 keys: `schemaVersion`, `kind:user_question_request`, `captureSessionID`, `sessionEpoch`, `presentationGeneration`, `requestID`, `anchorEventSequence`, `emittedUptimeNanoseconds`, `intent:ask|help_current`, `question`, `baseRequestID`. Ask requires a nonempty single-line string at most500 UTF-8 bytes; optional basis UUID or null. Help requires `question:null`, a nonnull actual current UUID and current helper semantic basis. Native stamping supplies the actual request, generation, anchor and time; JSON supplies no authority.
 
 Original denial has exactly7 keys: `schemaVersion`, `kind:answer_request_retired`, original `captureSessionID`, `sessionEpoch`, `presentationGeneration`, `requestID`, `reasonCode:request_retired`. It can only withdraw authority. Cancellation has exactly9 keys: `schemaVersion`, `kind:answer_cancel_request`, new `captureSessionID`, `sessionEpoch`, `presentationGeneration`, `requestID`, original `targetRequestID`, `anchorEventSequence`, `emittedUptimeNanoseconds`.

@@ -319,6 +319,15 @@ composition selection and original controls, not another real model run or
 hardware/account/window acceptance. Broader actual speech and the unchanged
 actual Model/account fixtures remain active final gates.
 
+The controller independently completed the broader actual speech regression at
+immutable [`7302dcf`](https://github.com/KanujVerma/relay/commit/7302dcfa51492d5b514289348038103199006f88).
+Its unchanged real-WAVE assertions pass through normal prefix assembly, actual
+native/helper and panel reducer in 6.353 s. Joined native command: 193 collected /
+191 passed / two skips, 124.150 s; joined Python: 833 / 801 passed / 32 skips,
+11.483 s. The author read those exact receipts/source; this is the controller's
+independent acceptance run. Synthetic answer transport and reducer acceptance
+remain distinct from displayed window, real capture, cloud latency and usefulness.
+
 The evaluation-only cloud-lever harness is now ready: `compare_effort_variants`
 holds compact prompts/inputs constant for omitted effort versus explicit Luna
 None, at most six declared attempts. It requires a dedicated explicit product

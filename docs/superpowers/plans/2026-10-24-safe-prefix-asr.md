@@ -119,8 +119,10 @@ component factory only after the observed gate and root approval.
   components retain closedSpan. Full activation package passes 84/87 cases with
   three explicit model/download/benchmark skips, including actual selection
   behavior without model download.
-- [ ] Include a broader actual speech regression of the normal assembly in final
-  acceptance; do not relabel the component benchmark as full app latency.
+- [x] Include a broader actual speech regression of the normal assembly in final
+  acceptance. Controller checkpoint 7302dcf passes actual WAVE→normal prefix
+  assembly→helper/synthetic answer→reducer in 6.353 s, original assertions/input
+  unchanged. Do not relabel it as full app/window/cloud/usefulness latency.
 
 ## Task 5: Actual Model and protected-account response gate
 

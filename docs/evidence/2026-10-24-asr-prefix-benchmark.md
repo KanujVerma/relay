@@ -61,3 +61,24 @@ assembly helper, native controller and real adapter with a fake backend, proving
 prefix input before closure and one exact final. The measured JSON remains
 unchanged: it records the earlier exact-667 comparison, not an activation rerun.
 Broader actual speech and full-app/account gates remain pending.
+
+## Independent joined speech regression
+
+The controller's immutable public checkpoint
+[`7302dcfa51492d5b514289348038103199006f88`](https://github.com/KanujVerma/relay/commit/7302dcfa51492d5b514289348038103199006f88)
+includes the broader existing real-WAVE regression using the normal production
+assembly helper. `OfflineSpeechPanelTests.testFictionalAudioAutomaticallyReachesTheRealAnswerPanel`
+passes in **6.353 s**: actual VAD/ASR → original native events → owned source
+Python helper with synthetic answer transport → real panel reducer. The source
+assertions remain unchanged apart from the assembly selection line. The input
+hash remains unchanged. The controller's combined command reports **193
+collected / 191 passed / two explicit skips, 124.150 s**; its separate joined
+Python gate reports **833 / 801 passed / 32 skips, 11.483 s**.
+
+The speed author read the exact controller receipts and immutable source to
+confirm this record; this is the controller's independent run, not another
+author performance rerun. It verifies automatic question/reducer acceptance and
+owned cleanup with one existing pair. It does not instantiate a displayed
+window, exercise real capture drivers, make cloud/account requests or rate
+usefulness. The original four actual Model timing fixtures and protected-account
+end-to-end measurement remain separate pending gates.

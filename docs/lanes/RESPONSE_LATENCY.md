@@ -218,6 +218,24 @@ checkpoint; no actual ASR performance/quality result is claimed. Fresh sampled
 budget was 23.180 GiB temporary allocation / 48.680 GiB free / 0.75 GiB reserve,
 with the same retained cache, two jobs and 180 s deadline; lease released.
 
+The following adapter checkpoint passes **12 tests / zero skips**: five new
+prefix-adapter cases and three original Fluid cases in 0.056 s, plus the four
+owned-lane cases in 0.022 s. Command elapsed 8.543 s. Two tests execute the actual
+pinned VAD streaming state machine with model loading disabled, rather than the
+Python design oracle. Long middle-band input advances processed count to 73,728
+but its late end remains 17,984; the derived cap never passes that cutoff. Leading
+padding/resumed speech, malformed state, exact prefix/full-span sample equality,
+early EOU and reset denial during actual held backend await are covered.
+
+The preceding API-red exited 1 in 40.857 s on absent wrapper/adapter methods;
+it also exposed one fixture-only long-expression compiler diagnostic. Splitting
+the array construction preserved the same probability sequence and assertions.
+The new wrapper delegates one actual state transition, uses unchanged explicit
+default segmentation, and the recognizer retains its one existing backend.
+SourcePipeline and normal factory remain unmodified, so prefix processing is
+still not activated or performance accepted. Fresh gate budget: 23.315 GiB
+temporary / 48.777 GiB free / 0.75 GiB reserve; same cache/jobs/deadline, released.
+
 No real account, Keychain, private source, audio/screen capture, model inference,
 download or full-app latency result is claimed. Product goals from speech-end
 remain first visible text under 1 s median, useful advice by 2 s median, and a

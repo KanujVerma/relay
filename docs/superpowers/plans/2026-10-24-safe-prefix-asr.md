@@ -69,14 +69,14 @@ new `spikes/macos-session/Tests/RelaySessionCaptureTests/PrefixFluidAdapterTests
 same state transition once and `min(P-C,S+B-C)` cap; Fluid recognizer implements
 serialized prefix operations using its existing backend, with original key/count.
 
-- [ ] Add leading-padding, long middle-band/pending-end, resumed-speech and
+- [x] Add leading-padding, long middle-band/pending-end, resumed-speech and
   original cutoff cases from `tests/fixtures/asr-prefix-design.json`. Include
   actual pinned streaming-state-machine execution without loading a model.
-- [ ] Add fake LocalEouRecognizer cases for early EOU ignored, held accept/reset,
+- [x] Add fake LocalEouRecognizer cases for early EOU ignored, held accept/reset,
   prefix/full closed call partition equality and unsupported concurrent calls.
-- [ ] Run the API/red gate under a lease. Implement same-config returned-state
+- [x] Run the API/red gate under a lease. Implement same-config returned-state
   observation and single-flight adapter; keep legacy accept/recognize APIs.
-- [ ] Green the new cases and original FluidAdapterTests, then commit with exact
+- [x] Green the new cases and original FluidAdapterTests, then commit with exact
   source/test evidence. No ordinary production mode switch yet.
 
 ## Task 3: Source pipeline integration with baseline-preserving fallback

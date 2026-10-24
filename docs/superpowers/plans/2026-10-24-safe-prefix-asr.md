@@ -107,14 +107,15 @@ component factory only after the observed gate and root approval.
   and fictional WAVE. Use the exact same warmed model/accept partition and paced
   input for baseline/prefix comparisons; cold setup is separate. Opt-out compile
   exits 0 with exactly one early guarded skip, 0.003 s; no actual run yet.
-- [ ] Record original start/end indices, full text equality, prefix/tail/fallback
+- [x] Record original start/end indices, full text equality, prefix/tail/fallback
   counts, endpoint→ASR-final, both sources overlapping and actual process RSS.
   Failures stay in the report. No p95 or full-app/account speed claim.
-- [ ] Run under one root heavy lease with reserved staging/resource budget and
+- [x] Run under one root heavy lease with reserved staging/resource budget and
   reused inputs. Stop on unexpected allocation/error; no download/rebuild loop.
-- [ ] Root independently reviews source and measured evidence. Enable the
-  production capability only if correctness, resource use and useful latency
-  support it; otherwise retain default-off and report the actual blocker.
+- [ ] Root independently reviews source and measured evidence. The one exact-667
+  gate passed (135.629→40.602 ms closure→final median, exact words/cuts, no
+  fallback/RSS increase). Root read the receipt and approved narrow actual-factory
+  selection next; composition selection/activation verification remains pending.
 
 ## Task 5: Actual Model and protected-account response gate
 

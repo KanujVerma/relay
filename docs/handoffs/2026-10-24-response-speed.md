@@ -1,9 +1,8 @@
 # Response speed continuation
 
 2026-10-24, Relay, branch `feature/response-latency-2026-10-24`.
-Verified published source: `18f982c672a1c4671203af86a1a2e659be6640e2`.
-Verify live Git before continuation; this record accompanies the guarded
-benchmark checkpoint following that source commit.
+Verified measured source: `667298504d2dbb78e0ed3033b43ed61bf3c916f0`.
+Verify live Git before continuation; this record accompanies its evidence commit.
 
 ## GOAL
 
@@ -52,6 +51,12 @@ answer denial and actual cleanup. Product timing targets remain unachieved.
 - Guarded benchmark compiled: Swift 0 / 39.907 s, exactly one early opt-out skip
   / zero failures / 0.003 s. Receipt: `asr-prefix-benchmark-optout.log`. No cache,
   audio, model or child action. Actual model comparison remains unexecuted.
+- The one permitted actual-667 gate passed: Swift 0 / 75.360 s, one case / zero
+  skips / 41.097 s; all owned children joined. Native closure→ASR-final median
+  135.629→40.602 ms (95.027 ms, 70.1%); exact words and [6592,46656) cutoffs
+  match both sources/trials, no local fallback. Peak RSS 723107840→701988864 bytes.
+  Receipt: `asr-prefix-benchmark-actual-667.log`. Root independently read it and
+  source-reviewed the pipeline before approving narrow factory activation next.
 
 ## IN PROGRESS
 
@@ -60,16 +65,19 @@ Approved [design](../superpowers/specs/2026-10-24-lagged-asr-preprocessing-desig
 Tasks 1–3 are verified foundations. SourcePipeline has a conditional path;
 SourceComponents defaults to closedSpan and normal factory remains unchanged.
 Task 4 real paced public-WAVE comparison/RSS is prepared and root source-reviewed.
-The benchmark has compiled and safely opted out. One separately granted actual
-model run is next, with root's reviewed reporting controls and existing inputs.
+The benchmark has passed once on unchanged actual local public inputs. Root
+approved next narrow actual normal-factory selection, preserving injected
+SourceComponents.closedSpan defaults, with an actual composition-selection
+check and broader/actual speech regression at final acceptance. Not activated yet.
 
 ## AT RISK
 
 The actual Model four-case fixture remains uncommitted in
 `spikes/macos-panel/Tests/RelaySessionApplicationTests/ResponseLatencyApplicationTests.swift`
 and intentionally cannot compile until the shared observation seam joins.
-The benchmark code compiles/guards only; no actual model/performance success is
-claimed. Do not activate the normal factory from its opt-out result.
+The actual ASR result is recorded in the sanitized evidence files; it is not
+cloud, full-app, visible-window or usefulness acceptance. Normal factory remains
+closedSpan until the approved narrow change and its native verification.
 
 ## DECISIONS
 
@@ -90,7 +98,8 @@ claimed. Do not activate the normal factory from its opt-out result.
   two-source independence, remaining sample counts and actual RSS pass.
 - Benchmark uses only the unchanged installed fictional WAVE, SHA-256
   `98f0000e24688c1e665bd90de70d99b378b661bb749b483aeeed90cd5b2be9c7`,
-  39,516 mono Float32 samples at 16 kHz (read-only afinfo observation). Root
+  38,912 actual decoded mono Float32 samples at 16 kHz. A prior afinfo estimate
+  of 39,516 was higher; actual decoded/delivered counts govern the result. Root
   confirmed the existing real public cache, manifest
   `parakeet-eou320-silero621-v1`, 21 hashes / 225,301,695 bytes. No file copies,
   TTS, trim/repeat, playback, downloads or private-source/account operation.
@@ -116,13 +125,14 @@ the single Model observation hook outside the native publication lock.
 
 ## NEXT STEP
 
-Obtain the separate actual-model lease to select PrefixSpeechBenchmarkTests with
-root's confirmed unchanged public inputs and the controlled opt-in. Do not rerun
-a failed real gate automatically. Run unchanged Model fixtures when the accepted shared
+Add the approved narrow actual normal-factory selection and no-download
+composition behavior fixture, then obtain its queued native verification lease.
+Keep generic injected fixtures on closedSpan. Run unchanged Model fixtures when the accepted shared
 observation seam arrives. Keep normal factory closedSpan until measured approval.
 
 ## OPEN QUESTIONS
 
 No architecture clarification is blocking implementation. Root must coordinate
 the accepted Model hook and eventual protected-account comparison; measured
-ASR/end-to-end speed and resource benefit remain unknown until those gates.
+full-app/account speed remains unknown until those gates. Local ASR benefit is
+measured only on the one unchanged short fictional question.

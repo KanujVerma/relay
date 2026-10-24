@@ -25,6 +25,11 @@ public final class HistoryNotesSaveReceipt:Sendable {
 public struct HistoryNotesCommitOutcome:Sendable{
     public let receipt:HistoryNotesSaveReceipt,document:HistoryNotesDocumentData,cleanupComplete:Bool
 }
+/// Only an actual successful snapshot save below can issue this acknowledgment.
+final class LearningStoredControlReceipt:Sendable {
+    let control:LearningControlRecord
+    fileprivate init(_ control:LearningControlRecord){self.control=control}
+}
 
 /// One serialized canonical ledger and at most one bounded candidate. Callers
 /// run storage off the UI actor and retain/join actual operations on retirement.
@@ -56,24 +61,25 @@ final class HistoryStore:@unchecked Sendable {
     private static let index="CREATE INDEX history_final_order ON history_final(record_id,capture_id,sort_ticks,id)"
     private static let notesTable="CREATE TABLE history_generated_note (record_id TEXT PRIMARY KEY REFERENCES history_record(id) ON DELETE CASCADE, payload BLOB NOT NULL CHECK(typeof(payload)='blob' AND length(payload)<=262144))"
     private static func schema(_ q:DatabaseQueue,version:Int=1)throws{
-        guard [1,2].contains(version) else{throw HistoryError.invalid}
+        guard [1,2,3].contains(version) else{throw HistoryError.invalid}
         try q.write{db in
             for name in ["history_record","history_capture","history_final"]{try db.execute(sql:tables[name]!)}
             try db.execute(sql:index)
-            if version==2{try db.execute(sql:notesTable)}
+            if version>=2{try db.execute(sql:notesTable)}
+            if version==3{try LearningLedger.install(db)}
             try db.execute(sql:"PRAGMA user_version=\(version)")
         }
     }
     private static func key(_ id:UUID)->String{id.uuidString.lowercased()}
     private func required()throws->DatabaseQueue{guard !notesWriteIndeterminate,retiringQueue==nil,retiringNotesCandidate==nil,let queue else{throw HistoryError.closed};return queue}
     private static func version(_ db:Database)throws->Int{
-        guard let version=try Int.fetchOne(db,sql:"PRAGMA user_version"),[1,2].contains(version) else{throw HistoryError.invalid};return version
+        guard let version=try Int.fetchOne(db,sql:"PRAGMA user_version"),[1,2,3].contains(version) else{throw HistoryError.invalid};return version
     }
     private static func notesRows(_ db:Database,_ id:UUID)throws->[HistoryFinal]{
         try Data.fetchAll(db,sql:"SELECT f.payload FROM history_final f JOIN history_capture c ON f.capture_id=c.id WHERE f.record_id=? ORDER BY c.ordinal,f.sort_ticks,f.id",arguments:[key(id)]).map{try HistoryJSON.decode(HistoryFinal.self,$0)}
     }
     private static func storedNotes(_ db:Database,_ id:UUID)throws->(HistoryNotesDocumentData,HistoryNotesSourceData)?{
-        guard try version(db)==2,let raw=try Data.fetchOne(db,sql:"SELECT payload FROM history_generated_note WHERE record_id=?",arguments:[key(id)]) else{return nil}
+        guard try version(db)>=2,let raw=try Data.fetchOne(db,sql:"SELECT payload FROM history_generated_note WHERE record_id=?",arguments:[key(id)]) else{return nil}
         return try HistoryNotesDocuments.restore(raw,record:record(db,id),rows:notesRows(db,id))
     }
     private static func record(_ db:Database,_ id:UUID)throws->HistoryRecord{
@@ -129,7 +135,7 @@ final class HistoryStore:@unchecked Sendable {
                     }
                 }
             }
-            if originalVersion==2{
+            if originalVersion>=2{
                 for row in try Row.fetchAll(from,sql:"SELECT record_id,payload FROM history_generated_note"){
                     let owner=try row.decode(String.self,forColumn:"record_id")
                     if excludingRecords.contains(owner){continue}
@@ -143,6 +149,7 @@ final class HistoryStore:@unchecked Sendable {
                     try to.execute(sql:"INSERT INTO history_generated_note VALUES(?,?)",arguments:[owner,raw])
                 }
             }
+            if originalVersion==3{try LearningLedger.copySurviving(from:from,to:to)}
         }}
     }
     private func remove(records:Set<String>=[],source:(String,UInt32)?=nil,
@@ -511,10 +518,50 @@ final class HistoryStore:@unchecked Sendable {
     func deleteAll(admission:@Sendable()->Bool={true})throws{
         try lock.withLock{try remove(records:Set(try required().read{try String.fetchAll($0,sql:"SELECT id FROM history_record")}),admission:admission)}
     }
+    /// Existing-only read. A v1/v2 vault remains byte/schema unchanged.
+    func learningArchive()throws->LearningArchive{
+        try lock.withLock{
+            try revalidateNotesStorage();try expire();let current=try required();try Self.validate(current)
+            return try current.read{db in try Self.version(db)==3 ? LearningLedger.read(db):LearningArchive()}
+        }
+    }
+    /// Uses the same owned canonical snapshot and actual synchronous save
+    /// receipt as Notes. Record/manual-note revisions never advance here.
+    func mutateLearning(_ mutation:LearningMutation,admission:@Sendable()->Bool={true})throws->LearningStoreMutationOutcome{
+        try lock.withLock{
+            guard admission() else{throw HistoryError.stale};try revalidateNotesStorage();try expire(admission:admission)
+            let original=try required(),candidate=try HistorySnapshotCodec.makeQueue()
+            do{
+                let prior=try original.read{db in try Self.version(db)==3 ? LearningLedger.read(db):LearningArchive()}
+                try original.backup(to:candidate)
+                let archive=try candidate.write{db in
+                    let version=try Self.version(db)
+                    if version==1{try db.execute(sql:Self.notesTable)}
+                    if version<3{try LearningLedger.install(db);try db.execute(sql:"PRAGMA user_version=3")}
+                    let next=try LearningLedger.applying(mutation,to:prior,in:db,now:clock().timeIntervalSince1970)
+                    try LearningLedger.write(next,to:db);return next
+                }
+                try Self.validate(candidate);let bytes=try HistorySnapshotCodec.encode(candidate)
+                guard bytes.count<=contentLimitBytes else{throw HistoryError.capacity};guard admission() else{throw HistoryError.stale}
+                do{try storage.save(bytes,createKey:false)}catch{notesWriteIndeterminate=true;throw LearningStoreCommitError.indeterminate}
+                queue=candidate;retiringQueue=original
+                let receipt:LearningStoredControlReceipt?
+                if case .control(let pending)=mutation{receipt=LearningStoredControlReceipt(pending.target)}else{receipt=nil}
+                do{
+                    try original.close();retiringQueue=nil
+                    return LearningStoreMutationOutcome(archive:archive,controlReceipt:receipt,cleanupComplete:true)
+                }catch{return LearningStoreMutationOutcome(archive:archive,controlReceipt:receipt,cleanupComplete:false)}
+            }catch{
+                if queue !== candidate{do{try candidate.close()}catch{retiringNotesCandidate=candidate}}
+                throw error
+            }
+        }
+    }
     private static func validate(_ q:DatabaseQueue)throws{
         try q.read{db in
             let schemaVersion=try version(db)
-            var known=tables;if schemaVersion==2{known["history_generated_note"]=notesTable}
+            var known=tables;if schemaVersion>=2{known["history_generated_note"]=notesTable}
+            if schemaVersion==3{known.merge(LearningLedger.tables){_,new in new}}
             var expected=known;expected["history_final_order"]=index
             for row in try Row.fetchAll(db,sql:"SELECT type,name,tbl_name,sql FROM sqlite_schema"){
                 let name=try row.decode(String.self,forColumn:"name"),table=try row.decode(String.self,forColumn:"tbl_name")
@@ -561,7 +608,7 @@ final class HistoryStore:@unchecked Sendable {
                 rowCount[owner,default:0]+=1;textCount[owner,default:0]+=f.text.utf8.count
                 guard rowCount[owner]!<=HistoryBounds.rows,textCount[owner]!<=HistoryBounds.text else{throw HistoryError.capacity}
             }
-            if schemaVersion==2{
+            if schemaVersion>=2{
                 let notes=try Row.fetchAll(db,sql:"SELECT record_id,payload FROM history_generated_note")
                 guard notes.count<=HistoryBounds.records else{throw HistoryError.capacity}
                 for row in notes{
@@ -570,6 +617,7 @@ final class HistoryStore:@unchecked Sendable {
                     _=try HistoryNotesDocuments.restore(raw,record:record,rows:notesRows(db,record.id))
                 }
             }
+            if schemaVersion==3{_=try LearningLedger.read(db)}
         }
     }
 }

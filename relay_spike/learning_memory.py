@@ -10,7 +10,7 @@ import unicodedata
 from .panel_wire import exact, u64, uuid_string, WireError
 
 _OFFER=('schemaVersion','kind','captureSessionID','sessionEpoch','presentationGeneration',
-        'requestID','eventSequence','memoryRevision','scope','evidenceGap','continuity','adjustments','preparation','examples','supportIDs')
+        'requestID','eventSequence','memoryRevision','scope','evidenceGap','continuity','interactions','adjustments','preparation','examples','supportIDs')
 _RETIRE=('schemaVersion','kind','captureSessionID','sessionEpoch','memoryRevision')
 
 
@@ -20,6 +20,31 @@ def _text(value, limit):
                and not any(unicodedata.category(c) in ('Cc','Cf','Cs','Zl','Zp') and c not in '\n\t' for c in value))
     except UnicodeError:valid=False
     if not valid:raise WireError('learning_text')
+
+
+def _interaction(value):
+    exact(value,('episodeID','question','suggestion','reply','continuation','temporallyEligible','possibleUptake','distinctiveOverlap','ambiguity'))
+    uuid_string(value['episodeID'])
+    sources=[]
+    for field in ('question','reply','continuation'):
+        row=value[field];exact(row,('sourceID','text','excerpt'))
+        _text(row['sourceID'],180);_text(row['text'],240)
+        if type(row['excerpt']) is not bool:raise WireError('learning_excerpt')
+        sources.append(row['sourceID'])
+    if len(set(sources))!=3:raise WireError('learning_sources')
+    suggestion=value['suggestion'];exact(suggestion,('requestID','text','replacement','cardHash','availableAt','windowVisible','guideRevision','excerpt'))
+    if uuid_string(suggestion['requestID'])!=uuid_string(value['episodeID']):raise WireError('learning_episode')
+    _text(suggestion['text'],300);u64(suggestion['availableAt'],True);u64(suggestion['replacement'],True)
+    digest=suggestion['cardHash']
+    if not isinstance(digest,str) or len(digest)!=64 or any(c not in '0123456789abcdef' for c in digest):raise WireError('learning_card_hash')
+    if suggestion['guideRevision'] is not None:uuid_string(suggestion['guideRevision'])
+    if any(type(suggestion[key]) is not bool for key in ('windowVisible','excerpt')):raise WireError('learning_visibility')
+    if any(type(value[key]) is not bool for key in ('temporallyEligible','possibleUptake')):raise WireError('learning_signal')
+    if type(value['distinctiveOverlap']) is not int or not 0<=value['distinctiveOverlap']<=1024:raise WireError('learning_overlap')
+    if value['possibleUptake'] and (not value['temporallyEligible'] or value['distinctiveOverlap']<2):raise WireError('learning_signal')
+    flags=value['ambiguity'];known=('hidden_card','speech_before_available','overlap','possible_echo','asr_confidence_unknown','asr_uncertain','late_final','remote_before_reply_final','competing_card')
+    if (not isinstance(flags,list) or len(flags)>9 or not all(isinstance(flag,str) and flag in known for flag in flags)
+        or len(set(flags))!=len(flags)):raise WireError('learning_ambiguity')
 
 
 def decode_learning(value):
@@ -38,14 +63,18 @@ def decode_learning(value):
         rows=value[field]
         if not isinstance(rows,list) or len(rows)>2:raise WireError('learning_rows')
         for row in rows:
-            exact(row,('sourceID','kind','text') if field=='continuity' else ('sourceID','text'))
+            exact(row,('sourceID','kind','text','excerpt') if field=='continuity' else ('sourceID','text','excerpt'))
             _text(row['sourceID'],180);_text(row['text'],350 if field=='examples' else 700)
+            if type(row['excerpt']) is not bool:raise WireError('learning_excerpt')
             if field=='continuity' and row['kind'] not in ('spoken_constraint','unresolved_followup','interaction'):
                 raise WireError('learning_kind')
+    interactions=value['interactions']
+    if not isinstance(interactions,list) or len(interactions)>1:raise WireError('learning_interactions')
+    for interaction in interactions:_interaction(interaction)
     supports=value['supportIDs']
     if not isinstance(supports,list) or len(supports)>8 or not all(isinstance(item,str) for item in supports) or len(set(supports))!=len(supports):raise WireError('learning_supports')
     for support in supports:uuid_string(support)
-    if len(json.dumps({key:value[key] for key in ('scope','evidenceGap','continuity','adjustments','preparation','examples','supportIDs')},ensure_ascii=False).encode())>2048:
+    if len(json.dumps({key:value[key] for key in ('scope','evidenceGap','continuity','interactions','adjustments','preparation','examples','supportIDs')},ensure_ascii=False,separators=(',',':')).encode())>2048:
         raise WireError('learning_budget')
     return copy.deepcopy(value)
 
@@ -120,7 +149,7 @@ class HostLearningMemory:
         value,_=entry;revision=_revision(value)
         if revision in self._retired:return None
         use=_LearningUse(native,uuid_string(value['memoryRevision']),revision,
-                           {key:copy.deepcopy(value[key]) for key in ('scope','evidenceGap','continuity','adjustments','preparation','examples','supportIDs')})
+                           {key:copy.deepcopy(value[key]) for key in ('scope','evidenceGap','continuity','interactions','adjustments','preparation','examples','supportIDs')})
         self._use=use;return use
 
     def _owns(self,use,native):

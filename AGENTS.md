@@ -21,6 +21,7 @@ Two foundational memories:
 Continuous learning optimizes the copilot itself. The quality gate checks correctness, relevance, personal support and concision, using cheap deterministic checks and selective model review rather than a mandatory slow second pass.
 
 ## Invariants
+- Read [the local resource budget](docs/LOCAL_RESOURCE_BUDGET.md) before builds, downloads, environment creation or artifact copies. Parallel code/research ownership does not authorize parallel heavy jobs. Reuse bounded caches; never create a new large review cache by default. The 2026-10-24 disk incident stopped all workers; do not restart their interrupted builds automatically.
 - Each agent owns one small slice, issue, isolated checkout, branch and reviewable PR. Parallel slices are allowed under the controller's explicit write ownership and shared contracts in docs/PARALLEL_PLAN.md. Do not edit another lane's files or shared HANDOFF/ADRs concurrently.
 - For the current parallel effort, use GPT-6.1 Sol with extra-high reasoning or higher for every worker. Report model unavailability instead of silently downgrading.
 - Automatic question routing and both reviewed technical answers and open-ended model answers are owner-approved targets. Detailed new publication/transport designs remain proposals until agreed; do not mistake a target for delivered behavior.

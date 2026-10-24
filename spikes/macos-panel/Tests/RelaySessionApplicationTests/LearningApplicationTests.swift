@@ -1,0 +1,243 @@
+import AppKit
+import Combine
+import Darwin
+import Foundation
+import SwiftUI
+import XCTest
+import RelayAudioBuffer
+import RelayNativeSession
+import RelayProfile
+import RelaySessionPanel
+@testable import RelayPanelSession
+
+@MainActor private final class AppLearningHistoryPreferences:HistorySavingPreferences{var savingEnabled=false}
+@MainActor private final class AppLearningPreferences:LearningControlPreferences {
+    var receipt=LearningControlReceipt(revision:nil,enabled:false,pending:nil)
+    func read()->LearningControlReceipt{receipt}
+    func deny(_ pending:LearningPendingControl)->LearningControlReceipt{receipt=LearningControlReceipt(revision:pending.revision,enabled:false,pending:pending);return receipt}
+    func commit(_ control:LearningControlRecord)->LearningControlReceipt{receipt=LearningControlReceipt(revision:control.revision,enabled:control.enabled,pending:nil);return receipt}
+}
+private final class AppLearningKey:ProfileKeyProvider,@unchecked Sendable {
+    private let lock=NSLock();private var count=0
+    var calls:Int{lock.withLock{count}}
+    func key(createIfMissing:Bool)throws->Data{lock.withLock{count+=1};return Data(repeating:131,count:32)}
+}
+private actor LearningAppVAD:SpeechActivityDetector {
+    nonisolated let chunkSamples=512
+    private var count=0
+    func accept(_ samples:[Float])async throws->[SpeechBoundary]{count+=1;return[SpeechBoundary(kind:count%2==1 ? .start:.end,sampleIndex:UInt64(count%2==1 ? (count-1)*512:count*512))]}
+}
+private actor LearningAppRecognizer:ActivityRecognizer {
+    private var values:[String]
+    init(_ values:[String]){self.values=values}
+    func recognize(_ samples:[Float])async throws->String{
+        // Synthetic ASR waits past the actual paced sample end. This delay is
+        // not a speech-model latency measurement or an invented speech clock.
+        try await Task.sleep(for:.milliseconds(80));return values.isEmpty ? "":values.removeFirst()
+    }
+}
+private final class LearningPaintFinished:@unchecked Sendable {
+    private let lock=NSLock();private var value=false
+    var finished:Bool{lock.withLock{value}}
+    func finish(){lock.withLock{value=true}}
+}
+@MainActor private final class LearningAppConversation {
+    static let question="Write a Python function that returns the first item or None for an empty list."
+    // This fixture isolates concise wording. Stepwise wording has independent
+    // derivation coverage; mixing both would make a one-rule Undo ambiguous.
+    static let reply="Check empty lists and return an item when present."
+    private let remoteQuestion:String
+    init(remoteQuestion:String=LearningAppConversation.question){self.remoteQuestion=remoteQuestion}
+    private var sequences:[UInt32:UInt64]=[:]
+    func start(_ controller:NativeSessionController)throws{
+        sequences=[:]
+        try controller.start(selectedBundleID:"com.example.learning-fixture",microphoneEnabled:true,components:[
+            1:SourceComponents(vad:LearningAppVAD(),recognizer:LearningAppRecognizer([Self.reply,Self.reply])),
+            2:SourceComponents(vad:LearningAppVAD(),recognizer:LearningAppRecognizer([remoteQuestion,"What about empty input?"]))])
+    }
+    func speak(_ source:PCMSource,through model:SessionApplicationModel)async throws{
+        for _ in 0..<2{
+            let sequence=(sequences[source.rawValue] ?? 0)+1;sequences[source.rawValue]=sequence
+            model.ingestFixturePacket(SessionAudioPacket(source:source,streamGeneration:1,sequence:sequence,hostTime:mach_absolute_time(),samples:Array(repeating:0.2,count:512)))
+            try await Task.sleep(for:.milliseconds(33))
+        }
+    }
+}
+@MainActor private struct LearningVisibleFixtureView:View {
+    @ObservedObject var model:SessionApplicationModel
+    @State private var expanded=true
+    var body:some View{
+        LiveSessionView(state:model.relayPresentation,question:model.snapshot.question,answer:model.relayAnswer,status:model.snapshot.status,
+            fixture:true,assistant:model.assistant,attachScroll:{window,scroll in model.attachWindow(window,scrollView:scroll)},
+            expanded:$expanded,detailExpanded:$model.expanded,onAction:{_ in})
+    }
+}
+
+@MainActor final class LearningApplicationTests:XCTestCase {
+    private weak var diagnosticModel:SessionApplicationModel?
+    private weak var diagnosticSurface:NSWindow?
+    private var root:URL{URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()}
+    private func quote(_ text:String)->String{"'"+text.replacingOccurrences(of:"'",with:"'\\''")+"'"}
+    private func rig(learning:Bool=true,question:String=LearningAppConversation.question)throws->(SessionApplicationModel,LearningAppConversation,URL,AppLearningKey){
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("relay-learning-application-"+UUID().uuidString)
+        try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:false,attributes:[.posixPermissions:0o700])
+        let python=ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"] ?? "/usr/bin/python3"
+        let launcher=directory.appendingPathComponent("synthetic-helper"),helper=root.appendingPathComponent("tests/support/learning_memory_helper.py"),log=directory.appendingPathComponent("calls.jsonl")
+        try Data("#!/bin/sh\nexec \(quote(python)) \(quote(helper.path)) --synthetic-learning-test --log \(quote(log.path)) \"$@\"\n".utf8).write(to:launcher)
+        try FileManager.default.setAttributes([.posixPermissions:0o700],ofItemAtPath:launcher.path)
+        let key=AppLearningKey(),history=AppLearningHistoryPreferences(),controls=AppLearningPreferences(),conversation=LearningAppConversation(remoteQuestion:question)
+        let storage=HistoryVaultStorage(directory:directory.appendingPathComponent("Relay/History"),keys:key)
+        let model=SessionApplicationModel(arguments:["relay","--fixture-suite","coding","--role","developer","--repository",root.path,"--python",launcher.path],
+            historyPreferences:history,historyStorageFactory:{storage},learningPreferences:learning ? controls:nil,fixtureSessionStart:conversation.start)
+        diagnosticModel=model
+        addTeardownBlock{await model.shutdown();try? FileManager.default.removeItem(at:directory)}
+        return(model,conversation,directory,key)
+    }
+    private func until(file:StaticString=#filePath,line:UInt=#line,_ condition:()->Bool)async throws{
+        let deadline=ContinuousClock.now+Duration.seconds(8)
+        while !condition(){
+            guard ContinuousClock.now<deadline else{
+                let model=diagnosticModel,surface=diagnosticSurface,sample=model?.responseLatencySamples.last
+                let state="line=\(line) running=\(model?.running==true) card=\(model?.snapshot.card != nil) modelAvailable=\(sample?.modelAvailableAt != nil) windowVisible=\(sample?.windowVisibleAt != nil) surfaceVisible=\(surface?.isVisible==true) occlusion=\(surface?.occlusionState.contains(.visible)==true) appActive=\(NSApp.isActive) appRunning=\(NSApp.isRunning) key=\(NSApp.keyWindow === surface) rows=\(model?.assistant.transcript.snapshot.rows.count ?? -1) episodes=\(model?.learning.session.episodes.count ?? -1) retained=\(model?.learning.retainedEpisodes.count ?? -1)"
+                XCTFail(state,file:file,line:line);throw HistoryError.unavailable
+            }
+            try await Task.sleep(for:.milliseconds(3))
+        }
+    }
+    private func window(_ model:SessionApplicationModel)->NSWindow{
+        let application=NSApplication.shared,originalPolicy=application.activationPolicy(),frontmost=NSWorkspace.shared.frontmostApplication
+        _=application.setActivationPolicy(.regular)
+        let window=NSWindow(contentRect:NSRect(x:80,y:80,width:706,height:600),styleMask:[.titled,.fullSizeContentView],backing:.buffered,defer:false)
+        RelayWindowShell().attachLive(window)
+        window.isReleasedWhenClosed=false;window.contentView=NSHostingView(rootView:LearningVisibleFixtureView(model:model))
+        diagnosticSurface=window
+        window.contentView?.layoutSubtreeIfNeeded();model.attachWindow(window,scrollView:nil)
+        // Exercise the production own-window action, including app activation
+        // and key-window presentation. A background XCTest window is occluded.
+        model.performWindowAction(.showPanel)
+        addTeardownBlock{await MainActor.run{window.orderOut(nil);window.close();_=application.setActivationPolicy(originalPolicy);if let frontmost,!frontmost.isTerminated{_=frontmost.activate(options:[])}}}
+        return window
+    }
+    func testDefaultFixtureCannotEnableLearningOrReachProductionControlAndHistoryStorage()async throws{
+        let python=ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"] ?? "/usr/bin/python3"
+        let model=SessionApplicationModel(arguments:["relay","--fixture-suite","coding","--repository",root.path,"--python",python])
+        XCTAssertFalse(model.canEnableLearning)
+        do{try await model.learning.enable();XCTFail("Default fixture must remain unavailable")}catch{}
+        XCTAssertTrue(model.learning.retainedEpisodes.isEmpty);await model.shutdown()
+        let(injected,_,_,key)=try rig(learning:false)
+        XCTAssertFalse(injected.canEnableLearning);XCTAssertEqual(key.calls,0)
+        do{try await injected.learning.enable();XCTFail("History-only synthetic injection does not authorize production CF")}catch{}
+        XCTAssertEqual(key.calls,0)
+    }
+    func testActualVisibleSuggestionOriginalMicContinuationEndAndLaterSessionChangeWithNoExtraCalls()async throws{
+        let(model,conversation,directory,_)=try rig();let surface=window(model);surface.orderFront(nil)
+        try await model.history.enableSaving();try await model.learning.enable()
+        var baseline:String?
+        for _ in 0..<3{
+            await model.start();try await conversation.speak(.remoteAudio,through:model)
+            try await until{model.snapshot.card != nil && model.responseLatencySamples.last?.windowVisibleAt != nil}
+            if baseline==nil{baseline=model.snapshot.card?.lead}
+            try await conversation.speak(.microphone,through:model)
+            try await until{model.assistant.transcript.snapshot.rows.contains{$0.source == .microphone}}
+            try await conversation.speak(.remoteAudio,through:model)
+            try await until{!model.learning.session.episodes.isEmpty}
+            let episode=try XCTUnwrap(model.learning.session.episodes.first)
+            XCTAssertGreaterThanOrEqual(episode.reply.startUptimeNanoseconds.value,episode.suggestion.availableAt.value)
+            XCTAssertEqual(episode.reply.source,.microphone);XCTAssertEqual(episode.continuation.source,.selectedAppAudio)
+            await model.stop();await model.learning.waitForQuiescence()
+        }
+        XCTAssertEqual(model.learning.retainedEpisodes.count,3)
+        await model.start();try await conversation.speak(.remoteAudio,through:model)
+        try await until{model.snapshot.card != nil && model.snapshot.learningMemoryRevision != nil}
+        XCTAssertNotEqual(model.snapshot.card?.lead,baseline)
+        XCTAssertEqual(model.snapshot.card?.detail?.text,"def first_or_none(items):\n    return items[0] if items else None\n")
+        for _ in 0..<12{
+            let before=model.snapshot.replacement;try model.perform(.requestHelp)
+            try await until{model.snapshot.card != nil && model.snapshot.replacement>before}
+            XCTAssertTrue(model.running);XCTAssertNotNil(model.snapshot.learningMemoryRevision)
+        }
+        let undo=model.learning.undo("technical:concise_lead")
+        XCTAssertNil(model.snapshot.card);XCTAssertTrue(model.running);try await undo.value
+        try model.perform(.requestHelp);try await until{model.snapshot.card != nil}
+        XCTAssertEqual(model.snapshot.card?.lead,baseline)
+        let entries=(try? String(contentsOf:directory.appendingPathComponent("calls.jsonl"),encoding:.utf8))?.split(separator:"\n") ?? []
+        XCTAssertFalse(entries.isEmpty);XCTAssertTrue(entries.allSatisfy{!$0.contains("first item or None")})
+    }
+    func testHiddenCommitThenActualWindowExposureUsesLaterOriginalMicAndNoDuplicateAvailability()async throws{
+        let(model,conversation,_,_)=try rig();try await model.history.enableSaving();try await model.learning.enable()
+        await model.start();try await conversation.speak(.remoteAudio,through:model)
+        try await until{model.snapshot.card != nil && model.responseLatencySamples.last?.modelAvailableAt != nil}
+        XCTAssertNil(model.responseLatencySamples.last?.windowVisibleAt)
+        try await conversation.speak(.microphone,through:model);try await until{model.assistant.transcript.snapshot.rows.contains{$0.source == .microphone}}
+        let before=try XCTUnwrap(model.assistant.transcript.snapshot.rows.first{$0.source == .microphone})
+        let surface=window(model);surface.orderFront(nil)
+        try await until{model.responseLatencySamples.last?.windowVisibleAt != nil}
+        try await conversation.speak(.microphone,through:model)
+        try await until{model.assistant.transcript.snapshot.rows.filter{$0.source == .microphone}.count==2}
+        try await conversation.speak(.remoteAudio,through:model);try await until{!model.learning.session.episodes.isEmpty}
+        let episode=try XCTUnwrap(model.learning.session.episodes.first)
+        XCTAssertGreaterThan(episode.reply.startUptimeNanoseconds.value,before.endUptimeNanoseconds)
+        XCTAssertGreaterThanOrEqual(episode.reply.startUptimeNanoseconds.value,episode.suggestion.availableAt.value)
+        XCTAssertEqual(model.learning.session.episodes.count,1)
+    }
+    func testOffViewportLeadAndPointsCannotCreditEarlierMicBeforeActualScrollExposure()async throws{
+        let question=String((LearningAppConversation.question+" "+String(repeating:"Explain the empty input contract and preserve the original item order. ",count:7)).prefix(490))
+        let(model,conversation,_,_)=try rig(question:question),surface=window(model);surface.orderFront(nil)
+        try await model.history.enableSaving();try await model.learning.enable();await model.start()
+        try await conversation.speak(.remoteAudio,through:model)
+        try await until{model.snapshot.card != nil && model.responseLatencySamples.last?.windowVisibleAt != nil}
+        func scrolls(_ view:NSView)->[NSScrollView]{(view as? NSScrollView).map{[$0]} ?? [] + view.subviews.flatMap{scrolls($0)}}
+        surface.contentView?.layoutSubtreeIfNeeded()
+        try await until{surface.contentView.map{scrolls($0).contains{($0.documentView?.bounds.height ?? 0)>$0.contentView.bounds.height+100}} ?? false}
+        let scroll=try XCTUnwrap(scrolls(try XCTUnwrap(surface.contentView)).max{
+            ($0.documentView?.bounds.height ?? 0)-$0.contentView.bounds.height < ($1.documentView?.bounds.height ?? 0)-$1.contentView.bounds.height
+        })
+        let document=try XCTUnwrap(scroll.documentView)
+        XCTAssertGreaterThan(document.bounds.height,scroll.contentView.bounds.height+100)
+        scroll.contentView.scroll(to:.zero);scroll.reflectScrolledClipView(scroll.contentView)
+        try await conversation.speak(.microphone,through:model)
+        try await until{model.assistant.transcript.snapshot.rows.filter{$0.source == .microphone}.count==1}
+        let earlier=try XCTUnwrap(model.assistant.transcript.snapshot.rows.first{$0.source == .microphone})
+        scroll.contentView.scroll(to:NSPoint(x:0,y:max(0,document.bounds.height-scroll.contentView.bounds.height)))
+        scroll.reflectScrolledClipView(scroll.contentView);surface.contentView?.layoutSubtreeIfNeeded()
+        try await Task.sleep(for:.milliseconds(33))
+        try await conversation.speak(.microphone,through:model)
+        try await until{model.assistant.transcript.snapshot.rows.filter{$0.source == .microphone}.count==2}
+        try await conversation.speak(.remoteAudio,through:model);try await until{!model.learning.session.episodes.isEmpty}
+        let episode=try XCTUnwrap(model.learning.session.episodes.first)
+        XCTAssertGreaterThan(episode.suggestion.availableAt.value,earlier.endUptimeNanoseconds)
+        XCTAssertGreaterThanOrEqual(episode.reply.startUptimeNanoseconds.value,episode.suggestion.availableAt.value)
+        XCTAssertTrue(episode.signal.eligibleForStyle,"Only the later original reply follows real lead/points exposure")
+        XCTAssertEqual(model.learning.session.episodes.count,1)
+    }
+    func testActualModelPublicationReentrantLearningDisableHasOwnedWatchdogAndNoAvailability()async throws{
+        let key="RELAY_LEARNING_MODEL_PAINT_CHILD"
+        if ProcessInfo.processInfo.environment[key]=="1"{
+            let finished=LearningPaintFinished();FileHandle.standardError.write(Data("LEARNING_MODEL_PAINT_CHILD_STARTED\n".utf8))
+            DispatchQueue.global().asyncAfter(deadline:.now()+8){if !finished.finished{Darwin._exit(86)}}
+            let(model,conversation,_,_)=try rig();try await model.history.enableSaving();try await model.learning.enable()
+            await model.start();try await conversation.speak(.remoteAudio,through:model);try await until{model.snapshot.card != nil}
+            var fired=false
+            let observation=model.$snapshot.sink{[weak model] incoming in
+                guard let model,!fired,incoming.card != nil,incoming.learningMemoryRevision != nil else{return}
+                fired=true;_=model.learning.disable()
+            }
+            try model.perform(.requestHelp);try await until{fired}
+            XCTAssertNil(model.snapshot.card);XCTAssertTrue(model.running)
+            XCTAssertNil(model.responseLatencySamples.last?.modelAvailableAt)
+            observation.cancel();await model.learning.waitForQuiescence();await model.shutdown();finished.finish();return
+        }
+        let child=Process(),finished=LearningPaintFinished(),errors=Pipe()
+        child.executableURL=URL(fileURLWithPath:"/usr/bin/xcrun")
+        child.arguments=["xctest","-XCTest","RelaySessionApplicationTests.LearningApplicationTests/testActualModelPublicationReentrantLearningDisableHasOwnedWatchdogAndNoAvailability",Bundle(for:Self.self).bundleURL.path]
+        var environment=ProcessInfo.processInfo.environment;environment[key]="1";child.environment=environment
+        child.standardOutput=FileHandle.nullDevice;child.standardError=errors;child.terminationHandler={_ in finished.finish()}
+        try child.run();try errors.fileHandleForWriting.close()
+        for _ in 0..<5000{if finished.finished{break};try await Task.sleep(for:.milliseconds(2))}
+        if !finished.finished{child.terminate()}
+        for _ in 0..<500{if finished.finished{break};try await Task.sleep(for:.milliseconds(2))}
+        guard finished.finished else{_=Darwin.kill(child.processIdentifier,SIGKILL);XCTFail("Owned Model publication child failed to exit");return}
+        let log=String(data:errors.fileHandleForReading.readDataToEndOfFile(),encoding:.utf8) ?? ""
+        XCTAssertTrue(log.contains("LEARNING_MODEL_PAINT_CHILD_STARTED"));XCTAssertEqual(child.terminationStatus,0,log)
+    }
+}

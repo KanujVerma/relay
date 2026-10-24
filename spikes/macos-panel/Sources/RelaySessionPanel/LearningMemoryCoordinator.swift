@@ -111,6 +111,12 @@ public final class LearningProjectionSnapshot:Sendable {
         guard control==nil else{throw HistoryError.inUse}
         try await perform(.enable)
     }
+    /// Preparation hint only. It cannot enable memory or grant source access;
+    /// restore still requires the original private History/control receipts.
+    public func needsRetainedSourcePreparation()async throws->Bool{
+        try Task.checkCancellation();let receipt=try await preferences.read();try receipt.validate()
+        return receipt.enabled || receipt.pending != nil
+    }
     private enum Action {case restore(LearningControlReceipt),enable,disable,reset,suppress(String)}
     public func disable()->Task<Void,Error>{begin(.disable)}
     public func reset()->Task<Void,Error>{begin(.reset)}

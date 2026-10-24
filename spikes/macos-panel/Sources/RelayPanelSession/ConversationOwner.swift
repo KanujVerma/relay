@@ -88,6 +88,7 @@ final class ConversationOwnerBox:@unchecked Sendable {
     var composer:QuestionContextComposer?
     var forwarder:OrderedContextForwarder?
     var responsePreferences:ResponsePreferencesRequestBridge?
+    var learning:LearningMemoryRequestBridge?
     var currentBinding:PanelRequestBinding?
     var lastContextRetirement:(PanelRequestBinding,Bool)?
     var acceptedQuestion:String?

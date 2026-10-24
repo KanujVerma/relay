@@ -195,3 +195,8 @@ Exact accepted Root e165ab34209778787f1d19bddda0d407aad4baf5 Draft/Section/prese
 ## Disjoint Notes app controller checkpoint
 
 Actual source→helper completion→same-run protected save/read/edit/delete/citation now passes the four App-controller cases, with original user-action CAS/unknown-write cases. Combined53collected52pass1explicit render skip, zero failures; command100.794s. Controller owns original intent/deadline/task and anchored actions; constructors/render remain inert. Exact Root e165 view/draft/tests are reused unchanged. No shared Model integration or completed product is claimed yet. Next: tested exact current-preparer preservation, shared Model/History workspace hooks after Memory freeze, export and stock bundled acceptance. Heavy slot released.
+
+
+## Notes current-preparer and export checkpoint
+
+Exact current-helper-preparer preservation and typed source-validated generated-note export now pass the original red fixtures. Combined72collected71pass1explicit render skip0failures, command34.851s. No-doc export stays schema1/byte compatible; doc-present schema2 separates AI notes/provenance/citations from manual notes. Actual helper-preparation tests prove no self-await and wrong-intent denial/join. No shared Model hook yet; finish actual History window/Model/citation/lifecycle and stock bundle acceptance after Memory seam handback. Heavy released.

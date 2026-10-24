@@ -51,16 +51,17 @@ private final class AppContextKey:ProfileKeyProvider,@unchecked Sendable {
 }
 @MainActor final class SavedContextApplicationTests:XCTestCase {
     private var root:URL{URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()}
-    private func rig(directory:URL?=nil,preferences:AppContextPreferences?=nil,holdCommand:String?=nil,fixture:Bool=true,fixtureSuite:String="coding")throws->AppContextRig {
+    private func rig(directory:URL?=nil,preferences:AppContextPreferences?=nil,holdCommand:String?=nil,fixture:Bool=true,fixtureSuite:String="coding",runtimeBundle:URL?=nil)throws->AppContextRig {
         let ownsDirectory=directory==nil
         let directory=directory ?? FileManager.default.temporaryDirectory.appendingPathComponent("relay-app-context-"+UUID().uuidString,isDirectory:true)
         let preferences=preferences ?? AppContextPreferences(),key=AppContextKey(),receipts=AppContextReceipts(holdCommand:holdCommand)
         let python=ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"] ?? "/usr/bin/python3"
-        var arguments=["relay","--repository",root.path,"--python",python]
+        var arguments=runtimeBundle == nil ? ["relay","--repository",root.path,"--python",python]:["Relay"]
         if fixture{arguments += ["--fixture-suite",fixtureSuite]}
         let model=SessionApplicationModel(arguments:arguments,
             ingressEnqueued:receipts.ingress,contextPreferences:preferences,
-            profileVaultFactory:{ProfileVault(directory:directory,keys:key)},profileResponseObserved:receipts.observe)
+            profileVaultFactory:{ProfileVault(directory:directory,keys:key)},profileResponseObserved:receipts.observe,
+            bundleURL:runtimeBundle ?? Bundle.main.bundleURL,workingDirectory:URL(fileURLWithPath:"/"))
         receipts.model=model
         addTeardownBlock{await receipts.release();await model.stop();if ownsDirectory{try? FileManager.default.removeItem(at:directory)}}
         return AppContextRig(model:model,directory:directory,preferences:preferences,key:key,receipts:receipts)
@@ -206,5 +207,25 @@ private final class AppContextKey:ProfileKeyProvider,@unchecked Sendable {
         try await waitUntil{model.snapshot.question != nil && model.snapshot.status != "Thinking"}
         XCTAssertNil(model.snapshot.card,"a new question after explicit Lock must not reuse the former personal facts")
         XCTAssertFalse(rig.preferences.useInSessions)
+    }
+    func testOptInPackagedHelperRestoresApprovedContextAndAnswersWithoutDeveloperOverrides()async throws {
+        guard let path=ProcessInfo.processInfo.environment["RELAY_CONTEXT_BUNDLED_RUNTIME_APP"] else{
+            throw XCTSkip("Explicit packaged personal-context gate; synthetic vault/key only, no system Keychain or real profile.")
+        }
+        let bundle=URL(fileURLWithPath:path,isDirectory:true)
+        let rig=try rig(fixtureSuite:"personal-memory",runtimeBundle:bundle),model=rig.model
+        XCTAssertTrue(model.root.path.hasPrefix(bundle.path+"/"));XCTAssertNil(model.error)
+        model.openMyContext();await model.contextUse.waitForQuiescence()
+        try await approveFictionalFact(model)
+        let created=rig.key.calls.creates,oldHelper=try model.ensureHelper()
+        await model.stop();await model.start()
+        try await waitUntil{model.snapshot.card != nil}
+        XCTAssertFalse(try model.ensureHelper() === oldHelper)
+        XCTAssertEqual(model.snapshot.card?.points,["Your contribution: I implemented validation tests for Fictional Northstar."])
+        XCTAssertEqual(rig.key.calls.creates,created)
+        model.lockMyContext();XCTAssertNil(model.snapshot.card)
+        await model.contextUse.waitForQuiescence();await model.stop()
+        await model.start();try await waitUntil{model.snapshot.question != nil && model.snapshot.status != "Thinking"}
+        XCTAssertNil(model.snapshot.card);XCTAssertFalse(rig.preferences.useInSessions)
     }
 }

@@ -121,6 +121,10 @@ public final class HelperTransport: @unchecked Sendable {
         var last:VisualInputResponse?
     }
     private var visualRequests:[UUID:VisualWaiter]=[:]
+    private var answerCancellations:[UUID:(NativeAnswerCancelRequest,PendingAnswerCancellation)]=[:]
+    private var cancellationReplies:[UUID:(NativeAnswerCancelRequest,AnswerCancellationResponse)]=[:]
+    private var cancellationReplyOrder:[UUID]=[]
+    private var cancellationCount=0
     private var visualReplies:[UUID:VisualInputResponse]=[:]
     private var visualReplyOrder:[UUID]=[]
     private var visualRequestCount=0
@@ -193,6 +197,45 @@ public final class HelperTransport: @unchecked Sendable {
                 try await Task.sleep(for:.milliseconds(1))
             }
         }
+    }
+    /// Register before enqueueing on the native ordered ingress. This does not
+    /// send the action directly or pretend its target has stopped.
+    public func registerAnswerCancellation(_ request:NativeAnswerCancelRequest)throws->PendingAnswerCancellation {
+        let response=try lock.withLock{()->PendingAnswerCancellation in
+            guard !failed,input != nil else{throw PanelBridgeError.closed}
+            if let pending=answerCancellations[request.requestID]{
+                guard pending.0==request else{throw PanelBridgeError.malformed};return pending.1
+            }
+            if let previous=cancellationReplies[request.requestID]{
+                guard previous.0==request else{throw PanelBridgeError.malformed}
+                let response=PendingAnswerCancellation();response.finish(.success(previous.1));return response
+            }
+            guard answerCancellations.count<8,cancellationCount<512 else{throw PanelBridgeError.overflow}
+            cancellationCount+=1
+            let response=PendingAnswerCancellation();answerCancellations[request.requestID]=(request,response);return response
+        }
+        io.asyncAfter(deadline:.now() + .seconds(15)){[weak self] in
+            guard let self else{return}
+            let pending=self.lock.withLock{self.answerCancellations[request.requestID]}
+            if let pending{pending.1.finish(.failure(PanelBridgeError.timedOut));self.fail()}
+        }
+        return response
+    }
+    private func acceptAnswerCancellation(_ reply:AnswerCancellationResponse)throws {
+        let response=try lock.withLock{()->PendingAnswerCancellation? in
+            guard let pending=answerCancellations[reply.requestID] else{
+                if cancellationReplies[reply.requestID]?.1==reply{return nil}
+                throw PanelBridgeError.malformed
+            }
+            guard reply.captureSessionID==pending.0.lease.captureSessionID,reply.sessionEpoch==pending.0.lease.sessionEpoch,
+                  reply.presentationGeneration==pending.0.lease.presentationGeneration,reply.targetRequestID==pending.0.targetRequestID else{throw PanelBridgeError.malformed}
+            // Fallible validation precedes removal so failure still resolves it.
+            answerCancellations.removeValue(forKey:reply.requestID)
+            cancellationReplies[reply.requestID]=(pending.0,reply);cancellationReplyOrder.append(reply.requestID)
+            while cancellationReplyOrder.count>8{cancellationReplies.removeValue(forKey:cancellationReplyOrder.removeFirst())}
+            return pending.1
+        }
+        response?.finish(.success(reply))
     }
     public func requestProfile(_ command:Data) async throws -> Data {
         _=try StrictJSON.decode(command)
@@ -391,6 +434,8 @@ public final class HelperTransport: @unchecked Sendable {
                         continuation.resume()
                     } else if case .object(let fields)=node,case .string("visual_input_response")?=fields["kind"] {
                         try acceptVisual(VisualInputResponse(data:frame))
+                    } else if case .object(let fields)=node,case .string("answer_cancel_response")?=fields["kind"] {
+                        try acceptAnswerCancellation(AnswerCancellationResponse(data:frame))
                     } else { _=try SessionAnswerDecision(data:frame);try onFrame(frame) }
                 }
                 if decoder.hasPartial { if partialSince==nil { partialSince=DispatchTime.now().uptimeNanoseconds } } else { partialSince=nil }
@@ -422,6 +467,8 @@ public final class HelperTransport: @unchecked Sendable {
             failed=true;let pending=Array(profileRequests.values);profileRequests.removeAll()
             let sessions=Array(quiescenceRequests.values);quiescenceRequests.removeAll()
             sessions.forEach { $0.2.resume(throwing:PanelBridgeError.closed) }
+            let cancellations=Array(answerCancellations.values);answerCancellations.removeAll()
+            cancellations.forEach{$0.1.finish(.failure(PanelBridgeError.closed))}
             let visual=Array(visualRequests.values);visualRequests.removeAll()
             visual.forEach{$0.response.finish(.failure(PanelBridgeError.closed))}
             return (process,pending,Array(imageWrites.values))

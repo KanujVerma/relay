@@ -24,7 +24,7 @@ PublicationState = Literal[
     "reviewed_reference", "model_suggestion_unverified",
     "needs_revision", "unavailable",
 ]
-SourceChannel = Literal["user_synthetic", "remote_final", "remote_partial", "microphone", "unknown"]
+SourceChannel = Literal["user_synthetic", "explicit_user", "remote_final", "remote_partial", "microphone", "unknown"]
 QuestionStatus = Literal["final", "partial", "correction", "interrupted", "discontinuous"]
 TECHNICAL_CATEGORIES = frozenset({
     "sql", "coding", "edge_case", "metrics", "visualization", "multi_part",
@@ -202,7 +202,7 @@ def evaluate_publication(request: PolicyInput, *,
         raise TypeError("The trusted host must supply ActiveTurns and TurnToken.")
     if not request.host_authorized:
         return _result("unavailable", "permission_not_confirmed")
-    if request.source_channel not in ("user_synthetic", "remote_final"):
+    if request.source_channel not in ("user_synthetic", "explicit_user", "remote_final"):
         return _result("unavailable", "untrusted_or_partial_source")
     if request.question_status != "final":
         return _result("unavailable", "question_not_final")

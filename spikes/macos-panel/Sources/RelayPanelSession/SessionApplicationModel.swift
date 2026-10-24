@@ -51,12 +51,16 @@ private actor FixtureRecognizer: ActivityRecognizer {
 }
 
 @MainActor private final class SharedProfileBinding {
+    let id=UUID()
     var retired=false
     var helper:HelperTransport?
     func shutdown() async {
         retired=true
         await helper?.shutdownAndWait()
     }
+}
+@MainActor private final class FixtureContextPreferences:SessionContextUsePreferences {
+    var useInSessions=false
 }
 
 @MainActor final class SessionApplicationModel: ObservableObject {
@@ -88,6 +92,18 @@ private actor FixtureRecognizer: ActivityRecognizer {
     let screen=ScreenContextModel()
     let visual=VisualInputSetupState()
     let speechSetup:SpeechSetupCoordinator
+    private let contextPreferencesOverride:(any SessionContextUsePreferences)?
+    private let profileVaultFactory:(@MainActor ()->ProfileVault)?
+    private let profileResponseObserved:(@MainActor (Data) async ->Void)?
+    private var hasContextUse=false
+    private var contextUseObservation:AnyCancellable?
+    lazy var contextUse:SessionContextUseCoordinator = {
+        hasContextUse=true
+        let preferences:any SessionContextUsePreferences=contextPreferencesOverride ?? (fixture ? FixtureContextPreferences():UserDefaultsSessionContextUsePreferences())
+        let use=SessionContextUseCoordinator(preferences:preferences,onInvalidate:{[weak self] in self?.retirePersonalContext()})
+        contextUseObservation=use.$snapshot.dropFirst().sink{[weak self] _ in self?.objectWillChange.send()}
+        return use
+    }()
     private var hasSelectedText=false
     lazy var selectedText:SelectedTextService = {
         hasSelectedText=true
@@ -157,21 +173,46 @@ private actor FixtureRecognizer: ActivityRecognizer {
             if let self { await self.shutdownProfile(binding) }
             else { await binding.shutdown() }
         })
-        let directory=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("Relay",isDirectory:true)
-        let controller=ProfileController(client:ProfileClient(port:port),vault:ProfileVault(directory:directory),onInvalidate:{ [weak self] in
-            guard let self else { return };self.retireRequest(status:"Background updated");self.authority.invalidate()
-        })
+        let vault:ProfileVault
+        if let profileVaultFactory{vault=profileVaultFactory()}
+        else{
+            let directory=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("Relay",isDirectory:true)
+            vault=ProfileVault(directory:directory)
+        }
+        let controller=ProfileController(client:ProfileClient(port:port),vault:vault,onInvalidate:{[weak self] in self?.retirePersonalContext()})
         profileStorage=controller;return controller
+    }
+    private func retirePersonalContext(){retireRequest(status:"Background updated");authority.invalidate()}
+    private func profileTarget()->ProfileUseTarget?{
+        let controller=profile
+        guard let binding=profileBinding else{return nil}
+        return ProfileUseTarget(controller:controller,bindingID:binding.id,isCurrent:{[weak self,weak binding,weak controller] in
+            guard let self,let binding,let controller else{return false}
+            return self.profileBinding === binding && self.profileStorage === controller && !binding.retired
+                && (binding.helper == nil || binding.helper === self.helper)
+        })
+    }
+    func openMyContext(){
+        guard !stopping,(!fixture || (contextPreferencesOverride != nil && profileVaultFactory != nil)),let target=profileTarget() else{return}
+        contextUse.openFromUserAction(target:target)
+    }
+    func lockMyContext(){
+        guard let target=profileTarget() else{return}
+        contextUse.lockFromUserAction(target:target)
     }
     private func profileRequest(_ data:Data,binding:SharedProfileBinding) async throws -> Data {
         guard !binding.retired,profileBinding === binding else { throw PanelBridgeError.closed }
         let transport:HelperTransport
         if let bound=binding.helper { transport=bound }
         else { transport=try ensureHelper();binding.helper=transport }
-        return try await transport.requestProfile(data)
+        let response=try await transport.requestProfile(data)
+        if let profileResponseObserved{await profileResponseObserved(data)}
+        guard !binding.retired,profileBinding === binding,binding.helper === transport,helper === transport else{throw PanelBridgeError.closed}
+        return response
     }
     private func shutdownProfile(_ binding:SharedProfileBinding) async {
         binding.retired=true
+        if hasContextUse{contextUse.retireForHelperChange()}
         if let old=binding.helper,old === helper {
             // Close all old admission before the first await. Queued frames and
             // source events cannot cross into a replacement helper lifecycle.
@@ -192,9 +233,14 @@ private actor FixtureRecognizer: ActivityRecognizer {
          contextWriteAcknowledged:(@MainActor (Data,PanelRequestBinding) async ->Void)?=nil,
          ingressEnqueued:(@MainActor (SessionIngress)->Void)?=nil,
          speechSetup:SpeechSetupCoordinator?=nil,
+         contextPreferences:(any SessionContextUsePreferences)?=nil,
+         profileVaultFactory:(@MainActor ()->ProfileVault)?=nil,
+         profileResponseObserved:(@MainActor (Data) async ->Void)?=nil,
          bundleURL:URL=Bundle.main.bundleURL,
          workingDirectory:URL=URL(fileURLWithPath:FileManager.default.currentDirectoryPath)) {
         self.speechSetup=speechSetup ?? SpeechSetupCoordinator()
+        contextPreferencesOverride=contextPreferences;self.profileVaultFactory=profileVaultFactory
+        self.profileResponseObserved=profileResponseObserved
         self.contextCoordinatorOverride=contextCoordinator
         self.contextWriteAcknowledged=contextWriteAcknowledged;self.ingressEnqueued=ingressEnqueued
         fixture=arguments.contains("--fixture-suite")
@@ -226,6 +272,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     isolated deinit {
         startTask?.cancel()
         speechSetup.cancel()
+        if hasContextUse{contextUse.retireForHelperChange()}
         if let focusObserver { NSWorkspace.shared.notificationCenter.removeObserver(focusObserver) }
         if let windowObserver { NotificationCenter.default.removeObserver(windowObserver) }
         if let helper { helper.stop();Task.detached { await helper.shutdownAndWait() } }
@@ -405,6 +452,22 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     func retryPreparation()async{await start()}
     private func ownsStart(_ identity:UUID)->Bool{startIdentity==identity && !Task.isCancelled && !stopping}
+    private func restoreContextForStart(_ identity:UUID,sourceIsCurrent:@escaping @MainActor ()->Bool)async->Bool{
+        let use=contextUse
+        guard use.useInSessions else{return !use.isBusy && profileStorage?.busy != true && ownsStart(identity) && sourceIsCurrent()}
+        guard let target=profileTarget() else{error="Saved context is unavailable. Open My Context, or lock it and retry.";return false}
+        let result=await use.restoreBeforeSession(target:target,startIntentID:identity,isStartCurrent:{[weak self] in
+            self?.ownsStart(identity)==true && sourceIsCurrent()
+        })
+        guard ownsStart(identity),sourceIsCurrent() else{return false}
+        guard result == .ready,use.useInSessions,!use.isBusy,target.controller.opened,!target.controller.busy,
+              profileStorage === target.controller,let binding=profileBinding,binding.id==target.bindingID,!binding.retired,
+              binding.helper === helper else{
+            error=result == .missing || result == .unavailable ? use.snapshot.message:"Saved context changed while starting. Start again, or open My Context."
+            return false
+        }
+        return true
+    }
     private func startOwned(identity:UUID) async {
         defer { if startIdentity==identity { starting=false } }
         guard !running,!stopping else { return };error=nil
@@ -412,7 +475,10 @@ private actor FixtureRecognizer: ActivityRecognizer {
         var preparingManaged=false
         do {
             if !fixture && capture.phase != .idle { error="Waiting for capture to finish stopping.";return }
-            if fixture { _=try ensureHelper();try startFixture();return }
+            if fixture {
+                guard await restoreContextForStart(identity,sourceIsCurrent:{true}) else{return}
+                _=try ensureHelper();try startFixture();return
+            }
             guard authorizedConversation else {
                 error="Confirm this is a permitted conversation before starting.";return
             }
@@ -436,6 +502,10 @@ private actor FixtureRecognizer: ActivityRecognizer {
                 error="Audio choices changed during preparation. Check them and start again.";return
             }
             try configuration.validateLocalModels()
+            guard await restoreContextForStart(identity,sourceIsCurrent:{[weak self] in
+                guard let self else{return false}
+                return self.authorizedConversation && self.microphoneEnabled==microphone && self.selectedBundleID==bundle
+            }) else{return}
             _=try ensureHelper();captureAttempted=true
             try await capture.start(configuration:configuration)
             guard ownsStart(identity) else{throw CancellationError()}
@@ -453,7 +523,9 @@ private actor FixtureRecognizer: ActivityRecognizer {
         }
     }
     private func startFixture() throws {
-        let question=fixtureSuite=="coding" ? "Write a Python function that returns the first item or None for an empty list." : fixtureSuite=="case" ? "Case study: design a feature for nurse handoffs. What user needs would you clarify first?":"What is the difference between WHERE and HAVING?"
+        let question:String
+        if fixtureSuite=="personal-memory" {question="What did you personally do on your Fictional Northstar project?"}
+        else{question=fixtureSuite=="coding" ? "Write a Python function that returns the first item or None for an empty list." : fixtureSuite=="case" ? "Case study: design a feature for nurse handoffs. What user needs would you clarify first?":"What is the difference between WHERE and HAVING?"}
         try native.start(selectedBundleID:"com.example.fixture",microphoneEnabled:false,components:[2:SourceComponents(vad:FixtureVAD(),recognizer:FixtureRecognizer([question],fails:fixtureSuite=="source-failure"))])
         running=true;paused=false
         let clock=NativeClockCalibration.now()
@@ -466,7 +538,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     var currentSessionID:UUID? { authority.snapshot()?.captureSessionID ?? forwardedSessionID }
     var canStartSession:Bool {
         guard case .success=helperRuntime else{return false}
-        return !running && !starting && !stopping && teardown==nil && !speechSetup.snapshot.isBusy && !visual.isBusy && visual.status != .busy && (fixture || capture.phase == .idle)
+        return !running && !starting && !stopping && teardown==nil && !speechSetup.snapshot.isBusy && !visual.isBusy && visual.status != .busy && profileStorage?.busy != true && !(hasContextUse && contextUse.isBusy) && (fixture || capture.phase == .idle)
     }
     var canResume:Bool { paused && canStartSession }
     func beginRetirement(end:Bool) {
@@ -482,10 +554,13 @@ private actor FixtureRecognizer: ActivityRecognizer {
         if hasContextComposer,let old=contextComposer.binding{enqueueContextRetirement(old)}
         disableVisualInput() // Enqueue before its callback can release old EOU.
         retireRequest(status:end ? "Stopped":"Paused · recent conversation will reset on resume")
+        let oldContextUse=hasContextUse ? contextUse:nil
+        oldContextUse?.retireForHelperChange()
         teardown=Task { [weak self] in
             guard let self else{return}
             await self.speechSetup.waitForQuiescence()
             await oldStart?.value
+            await oldContextUse?.waitForQuiescence()
             if self.fixture { await self.native.waitForQuiescence();self.native.finishStop(quiesced:true) }
             else {
                 await self.capture.stop(reason:.userStop)
@@ -500,7 +575,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
                 self.error="The old helper did not acknowledge shutdown. Its profile was retired; reopen background to recover."
             }
             if self.endRequested {
-                if let profile=self.profileStorage { await profile.close() }
+                if let profile=self.profileStorage,profile.opened || profile.busy { await profile.close() }
                 if let oldHelper {
                     if self.helper === oldHelper { self.helper=nil;self.helperIdentity=UUID();self.helperFailures.activate(self.helperIdentity) }
                     self.profileBinding?.retired=true
@@ -584,14 +659,15 @@ private actor FixtureRecognizer: ActivityRecognizer {
         guard canChangeAIMode,enabled != oauth else { return }
         error=nil
         let oldProfile=profileStorage
+        let neededProfileLock=oldProfile?.opened==true || oldProfile?.busy==true
         await stop()
         guard !stopping,helper==nil else { return }
-        if let oldProfile,oldProfile.closeOutcome != .locked {
+        if let oldProfile,neededProfileLock,oldProfile.closeOutcome != .locked {
             error="Background could not be locked. Its helper was stopped; reopen saved background before trying again."
             return
         }
         oauth=enabled
-        contextStatus="AI mode changed. Reopen saved background if needed."
+        contextStatus="AI mode changed."
     }
     func performWindowAction(_ action:ControlAction) {
         do { try windowActions.perform(action) } catch { self.error=error.localizedDescription }

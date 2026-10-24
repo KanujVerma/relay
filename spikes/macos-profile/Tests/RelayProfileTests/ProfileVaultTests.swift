@@ -22,6 +22,29 @@ private final class FixtureSecurity: SecurityItemClient, @unchecked Sendable {
 }
 
 final class ProfileVaultTests: XCTestCase {
+    func testChatGPTKeyUsesSeparateFixedNamespaceAndProfileDefaultRemainsUnchanged() throws {
+        let accountSecurity=FixtureSecurity()
+        let account=KeychainProfileKey(purpose:.chatGPTCredentials,client:accountSecurity,random:{Data(repeating:4,count:32)})
+        XCTAssertTrue(accountSecurity.queries.isEmpty)
+        _=try account.key(createIfMissing:true)
+        XCTAssertTrue(accountSecurity.queries.allSatisfy{
+            $0[kSecAttrService as String] as? String == "com.relay.chatgpt-auth.v1"
+                && $0[kSecAttrAccount as String] as? String == "local-chatgpt-aes256"
+        })
+        let profileSecurity=FixtureSecurity()
+        _=try KeychainProfileKey(client:profileSecurity,random:{Data(repeating:5,count:32)}).key(createIfMissing:true)
+        XCTAssertTrue(profileSecurity.queries.allSatisfy{
+            $0[kSecAttrService as String] as? String == "com.relay.profile.v1"
+                && $0[kSecAttrAccount as String] as? String == "local-profile-aes256"
+        })
+    }
+    func testLockedChatGPTKeyNeverCreatesOrFallsBackToTheProfileKey() throws {
+        let security=FixtureSecurity();security.status=errSecInteractionNotAllowed
+        let account=KeychainProfileKey(purpose:.chatGPTCredentials,client:security,random:{XCTFail("must not create a key");return Data()})
+        XCTAssertThrowsError(try account.key(createIfMissing:true))
+        XCTAssertEqual(security.queries.count,1)
+        XCTAssertEqual(security.queries[0][kSecAttrService as String] as? String,"com.relay.chatgpt-auth.v1")
+    }
     func testFullPayloadAndMetadataAreEncryptedAndTamperingFailsClosed() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

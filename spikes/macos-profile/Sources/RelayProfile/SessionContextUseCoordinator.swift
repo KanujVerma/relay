@@ -85,8 +85,9 @@ public struct SessionContextUseSnapshot:Sendable,Equatable {
         guard !Task.isCancelled else{return .stale}
         // An opt-out cannot stand in for completion of an old close/load.
         if let owned=flight{
+            guard target.isCurrent(),isStartCurrent() else{return .stale}
             guard !owned.retired,owned.mode == .restore(startIntentID),same(owned.target,target) else{return .busy}
-            return await wait(owned)
+            return await wait(owned,isCallerCurrent:{target.isCurrent() && isStartCurrent()})
         }
         guard enabled else{return .disabled}
         guard target.isCurrent(),isStartCurrent() else{return .stale}
@@ -98,7 +99,7 @@ public struct SessionContextUseSnapshot:Sendable,Equatable {
             return admitted(target:target,operationID:id,isStartCurrent:isStartCurrent) ? .ready:.stale
         }
         let owned=beginLoad(target:target,mode:.restore(startIntentID),isStartCurrent:isStartCurrent)
-        return await wait(owned)
+        return await wait(owned,isCallerCurrent:{target.isCurrent() && isStartCurrent()})
     }
     public func waitForQuiescence()async{
         while let owned=flight{
@@ -137,13 +138,13 @@ public struct SessionContextUseSnapshot:Sendable,Equatable {
         case .stale:return await finishStale(owned)
         }
     }
-    private func wait(_ owned:Flight)async->SessionContextRestoreResult{
+    private func wait(_ owned:Flight,isCallerCurrent:@MainActor ()->Bool)async->SessionContextRestoreResult{
         guard let task=owned.task else{return .busy}
         let id=owned.id
         let result=await withTaskCancellationHandler{await task.value}onCancel:{
             Task{@MainActor [weak self] in self?.retire(operationID:id)}
         }
-        if result == .ready,!admitted(target:owned.target,operationID:id,isStartCurrent:owned.isStartCurrent){return .stale}
+        if result == .ready,(!isCallerCurrent() || !admitted(target:owned.target,operationID:id,isStartCurrent:owned.isStartCurrent)){return .stale}
         return result
     }
     private func admitted(target:ProfileUseTarget,operationID:UUID,isStartCurrent:@MainActor ()->Bool)->Bool{
@@ -193,7 +194,7 @@ public struct SessionContextUseSnapshot:Sendable,Equatable {
         case .idle:message="Saved context will load when you start."
         case .opening:message="Opening My Context…"
         case .restoring:message="Loading saved context for this session…"
-        case .ready:message="Saved context is available in the current helper."
+        case .ready:message="Your saved context is ready."
         case .closing:message="Finishing saved context work…"
         case .missing:message="Saved context was not found. Open My Context, or lock it and retry."
         case .unavailable:message="Saved context is unavailable. Open My Context, or lock it and retry."

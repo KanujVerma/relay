@@ -5,6 +5,8 @@ import UniformTypeIdentifiers
     @ObservedObject private var controller: ProfileController
     @State private var role: String
     private let boundRole: Bool
+    private let sessionUse: SessionContextUseSnapshot?
+    private let actions: ProfilePreparationActions
     @State private var purpose = "resume"
     @State private var label = "My résumé"
     @State private var project = ""
@@ -20,10 +22,14 @@ import UniformTypeIdentifiers
     @State private var lookupKey: String?
     @State private var selectedCorrection: ProfileMemoryFact?
 
-    public init(controller: ProfileController, role: String? = nil) {
+    public init(controller: ProfileController, role: String? = nil,
+                sessionUse: SessionContextUseSnapshot? = nil,
+                onOpen: (@MainActor () -> Void)? = nil, onLock: (@MainActor () -> Void)? = nil) {
         self.controller = controller
         _role = State(initialValue: role ?? "developer")
         boundRole = role != nil
+        self.sessionUse = sessionUse
+        actions = ProfilePreparationActions(controller: controller, onOpen: onOpen, onLock: onLock)
     }
 
     private var claimKey: String {
@@ -37,6 +43,10 @@ import UniformTypeIdentifiers
         guard selectedCorrection == nil || fact.factID == selectedCorrection?.factID else { return nil }
         return fact
     }
+    private var busyMessage: String {
+        if let sessionUse, sessionUse.isBusy { return sessionUse.message }
+        return "Updating your context…"
+    }
 
     public var body: some View {
         ScrollView {
@@ -48,22 +58,32 @@ import UniformTypeIdentifiers
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    if controller.opened {
-                        Button { Task { await controller.close() } } label: {
+                    if actions.canLock(sessionUse: sessionUse) {
+                        Button { actions.lock() } label: {
                             Label("Lock", systemImage: "lock")
-                        }.help("Lock your saved context on this Mac")
+                        }.help("Lock your saved context and turn off its use in sessions")
                     }
                 }
-                if controller.opened { contextWorkspace }
-                else { lockedWorkspace }
-                if controller.busy { ProgressView("Updating your context…").controlSize(.small) }
+                Group {
+                    if controller.opened { contextWorkspace }
+                    else { lockedWorkspace }
+                }.disabled(controller.busy || sessionUse?.isBusy == true)
+                if controller.busy || sessionUse?.isBusy == true {
+                    ProgressView(busyMessage).controlSize(.small)
+                }
+                if let sessionUse, !sessionUse.isBusy {
+                    Text(sessionUse.message).font(.callout).foregroundStyle(.secondary)
+                }
+                if sessionUse != nil {
+                    Text("Opening My Context enables your saved background in future sessions. Lock turns that off.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 if let error = controller.errorStatus {
                     Label(error, systemImage: "exclamationmark.circle").font(.callout)
                         .foregroundStyle(.red).textSelection(.enabled)
                 }
             }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
         }
-        .disabled(controller.busy)
         .frame(minWidth: 480, minHeight: 500)
         .onChange(of: controller.card?.factID) { _, _ in
             actor = "unknown"; topic = ""; replaceExisting = false; lookupKey = nil
@@ -98,7 +118,7 @@ import UniformTypeIdentifiers
             Text("Make Relay familiar with your background").font(.title3.weight(.semibold))
             Text("Add a résumé or project notes, then choose what to remember. Your context is protected on this Mac.")
                 .foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 400)
-            Button("Open My Context") { Task { await controller.openProfile() } }
+            Button("Open My Context") { actions.open() }
                 .buttonStyle(.borderedProminent).controlSize(.large)
             Text("macOS may ask for access to Relay’s profile key.")
                 .font(.caption).foregroundStyle(.secondary)

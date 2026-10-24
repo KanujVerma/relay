@@ -1,0 +1,25 @@
+# Frozen b270 bundled response-guide verification
+
+This is a test-only successor to clean artifact source `b270297653f78201b56a7c5e57cc2efc322eef61`. Product source is unchanged. The native test file SHA256 is `5244ad897da9e2fdb48fe74a907d359af9f4c78ff61e5526b3355122d4ae956f`. The actual Model was compiled from this source plus that test file and exercised the actual relocated frozen helper/resources; no release window was opened. The [machine-readable receipt](receipt.json) records separate source, artifact, test and driver identities.
+
+The complete release app is 172,823,328 bytes. Native SHA256 `3d1901b92ec79cf72e4f465a4b372f0c56b030358666e032cde399052a8bcb7b`; helper SHA256 `460e9f5e3929a1a0dd5b4dbb55ebbdfe26ea5f1523086d5f2c56d07d7b5b231c`; provenance SHA256 `14d358afc9a87d59b773c7d2d5db1b6f21a1c96b49bcfaf396f019581fe8710e`. Embedded and sibling provenance agree: b270/sourceDirty=false. One whole-app relocation with spaces passed 100 native audits and strict nested/outer ad-hoc signatures. This is a local verification artifact, not a notarized installer.
+
+Six frozen protocol cases passed in 2.962s. Ten native bundled cases passed in 7.405s, with zero skips: seven existing idle/context/fictional résumé-format gates and three new guide cases. The three new cases passed in 0.642s:
+
+1. Explicit Coding use writes an actual temporary encrypted catalog with a fake key. Genuine native fixture audio and typed requests receive actual frozen-helper GUID/name metadata. General clears the old card; fresh Help has no GUID; the original helper/scope remain until End reaps.
+2. Normal nonfixture General answers the reviewed WHERE/HAVING reference without recording, speech preparation, guide key, account control or browser effects.
+3. Missing remembered guide data refuses before helper/key creation and preserves the draft. Explicit General recovers the reference path.
+
+The same new three-case class against the preserved clean `300c9d390f87502991ff323d29301d335463c446` helper is intentionally red: two guide-positive assertion failures, both controls pass, 1.380s total. This demonstrates version discrimination and is not a new b270 failure. The old helper/provenance hashes are recorded separately in the receipt. No reference card is forced to claim unused guide context.
+
+## Resource-only build and cache repair
+
+An initial default build failed with ENOSPC before acceptance. After approved disk recovery, the separately reviewed local driver SHA256 `1094629f9eef801b8885376cc889d75c9350518172ec99f20a70d5b0d2ae3fc0` retained stock pinned archive/installed-lock checks, notices, freezer, provenance, assembly, audits, signatures and smokes. Its only resource overrides were two Swift jobs and retained root scratch/cache/module locations. This was a custom resource invocation, not the unmodified default CLI. No dependency download, install or new environment occurred. The preserved full pinned build environment supplied converter dependencies; the shared test interpreter alone lacked docling.
+
+The first bounded resume packaged the helper and passed three stock smokes, then planning failed because generated cache metadata referenced removed historical artifact locations. Root approved exactly two generated artifact-path changes to an existing same-pin retained framework. [The sanitized repair receipt](cache-repair.json) preserves guarded before/after metadata hashes, source pin and declared archive checksum. Four retained trees agreed on 13 files, 206,353,823 bytes and tree hash `9b68bac897ca1f7fa739d1d6ad192fde5cb2e8858ba6ca9120d5edc8d56a13ed`. No binary/source replacement or copy occurred. The compressed ZIP was unavailable and was not freshly rehashed.
+
+One approved retry completed release compilation at two jobs in 139.86s, 100 audits/signatures and three final stock smokes in 4.500s. The single whole-app relocation occurred only after a measured budget check. Reported phase-sampled peak was 23.034 GiB aggregate Relay temporary allocation; final 23.033 GiB and 46.921 GiB free. This is phase sampling, not continuous peak instrumentation. The shared heavy slot was released after the focused gates and remains released.
+
+[The public portable driver](resource_driver.py) takes explicit CLI paths, has no machine-specific defaults and is import-inert. It was checked only for syntax, import inactivity and CLI help; it did not build this artifact. Its separate hash is in the receipt. The exact executed driver, raw compiler logs, local paths, command/environment receipts and process IDs remain local; only [their content hashes](local-witness-hashes.json) are public. No raw host details are included in this branch. [Replay requirements](REPLAY.md) explain the boundary.
+
+All generation is existing explicit synthetic fixture mode or normal nonfixture local references. Documents are public fictional fixtures. There was no actual account, Keychain, browser, private file, capture, paid inference, model network or GUI action. This does not establish hardware behavior, plan entitlement, guide-following usefulness, distribution readiness or full Cluely parity.

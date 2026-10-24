@@ -1,0 +1,62 @@
+{
+  "artifactSourceCommit": "b270297653f78201b56a7c5e57cc2efc322eef61",
+  "artifactSourceDirty": false,
+  "artifactBytes": 172823328,
+  "hashes": {
+    "native": {
+      "sha256": "3d1901b92ec79cf72e4f465a4b372f0c56b030358666e032cde399052a8bcb7b",
+      "bytes": 27411184
+    },
+    "helper": {
+      "sha256": "460e9f5e3929a1a0dd5b4dbb55ebbdfe26ea5f1523086d5f2c56d07d7b5b231c",
+      "bytes": 20147488
+    },
+    "provenance": {
+      "sha256": "14d358afc9a87d59b773c7d2d5db1b6f21a1c96b49bcfaf396f019581fe8710e",
+      "bytes": 7481
+    }
+  },
+  "wholeAppRelocations": 1,
+  "nativeFilesAudited": 100,
+  "strictNestedAndOuterSignatures": true,
+  "frozenProtocolTests": {
+    "passed": 6,
+    "skipped": 0,
+    "seconds": 2.962
+  },
+  "nativeBundledTests": {
+    "passed": 10,
+    "skipped": 0,
+    "seconds": 7.405,
+    "existingCases": 7,
+    "newGuideCases": 3,
+    "newGuideSeconds": 0.642
+  },
+  "stockFinalSmokes": {
+    "passed": 3,
+    "seconds": 4.5
+  },
+  "oldArtifactControl": {
+    "sourceCommit": "300c9d390f87502991ff323d29301d335463c446",
+    "sourceDirty": false,
+    "helperSHA256": "e58706abc66a89c637cac761b12815a487ff59fc29655cefa68b603a7f776c3f",
+    "embeddedProvenanceSHA256": "9bb987de78d9b66efce3baf52c537db42aed7f3abd085bb604c816338a35341d",
+    "cases": 3,
+    "positiveGuideAssertionFailures": 2,
+    "passingControls": 2,
+    "seconds": 1.38
+  },
+  "newTestPath": "spikes/macos-panel/Tests/RelaySessionApplicationTests/BundledResponsePreferencesTests.swift",
+  "newTestSHA256": "5244ad897da9e2fdb48fe74a907d359af9f4c78ff61e5526b3355122d4ae956f",
+  "executedLocalDriverSHA256": "1094629f9eef801b8885376cc889d75c9350518172ec99f20a70d5b0d2ae3fc0",
+  "publicPortableDriverSHA256": "d1667d7338103977fac3b357169e2d555b0a9ca250d2059ed3c98dae91f520e5",
+  "resourceTotals": {
+    "finalAggregateRelayGiB": 23.033248901367188,
+    "finalFreeGiB": 46.9207763671875,
+    "observedPhasePeakAggregateGiB": 23.034164428710938,
+    "observedPhaseMinimumFreeGiB": 46.9207763671875,
+    "sampling": "before/after heavy phases, not continuous peak instrumentation",
+    "maxCompilerJobs": 2,
+    "heavySlot": "released after artifact, one relocation and focused gates"
+  }
+}

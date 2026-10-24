@@ -1,0 +1,27 @@
+{
+  "scope": "two generated SwiftPM artifact-location metadata fields only",
+  "sourcePin": "c79c4106b954f81205113c3343e5a7e59a1089b5",
+  "declaredArchiveSHA256": "5fa8c10d4ec26c1bb2413125f351a7222a4c68a23b74476680fbada7e26fc6aa",
+  "artifactTreeSHA256": "9b68bac897ca1f7fa739d1d6ad192fde5cb2e8858ba6ca9120d5edc8d56a13ed",
+  "artifactFiles": 13,
+  "artifactBytes": 206353823,
+  "freshArchiveRehash": false,
+  "artifactReplacement": false,
+  "binaryCopyOrMutation": false,
+  "updates": [
+    {
+      "cacheRole": "account",
+      "jsonField": "object.artifacts[0].path",
+      "beforeSHA256": "ee6102ff901633a648e2cd75e0fb954abce516626cd94abaca401ff3c63e4d4b",
+      "afterSHA256": "6742c3e2766ffda6a273f2b44047ab882d4f535f8ef9ec7479766eff8ecc7410",
+      "change": "deleted historical artifact location to existing retained account artifact"
+    },
+    {
+      "cacheRole": "history",
+      "jsonField": "object.artifacts[0].path",
+      "beforeSHA256": "32aa0fe99f539ad282f2b3a3662d7184279532e19c7dba69cc849ff14c7a64d5",
+      "afterSHA256": "b04a52063cc789871b6b16d7c58879238bcbc2fe2206427c4add1620c1d14021",
+      "change": "deleted historical artifact location to existing retained account artifact"
+    }
+  ]
+}

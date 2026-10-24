@@ -1,0 +1,20 @@
+{
+  "artifactSourceCommit": "b270297653f78201b56a7c5e57cc2efc322eef61",
+  "publicPayloadPolicy": "no raw local path, command/environment/process receipts or compiler logs; originals remain local",
+  "scan": {
+    "files": 10,
+    "absoluteHostPaths": 0,
+    "actualProcessIDs": 0,
+    "rawEnvironmentReceipts": 0,
+    "credentialPatterns": 0
+  },
+  "portableDriverChecks": [
+    "syntax",
+    "inert import with subprocess and file-open traps",
+    "CLI help",
+    "required arguments refusal"
+  ],
+  "newArtifactExecution": false,
+  "nativeBuildOrTestRerun": false,
+  "heavySlot": "released; source-only publication checks"
+}

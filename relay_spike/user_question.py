@@ -196,7 +196,9 @@ class UserQuestionCoordinator:
         session=h.session
         async def finish():
             if owner is not None:await asyncio.gather(asyncio.shield(owner),return_exceptions=True)
-            if not h.live or h.session!=session:return
+            # A receipt acknowledges the captured task, not answer permission.
+            # Scope close still owes it before that scope can actually drain.
+            if h.session!=session:return
             reply={k:n[k] for k in ('captureSessionID','sessionEpoch','presentationGeneration','requestID','targetRequestID')}
             reply.update(schemaVersion=1,kind='answer_cancel_response',resultRevision=2,
                 reasonCode='request_cancelled' if pending else 'already_finished',quiesced=True)

@@ -67,7 +67,7 @@ class SessionHost:
         self.deadline=deadline
         self.supplemental_provider=supplemental_provider
         self._supplemental={}
-        self.session=None;self.sequence=0;self.presentation=0;self.live=False;self.stopped_session=None
+        self.session=None;self.sequence=0;self.presentation=0;self.live=False;self.stopped_session=None;self.scope_kind=None
         self.activities={};self.used_requests=set();self.terminal=set();self.tasks=set();self.active=None
         self.model_requests=0
         self._worker=None;self._worker_request=None;self._pending_work=None
@@ -76,6 +76,8 @@ class SessionHost:
         self.user=UserQuestionCoordinator(self)
         from .visual_host import HostVisualInput
         self.visual=HostVisualInput(self,visual_transport)
+        from .assistant_scope import AssistantScopeCoordinator
+        self.assistant=AssistantScopeCoordinator(self)
 
     def _invalidate(self):
         self.user.invalidate_retired_help()
@@ -96,7 +98,20 @@ class SessionHost:
         if not preserve_visual:self.visual.disable(cancel_work=False)
         self.user.close()
         self._clear_context_provider()
-        self._invalidate();self.permission.revoke();self.bridge.stop();self.live=False;self.context.clear();self.activities.clear()
+        self._invalidate();self.permission.revoke();self.bridge.stop();self.live=False;self.scope_kind=None;self.context.clear();self.activities.clear()
+
+    def _begin_assistant_scope(self,identity):
+        self.visual.session_starting()
+        self.close(preserve_visual=True)
+        self.machine=QuestionTurnMachine()
+        self.bridge=SyntheticEOUBridge(self.machine,eligibility_strategy=CompositeEligibility(self.context))
+        self.bridge.stop()
+        self.machine.resume()  # Explicit-question permission; bridge stays stopped.
+        self.permission=ReferencePermission(self.machine.turns);self.permission.grant()
+        self.session=identity;self.sequence=1;self.presentation=1;self.live=True;self.stopped_session=None
+        self.scope_kind='assistant';self._microphone_available=False
+
+    def handle_assistant_scope(self,raw):return self.assistant.handle(raw)
 
     async def drain(self):
         await self.visual.drain_probe()
@@ -148,6 +163,7 @@ class SessionHost:
             self.close();raise WireError('invalid_session_event') from None
         identity=(n['captureSessionID'].lower(),n['sessionEpoch'])
         kind,source,p=n['kind'],n['sourceCode'],n['payload']
+        if self.scope_kind=='assistant' or self.assistant.closing:return False
         if kind=='session_started':
             if self.live or n['eventSequence']!=1 or identity==self.session:
                 self.close();raise WireError('session_restart')
@@ -159,6 +175,7 @@ class SessionHost:
             self.bridge=SyntheticEOUBridge(self.machine,eligibility_strategy=CompositeEligibility(self.context))
             self.permission=ReferencePermission(self.machine.turns)
             self.session=identity;self.sequence=1;self.presentation=n['presentationGeneration'];self.live=True;self.stopped_session=None
+            self.scope_kind='capture'
             self._microphone_available=p['microphoneEnabled']
             self.bridge.resume_after_host_authorization(CaptureContext('authorized',True));self.permission.grant()
             return
@@ -480,7 +497,9 @@ async def run_stdio(args,*,oauth_stream=None):
             chunk=await (asyncio.wait_for(reader.read(4096),3) if decoder.buffer or decoder.length else reader.read(4096))
             if not chunk: decoder.finish();host.close();break
             for value in decoder.feed(chunk):
-                if isinstance(value,dict) and value.get('kind')=='visual_input_request':
+                if isinstance(value,dict) and value.get('kind')=='assistant_scope_request':
+                    host.handle_assistant_scope(value)
+                elif isinstance(value,dict) and value.get('kind')=='visual_input_request':
                     host.handle_visual_control(value)
                 elif isinstance(value,dict) and value.get('kind')=='profile_request':
                     from .panel_wire import exact,uuid_string
@@ -529,6 +548,7 @@ async def run_stdio(args,*,oauth_stream=None):
                 else: await host.handle(value)
             if output_task.done(): await output_task
         await host.drain()
+        await host.assistant.drain()
         await asyncio.wait_for(queue.join(),2)
     except Exception:
         return 2

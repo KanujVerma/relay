@@ -182,7 +182,144 @@ preprocessing could reduce finalization work, but feeding ahead of the eventual
 VAD end index would break exact-span provenance. No speculative ASR, silence
 change, new model, download or architecture is included here.
 
-No real account, Keychain, private source, audio/screen capture, model inference,
+## Active next gate: safe-prefix ASR and actual Model observation
+
+The four prepared actual Model cases reached the expected API-first failure
+because `responseLatencySamples` is not yet supplied by the coordinated Model
+observation seam. The bounded command exited 1 in 59.903 s, with no passing-test
+claim; the heavy lease was released. Existing source checkpoints stay frozen.
+
+[The lagged-ASR proposal](../superpowers/specs/2026-10-24-lagged-asr-preprocessing-design.md)
+now defines the exact returned-state watermark, padding/cutoff proof, original
+activity key, one existing recognizer and bounded worker **per source**, and
+actual cancellation/quiescence and two-source gates. A fixed delay alone is
+rejected: a pending VAD end survives long middle-band sequences. Design-only
+metadata fixtures preserve that counterexample and six explicit original-cutoff
+cases. Four pure tests pass in 0.067 s, including 9,841 bounded class sequences.
+This is not execution of the future Swift path or an ASR performance claim.
+At that design checkpoint no preprocessing implementation had begun; root
+subsequently approved the architecture with the explicit local fallback below.
+
+[Current official effort research](../research/RESPONSE_EFFORT_OPTIONS.md)
+confirms generic Luna None/Low and Sol Low support, distinguishes omitted effort
+from the literal `none`, and records the actual local product omission policy.
+Current plan/account acceptance and quality/speed comparisons remain untested;
+no default, service-tier, account or inference change has been made.
+
+The approved implementation now has an **inert core checkpoint**: optional
+observation/key/recognizer interfaces and one bounded actor lane per source.
+The four fake-backend cases reached API red in 13.258 s, then all passed in
+0.024 s (37.776 s command including compilation), zero skips. They exercise
+exact prefix/tail partition, actual held-accept cancellation/join, next-original
+activity FIFO, and the mandated single local full-span fallback on speculative
+PCM queue pressure. No reset or fallback runs underneath the held accept, no
+final is duplicated, and close/cancel cannot be dropped by that queue. Source
+pipeline, Fluid adapters, production factory and defaults are unchanged at this
+checkpoint; no actual ASR performance/quality result is claimed. Fresh sampled
+budget was 23.180 GiB temporary allocation / 48.680 GiB free / 0.75 GiB reserve,
+with the same retained cache, two jobs and 180 s deadline; lease released.
+
+The following adapter checkpoint passes **12 tests / zero skips**: five new
+prefix-adapter cases and three original Fluid cases in 0.056 s, plus the four
+owned-lane cases in 0.022 s. Command elapsed 8.543 s. Two tests execute the actual
+pinned VAD streaming state machine with model loading disabled, rather than the
+Python design oracle. Long middle-band input advances processed count to 73,728
+but its late end remains 17,984; the derived cap never passes that cutoff. Leading
+padding/resumed speech, malformed state, exact prefix/full-span sample equality,
+early EOU and reset denial during actual held backend await are covered.
+
+The preceding API-red exited 1 in 40.857 s on absent wrapper/adapter methods;
+it also exposed one fixture-only long-expression compiler diagnostic. Splitting
+the array construction preserved the same probability sequence and assertions.
+The new wrapper delegates one actual state transition, uses unchanged explicit
+default segmentation, and the recognizer retains its one existing backend.
+SourcePipeline and normal factory remain unmodified, so prefix processing is
+still not activated or performance accepted. Fresh gate budget: 23.315 GiB
+temporary / 48.777 GiB free / 0.75 GiB reserve; same cache/jobs/deadline, released.
+
+The conditional native integration now passes the **full macos-session package:
+85 collected, 83 passed, two explicit model/download skips**. Native session has
+47 passes / zero skips / 0.977 s; capture has 38 collected / 36 passed / two skips
+/ 0.414 s. Overall command 13.937 s, with live model/download opt-ins explicitly
+off. It includes ten new actual native-controller cases for prefix-before-end,
+full sample order/suffix/one final, unchanged default, no work without onset,
+held remote versus independent microphone, original lease/timebase after newer
+onset, true held-stop join, one queue-pressure fallback without capture failure,
+invalid watermark/model error denial and retired recognizer release.
+
+`SourceComponents.recognitionMode` defaults to `closedSpan`, and the normal
+capture factory still omits it. Only explicit synthetic callers exercise the new
+branch. Source liveness is checked instead of old display-lease currentness,
+native end precedes recognition close, and cursor advances only on accepted
+offers. Post-await checks prevent history access after cancellation. A stored
+strong source predicate would form a source/processor/lane cycle; a weak capture
+and the release invariant prevent that ownership leak. Accepted-input counts
+do not claim completed encoder computation: the backend can still buffer a
+window. Actual paced-model text/cutoff/RSS and full app/account results were still
+separate pending gates at that checkpoint. Fresh budget was 23.332 GiB temporary / 47.685 GiB free /
+0.75 GiB reserve; same bounded cache/jobs/deadline, lease released.
+
+The controlled paced comparison harness now **compiles and safely opts out**:
+Swift exited 0 in 39.907 s, with one selected case / one early guard skip /
+zero failures in 0.003 s. Prefix/offline/download opt-ins were explicitly zero,
+so no audio/cache inspection, models or child process ran. This does not pass
+the actual model/performance gate. Root reviewed its source/reporting controls.
+
+When separately permitted it uses only the unchanged installed fictional WAVE
+with the approved SHA before model load, two real existing ASR managers per
+sequential baseline/prefix child, fresh actual VAD states per trial, one declared
+native warm-up and two paced trials. It discloses 8,000 leading / 32,000 trailing
+zeros plus last-packet padding and actual paced count, identical across modes.
+Full recognized text/cutoffs and treatment identities must match; baseline has
+one legacy call and zero prefix acknowledgements. Counts are input acceptance,
+not completed encoder work. At the opt-out checkpoint timing/RSS were unknown; normal
+activation requires the real gate (>10% median native-end→final reduction,
+no normal-rate local fallback, <=256 MiB peak-RSS increase) and root review.
+Fresh opt-out budget: 23.360 GiB temporary / 46.879 GiB free / 0.75 GiB reserve;
+same cache/jobs/180 s deadline, lease released. No actual account/window claim.
+
+## Measured paced local ASR result
+
+The one reviewed exact-667 actual model run passed: **one case / zero skips /
+41.097 s**, driver exit 0 / 75.360 s, with both owned sequential children joined.
+[Canonical sanitized data and full limits](../evidence/2026-10-24-asr-prefix-benchmark.md)
+preserve all four source observations per mode. Native VAD-closure→ASR-final
+median is **135.629→40.602 ms**, a **95.027 ms (70.1%)** reduction. Exact words
+and [6,592,46,656) source cutoffs match in both sources/trials. Prefix input
+acknowledged before closure is 35,840/40,064 samples, leaving 4,224. No local
+fallback or source loss. Process max RSS is 723,107,840→701,988,864 bytes.
+
+The unchanged approved WAVE decoded to 38,912 samples (2.432 s); both modes
+provided 79,360 paced samples/source including the disclosed identical silence
+and 448 final-packet zeros. All 21 existing cache hashes remained valid. Fresh
+budget: 23.356 GiB temporary / 46.860 GiB free / 0.75 GiB reserve. No download,
+account, real driver/capture, app/window or usefulness measurement occurred.
+The factory is still closedSpan. Root independently read the measured receipt
+and approved only a next narrow actual-factory selection change/test; no real
+gate rerun or automatic activation occurred. Cloud-model latency remains the
+dominant separate end-to-end gate and 95 ms is not whole-app latency.
+
+## Normal local-source selection
+
+Root independently accepted the measured source/receipt and approved narrow
+normal-factory activation. `NativeCaptureSession` now uses one small shared
+assembly helper selecting `safePrefixes` after its existing actual local VAD/ASR
+preparation. Generic/injected `SourceComponents` still defaults to `closedSpan`;
+there is no new user-facing model/detector setting, permission, download or
+provider policy. The original composition test reached API red in 33.035 s,
+then passed by driving the exact production assembly, native controller and real
+ASR adapter/fake backend before closure, with one final afterward.
+
+Full activation verification: **87 collected, 84 passed, three explicit skips**
+for download, actual model smoke and controlled benchmark. Native has 47 passes
+in 1.185 s; capture 37/40 passes in 0.435 s. Driver exit 0 / 8.154 s, all model
+opt-ins zero. Fresh budget 23.377 GiB temporary / 45.561 GiB free / 0.75 GiB
+reserve; reused bounded cache/jobs/deadline, lease released. This verifies the
+composition selection and original controls, not another real model run or
+hardware/account/window acceptance. Broader actual speech and the unchanged
+actual Model/account fixtures remain active final gates.
+
+No real account, Keychain, private source, audio/screen capture, cloud inference,
 download or full-app latency result is claimed. Product goals from speech-end
 remain first visible text under 1 s median, useful advice by 2 s median, and a
 compact complete answer around 3–4 s median; these are unachieved targets.

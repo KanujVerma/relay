@@ -35,10 +35,10 @@
 
 **Interfaces:** `LearningSessionMemory.observe(ValidatedTranscriptObservation)`, `.available(binding:replacement:lead:points:guideRevision:visible:at:)`, `.projection(question:)->[LearningQuote]`, `.pause()`, `.end()`. `LearningEpisode` retains exact original question/microphone/remote finals and native availability identity. `LearningSignal` exposes temporal eligibility, overlap and ambiguity only.
 
-- [ ] Compile new real-source fixtures red; implement interval/source/gap/overlap matcher.
-- [ ] Preserve exact source-linked constraint/decision/unresolved-follow-up quotes beyond raw-ring eviction; bounded semantic relevance projection.
-- [ ] Verify hidden/pre-availability/overlap/gap/late finals never activate style, Pause retains read-only semantic context and End clears it.
-- [ ] Commit and publish focused native green.
+- [x] Compile new real-source fixtures red; implement interval/source/gap/overlap matcher.
+- [x] Preserve exact source-linked constraint/decision/unresolved-follow-up quotes beyond raw-ring eviction; bounded semantic relevance projection.
+- [x] Verify hidden/pre-availability/overlap/gap/late finals never activate style, Pause retains read-only semantic context and End clears it. Root review added competing-card and unrelated-request negatives; all original red assertions now pass.
+- [x] Commit and publish focused native green. Current successor13-case gate passes; independent acceptance remains separate.
 
 ### Task3: Protected schema3 and reversible deterministic derivation
 
@@ -46,16 +46,16 @@
 
 **Interfaces:** `LearningArchive` episodes/rules; `LearningMutation.save(episode)`, `.suppress(ruleID)`, `.reset`; `HistoryStore.learningArchive()` and `.mutateLearning(_:admission:)` execute within sole serialized owned store. `LearningLedger` validates/copies/rebuilds against exact surviving finals in the same candidate.
 
-- [ ] Import root-accepted frozen Notesv2 storage; test default-off no migration and candidate-only schema3 creation.
-- [ ] Derive fixed tentative tags only after3 clean episodes/2 saved sessions in same scope, retain representative wording and dated unresolved prep with support IDs.
-- [ ] Verify encrypted restart, exact source deletion/expiry rebuild, suppression persists across restart, reset/disable and held cancellation fail closed.
-- [ ] Commit/publish storage green before Model/UI joins.
+- [x] Import root-accepted frozen Notesv2 storage; test default-off no migration and candidate-only schema3 creation.
+- [x] Derive fixed tentative tags only after3 clean episodes/2 saved sessions in same scope, retain representative wording and dated unresolved prep with support IDs.
+- [x] Verify actual encrypted Store restart, exact source deletion/expiry rebuild, suppression/reset/stale control CAS and indeterminate cache denial. Simulated coordinator held/cancel tests and actual CF process proofs are separate; actual History factory/lifecycle integration remains required in Task4.
+- [x] Commit/publish storage green before Model/UI joins. Actual90case gate passes; root independent review/replay remains a separate gate.
 
 ### Task4: Actual Model, request bridge and inspectable controls
 
 **Files:** new app-only `LearningMemoryRequestBridge.swift`, `LearningMemorySettingsView.swift`; narrow `SessionApplicationModel.swift`, `SessionDecision.swift`, `SessionPanelController.swift`, `ConversationOwner.swift` and existing settings/answer surfaces.
 
-**Interfaces:** one app-only post-drain observation with original owner/binding/card replacement/question/card/guide+learning revision/monotonic time/actual attached-window visibility. `LearningMemoryRequestBridge.freeze/sendOffer/permits/retire/close` retains exact native request identity. Final `learningMemoryRevision` is separately decoded and rechecked before publication.
+**Interfaces:** one app-only observation after outer `panel.accept` returns outside the authority lock and after its Model publication drain, with original owner/binding/card replacement/question/card/guide+learning revision/monotonic time/actual attached-window visibility. `LearningMemoryRequestBridge.freeze/sendOffer/permits/retire/close` retains exact native request identity. Final `learningMemoryRevision` is separately decoded and rechecked before publication.
 
 - [ ] Red actual Model reentrant retirement and hidden/attached surface fixtures before hook implementation.
 - [ ] Wire validated original observer fan-out; preserve same logical meeting quotes across Pause, clear on End/source retirement; no native authority revival.

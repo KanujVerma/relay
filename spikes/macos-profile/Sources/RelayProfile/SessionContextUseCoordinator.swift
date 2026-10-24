@@ -149,7 +149,7 @@ public struct SessionContextUseSnapshot:Sendable,Equatable {
     }
     private func admitted(target:ProfileUseTarget,operationID:UUID,isStartCurrent:@MainActor ()->Bool)->Bool{
         guard !Task.isCancelled,enabled,flight==nil,readyOperationID==operationID,
-              let readyTarget,same(readyTarget,target),target.controller.opened else{return false}
+              let readyTarget,same(readyTarget,target),target.controller.opened,!target.controller.busy else{return false}
         return target.isCurrent() && isStartCurrent()
     }
     private func retire(operationID:UUID){guard let flight,flight.id==operationID else{return};retire(flight)}

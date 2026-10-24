@@ -297,6 +297,34 @@ private actor HeldUsePort:ProfilePort {
         observer.cancel()
         use.retireForHelperChange();await use.waitForQuiescence()
     }
+    func testProfileWorkStartedAtReadyDeliveryCannotAdmitTheRestore()async throws {
+        let seed=try await savedContext()
+        for editing in [false,true] {
+            let fresh=try rig(directory:seed.directory,holdCommand:editing ? "select_begin":"current_claim")
+            let held=try XCTUnwrap(fresh.held),use=SessionContextUseCoordinator(preferences:UsePreferences(true),onInvalidate:{})
+            var launched=false
+            var work:Task<Void,Never>?
+            let observer=use.$snapshot.sink{snapshot in
+                guard snapshot.status == .ready,!launched else{return}
+                launched=true
+                work=Task(priority:.high){
+                    if editing {
+                        await fresh.controller.stageEnteredText("I built fictional context tests.",purpose:"project",label:"Fictional edit",role:"developer",project:"Fictional Northstar")
+                    }else{await fresh.controller.lookupExisting(claimKey:"fictional.northstar.tests")}
+                }
+            }
+            let restore=Task(priority:.background){await use.restoreBeforeSession(target:fresh.target,startIntentID:UUID(),isStartCurrent:{true})}
+            let result=await restore.value
+            XCTAssertTrue(fresh.controller.busy,"the actual profile operation must precede returned admission")
+            XCTAssertNotEqual(result,.ready,"a ready publication cannot admit Start after new profile work begins")
+            try await waitUntil{await held.waiting}
+            await held.release();await work?.value;observer.cancel()
+            XCTAssertFalse(fresh.controller.busy)
+            let retry=await use.restoreBeforeSession(target:fresh.target,startIntentID:UUID(),isStartCurrent:{true})
+            XCTAssertEqual(retry,.ready,"ready is available again only after the actual profile operation joins")
+            use.retireForHelperChange();await use.waitForQuiescence()
+        }
+    }
     func testPreparationActionsUseTheRememberedOpenAndSynchronousLockPorts()async throws {
         let rig=try rig(),preferences=UsePreferences()
         let use=SessionContextUseCoordinator(preferences:preferences,onInvalidate:{})

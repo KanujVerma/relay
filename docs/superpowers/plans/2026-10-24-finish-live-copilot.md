@@ -44,3 +44,9 @@ All three owners retain GPT-6.1 Sol xhigh. Shared source changes are coordinated
 5. The stock product builder now defaults to two compiler jobs, matching the resource policy; no new dependency/work environment is introduced. The remaining bundle build and relocation are still required.
 
 Resume pointer: this plan plus the top override in HANDOFF.md, live Git and exact worker reports. Completed steps remain completed after compaction; never restart a live job merely because an observation timed out.
+
+## Component checkpoint after source foundation
+
+Protected Notes backend7429/bfa/82099 and native DATA/snapshotdf767 are joined, with original real-thread cancellation and changed-grant regressions closed. Root independently passes128affected Python cases and later89focused cases. Notes presentation/editor source e165ab3 passes28native cases without skips, including four fictional offscreen exports; two independent source reviews and original held-save failure precede correction. History insertion and actual generation/save effects remain pending.
+
+Learning foundation5ae9d8d is source-reviewed and composed with these components: full combined Python823collected/791passed/32optional skips, zero failures,10.228seconds. Root inspected the actual author90-case native log and exact hashes. Ruling: defer a second standalone native foundation replay to the coherent actual-Model/combined gate, so owners can implement their observed missing interfaces without repeating a cache-changing compile for every inert component. Cost if wrong: final integration may expose a native interaction later; the complete native/application replay remains required before end-to-end acceptance. No feature completion checkbox changes.

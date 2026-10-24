@@ -232,3 +232,10 @@ class AccountCredentialStore:
             self._clear(record,'signed_out')
             if value['active'] is not None and value['active']['registration_id']==registration_id:value['active']=None
             self._save(value)
+
+    def acknowledge_notice(self,registration_id):
+        with self._locked():
+            value=self._read()
+            try:record=value['registrations'][_identity(registration_id)]
+            except (KeyError,ValueError,TypeError):raise AccountStoreError('reauthentication_required') from None
+            record['notice_ack']=True;self._save(value)

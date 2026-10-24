@@ -247,7 +247,8 @@ def pkce_pair() -> tuple[str, str]:
 
 
 def authorization_url(*, client_id: str, host_id: str, redirect_uri: str,
-                      state: str, nonce: str, challenge: str) -> str:
+                      state: str, nonce: str, challenge: str, id_token_hint: str | None = None,
+                      login_hint: str | None = None, enable_plan: bool = False) -> str:
     payload = {
         "client_id": client_id,
         "redirect_uri": redirect_uri,
@@ -262,6 +263,10 @@ def authorization_url(*, client_id: str, host_id: str, redirect_uri: str,
     }
     if client_id == "dynamic_agent_client":
         payload["agent_name_hint"] = "Relay"
+    if client_id != "dynamic_agent_client":
+        if id_token_hint: payload["id_token_hint"] = id_token_hint
+        if login_hint: payload["login_hint"] = login_hint
+    if enable_plan: payload["prompt"] = "consent"
     return AUTHORIZE_URL + "?" + urlencode(payload)
 
 
@@ -372,9 +377,18 @@ def verify_id_token(id_token: str, client_id: str, expected_nonce: str) -> dict:
         raise AuthError("Unexpected JWKS endpoint.")
     try:
         key = PyJWKClient(jwks_uri).get_signing_key_from_jwt(id_token)
+    except jwt.PyJWTError:
+        raise AuthError("OIDC ID token verification failed.") from None
+    return verified_id_claims(id_token, client_id, expected_nonce, key.key)
+
+
+def verified_id_claims(id_token: str, client_id: str, expected_nonce: str, key) -> dict:
+    """Shared signature/claims checks after a trusted published JWKS lookup."""
+    jwt, _ = require_verification_dependencies()
+    try:
         claims = jwt.decode(
             id_token,
-            key.key,
+            key,
             algorithms=["RS256"],
             audience=client_id,
             issuer=ISSUER,
@@ -411,7 +425,7 @@ def validate_token_fields(tokens: dict) -> tuple[str, list[str], int]:
     return access_token, scope.split(), lifetime
 
 
-def _callback_server(expected_state: str):
+def _callback_server(expected_state: str, *, server_factory=None, completion_message: bytes | None = None):
     result: dict = {}
 
     class Handler(BaseHTTPRequestHandler):
@@ -434,7 +448,7 @@ def _callback_server(expected_state: str):
                 self.send_error(400)
                 return
             result["query"] = query
-            body = b"Return to Relay in your terminal to finish sign-in."
+            body = completion_message or b"Return to Relay in your terminal to finish sign-in."
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -443,7 +457,7 @@ def _callback_server(expected_state: str):
             self.end_headers()
             self.wfile.write(body)
 
-    server = HTTPServer(("127.0.0.1", 0), Handler)
+    server = (server_factory or HTTPServer)(("127.0.0.1", 0), Handler)
     server.timeout = 1
     return server, result
 

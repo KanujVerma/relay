@@ -6,6 +6,10 @@ Exact5575b184a081450308b88b622ec5fcb5eb81318a: [macOS/Python40055828276](https:/
 
 This exact hosted head includes the accepted complete first résumé increment. Idle Ask was subsequently joined at ac70eb3 and locally passed653Python/26skips and171panel/app/state/7opt-in skips; its hosted result must be observed separately. Account app/history remain separate. No real account, capture or distribution claim follows from synthetic checks.
 
+## Subsequent idle CI dependency correction
+
+Publishedcd77aa9 Linux contract40059670335 and optional converter40059670376 failed exactly two new assistant-scope methods importing absentHTTPX: real probe cleanup and held account-token cleanup. Documentation/fixtures passed; no runtime assertion failed. Root downloaded both logs and matched their ModuleNotFoundError lines145/181. Current correction explicitly installs the same pinned offline protocol/storage dependencies used by the independently accepted account workflow (HTTPX0.28.1/PyJWT2.15.1/cryptography50.0.2), including the converter workflow because it runs the full suite. No test/assertion/skip/deadline is weakened. The existing six-package native loop remains until the account package is actually joined. New hosted results remain pending after publication.
+
 ## Earlier query-corrected controller
 
 Exact0e9f6d0bf5e61e8d37f30586235dc7bf1b4d38d3: [macOS/Python40053765188](https://github.com/KanujVerma/relay/actions/runs/40053765188) and [contract40053765194](https://github.com/KanujVerma/relay/actions/runs/40053765194) both succeeded. Actual job120752094948 logs confirm Python605collected/581pass/24optional skips in9.992s; native session60/2skips, profile45, context28, controls18, composition19, panel130/6skips =300collected/292pass/8skips. All six native packages and final app compile succeeded on Swift6.2.3, x86_64 macOS15/Xcode26.2. This includes query grammar6eb1717 and test64ff4b8; its opt-in packaged-only case remains among explicit hosted skips, separately passed against the actual local artifact. New account/idle/résumé feature branches are not integrated in this head.

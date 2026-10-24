@@ -120,6 +120,13 @@ class UserQuestionHostTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await host.handle_user_question(question(host,basis=first['requestID'],intent='help_current')))
         self.assertEqual(len(self.prompts),count)
 
+    async def test_retained_basis_keeps_current_microphone_gap_in_new_projection(self):
+        host=await self.prepared();first=question(host,'Implement an LRU cache.')
+        await host.handle_user_question(first);await host.drain()
+        host.context.mark_gap('microphone_unavailable')
+        await host.handle_user_question(question(host,'Which edge case matters?',basis=first['requestID']));await host.drain()
+        self.assertIn('microphone_unavailable',self.prompts[-1]['conversation']['task']['context_gaps'])
+
     async def test_exact_replay_returns_original_without_new_work_and_changed_reuse_closes(self):
         host=await self.prepared();request=question(host)
         await host.handle_user_question(request);await host.drain();answer=copy.deepcopy(self.out[-1])
@@ -141,6 +148,26 @@ class UserQuestionHostTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.out[-1]['quiesced'])
         self.assertEqual(self.out[-1]['targetRequestID'],request['requestID'])
 
+    async def test_retirement_releases_the_original_issued_screen_observation(self):
+        from relay_spike.supplemental_context import SupplementalContextProvider
+        from tests.test_visual_host_backend import screen_frames
+        host=await self.prepared();request=question(host)
+        class TrackingProvider(SupplementalContextProvider):
+            retired_native=None
+            def retire_current(self,native):
+                self.retired_native=native
+                return super().retire_current(native)
+        provider=TrackingProvider(current_request=host.supplemental_request_current)
+        host.supplemental_provider=provider
+        text,images=screen_frames(request)
+        self.assertTrue(provider.stage(json.dumps(text).encode()))
+        for image in images:self.assertTrue(provider.stage_image(json.dumps(image).encode()))
+        await host.handle_user_question(request)
+        native=host.active.native
+        self.assertIsNotNone(provider(native))
+        host.handle_answer_retirement(retirement(request))
+        self.assertIs(provider.retired_native,native)
+
     async def test_old_target_cannot_cancel_or_advance_a_newer_request(self):
         host=await self.prepared();first=question(host)
         await host.handle_user_question(first);await host.drain()
@@ -151,6 +178,21 @@ class UserQuestionHostTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(host.handle_answer_cancel(cancel(host,first)))
         self.assertEqual(host.presentation,before)
         self.assertEqual(host.active.native['requestID'],newer['requestID'])
+
+    async def test_fresh_cancel_of_denied_expired_original_acknowledges_without_inference(self):
+        host=await self.prepared();request=question(host)
+        host.handle_answer_retirement(retirement(request))
+        request['emittedUptimeNanoseconds']=time.monotonic_ns()-2_100_000_000
+        self.assertFalse(await host.handle_user_question(request))
+        self.assertEqual(host.presentation,1)
+        operation=cancel(host,request,presentationGeneration=request['presentationGeneration']+1)
+        self.assertTrue(host.handle_answer_cancel(operation));await host.drain()
+        self.assertEqual(host.presentation,operation['presentationGeneration'])
+        self.assertEqual(self.prompts,[]);self.assertEqual(host.model_requests,0)
+        self.assertEqual(self.out[-1]['requestID'],operation['requestID'])
+        self.assertEqual(self.out[-1]['targetRequestID'],request['requestID'])
+        self.assertEqual(self.out[-1]['reasonCode'],'already_finished')
+        self.assertTrue(self.out[-1]['quiesced'])
 
     async def test_session_operation_budget_stays_bounded_without_model_calls(self):
         host=await self.prepared()

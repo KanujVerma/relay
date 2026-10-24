@@ -66,6 +66,7 @@ class ConversationContext:
         # Preserve typed basis context and current actual audio as labelled data.
         prior=[row for row in projected._history if row[0]=='user_text']
         projected._history=deque([*self._history,*prior])
+        projected._gaps=tuple(dict.fromkeys((*projected._gaps,*self._gaps)))
         order=max((row[2] for row in projected._history),default=0)
         order=max(order,projected._task_order)+1
         projected._update_task(text,order)

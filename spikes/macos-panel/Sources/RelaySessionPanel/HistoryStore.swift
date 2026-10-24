@@ -25,6 +25,14 @@ public final class HistoryNotesSaveReceipt:Sendable {
 public struct HistoryNotesCommitOutcome:Sendable{
     public let receipt:HistoryNotesSaveReceipt,document:HistoryNotesDocumentData,cleanupComplete:Bool
 }
+public final class HistoryNotesDeleteReceipt:Sendable {
+    public let operationID:UUID,recordID:UUID,noteID:UUID,deletedNoteRevision:Int64,beforeRecordRevision:Int64,savedAtRecordRevision:Int64
+    fileprivate init(operationID:UUID,record:HistoryRecord,deleted:HistoryNotesDocumentData,before:Int64){
+        self.operationID=operationID;recordID=record.id;noteID=deleted.noteID;deletedNoteRevision=deleted.noteRevision
+        beforeRecordRevision=before;savedAtRecordRevision=record.revision
+    }
+}
+public struct HistoryNotesDeleteOutcome:Sendable {public let receipt:HistoryNotesDeleteReceipt,cleanupComplete:Bool}
 /// Only an actual successful snapshot save below can issue this acknowledgment.
 final class LearningStoredControlReceipt:Sendable {
     let control:LearningControlRecord
@@ -491,6 +499,41 @@ final class HistoryStore:@unchecked Sendable {
                     generation:previous.generation,modelID:previous.modelID,origin:"generated_user_edited",editedAt:HistoryNotesDocuments.timestamp(clock()))
                 try Self.put(db,record);try db.execute(sql:"UPDATE history_generated_note SET payload=? WHERE record_id=?",arguments:[document.canonicalBytes,Self.key(id)])
                 return document
+            }
+        }
+    }
+    /// Delete only derived notes. Transcript, manual fields, schema version
+    /// and Learning support remain unchanged; all identity fields are CAS.
+    func deleteGeneratedNotes(_ id:UUID,expectedRecordRevision:Int64,noteID:UUID,expectedNoteRevision:Int64,
+                              operationID:UUID,admission:@Sendable()->Bool)throws->HistoryNotesDeleteOutcome{
+        try lock.withLock{
+            guard admission() else{throw HistoryError.stale};try revalidateNotesStorage();try expire(admission:admission)
+            let original=try required()
+            let (before,deleted)=try original.read{db in
+                let record=try Self.record(db,id)
+                guard record.revision==expectedRecordRevision,let note=try Self.storedNotes(db,id)?.0,
+                      note.noteID==noteID,note.noteRevision==expectedNoteRevision else{throw HistoryError.stale}
+                return(record,note)
+            }
+            let record=try Self.bumped(before),candidate=try HistorySnapshotCodec.makeQueue()
+            do{
+                try original.backup(to:candidate)
+                try candidate.write{db in
+                    try Self.put(db,record)
+                    try db.execute(sql:"DELETE FROM history_generated_note WHERE record_id=?",arguments:[Self.key(id)])
+                }
+                try Self.validate(candidate);let bytes=try HistorySnapshotCodec.encode(candidate)
+                guard bytes.count<=contentLimitBytes else{throw HistoryError.capacity};guard admission() else{throw HistoryError.stale}
+                do{try storage.save(bytes,createKey:false)}catch{notesWriteIndeterminate=true;throw HistoryNotesCommitError.indeterminate}
+                queue=candidate;retiringQueue=original
+                let receipt=HistoryNotesDeleteReceipt(operationID:operationID,record:record,deleted:deleted,before:before.revision)
+                do{
+                    try original.close();retiringQueue=nil
+                    return HistoryNotesDeleteOutcome(receipt:receipt,cleanupComplete:true)
+                }catch{return HistoryNotesDeleteOutcome(receipt:receipt,cleanupComplete:false)}
+            }catch{
+                if queue !== candidate{do{try candidate.close()}catch{retiringNotesCandidate=candidate}}
+                throw error
             }
         }
     }

@@ -144,4 +144,17 @@ private final class LearningLedgerStorage:HistoryOwnedSnapshotStorage,@unchecked
             XCTAssertEqual(try recovered.learningArchive().episodes.count,mode == .after ? 1:0)
         }
     }
+
+    func testGeneratedOnlyDeletionPreservesActualSchema3LearningArchiveAndSources()async throws{
+        let(store,_,vault,clock)=try fixture(),episode=try add(store),id=try XCTUnwrap(episode.recordID)
+        _=try enabled(store);_=try store.mutateLearning(.save(episode))
+        let old=try store.detail(id).record;_=try store.edit(id,expectedRevision:old.revision,title:"Keep manual title",note:"Keep manual notes")
+        let document=try notes(store,id),before=try store.detail(id),archive=try store.learningArchive()
+        let outcome=try store.deleteGeneratedNotes(id,expectedRecordRevision:before.record.revision,noteID:document.noteID,expectedNoteRevision:document.noteRevision,operationID:UUID(),admission:{true})
+        XCTAssertTrue(outcome.cleanupComplete);XCTAssertEqual(try version(vault),3);XCTAssertNil(try store.generatedNotes(id))
+        XCTAssertEqual(try store.learningArchive(),archive);XCTAssertEqual(try store.detail(id).rows,before.rows)
+        XCTAssertEqual(try store.detail(id).record.note,"Keep manual notes")
+        clock.advance(1);try store.close();try store.open(create:false)
+        XCTAssertNil(try store.generatedNotes(id));XCTAssertEqual(try store.learningArchive(),archive)
+    }
 }

@@ -54,3 +54,6 @@ Isolated `feature/response-preferences-2026-10-23` starts at exact3e83f8e0157b74
 
 
 Response-preferences storage-purpose foundation now imports exact accepted194 source/test trio as77359c3 and adds only the approved separate fixed namespace, exhaustive identities and non-profile directory policy. Three new cases have API/policy red→green evidence;13affected storage cases pass0.055s. See docs/lanes/RESPONSE_PREFERENCES.md. Catalog/coordinator/provider/actual app remain in progress; no feature exposure is claimed.
+
+
+Response-preferences native catalog/coordinator checkpoint now has16new cases and29affected storage/native passes0.236s. It includes actual held encrypted save/restart receipt fencing, reentrant/obsolete-cancel and retirement-before-publication red/green evidence; defaults remain inert. Shared purpose053 remains unchanged. Actual helper/provider/Settings/Model integration stays next, author-owned; no product exposure yet. Exact APIs/tests/limits in docs/lanes/RESPONSE_PREFERENCES.md.

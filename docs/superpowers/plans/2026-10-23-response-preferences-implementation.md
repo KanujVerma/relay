@@ -25,11 +25,11 @@
 
 **Interfaces:** `ResponsePreferencesCatalog` strict data; immutable privately constructed `ResponsePreferenceSnapshot`; `ResponsePreferencesReceiptStore` native committed-revision/enable port; `@MainActor ResponsePreferencesCoordinator` inert init, explicit open/save/use/delete/prepare, cancel and actual quiescence. `capture()` returns optional immutable snapshot; `owns(_:)` compares actual activation identity on MainActor. Existing protected snapshot signatures remain unchanged.
 
-- [ ] Import exact194 three runtime/test blobs and record source hashes, excluding its independent history docs/runtime.
-- [ ] Write failing fixed-purpose tests first: ciphertext file/header/key isolation, owner/nonrecursive directory checks, profile/history/account compatibility.
-- [ ] Run those tests red; add exhaustive responsePreferences cases and shared non-profile directory policy; run affected protected/profile tests green.
-- [ ] Write data/coordinator tests for strict duplicate/unknown/UTF8/size/schema domains; General zero operations; explicit Coding first Use; missing/corrupt remembered restore; held real synchronous save cancellation; stale successful disk receipt rejected after reconstruction; newer edits/old cancellation and actual busy joins.
-- [ ] Run red, implement strict bounded catalog, receipt and owned coordinator, then run affected tests green. Use actual temp encrypted vault + injected fixed keys and an NSCondition-held storage wrapper; no real Security calls.
+- [x] Import exact194 three runtime/test blobs and record source hashes, excluding its independent history docs/runtime.
+- [x] Write failing fixed-purpose tests first: ciphertext file/header/key isolation, owner/nonrecursive directory checks, profile/history/account compatibility.
+- [x] Run those tests red; add exhaustive responsePreferences cases and shared non-profile directory policy; run affected protected/profile tests green.
+- [x] Write data/coordinator tests for strict duplicate/unknown/UTF8/size/schema domains; General zero operations; explicit Coding first Use; missing/corrupt remembered restore; held real synchronous save cancellation; stale successful disk receipt rejected after reconstruction; newer edits/old cancellation and actual busy joins.
+- [x] Run red, implement strict bounded catalog, receipt and owned coordinator, then run affected tests green. Use actual temp encrypted vault + injected fixed keys and an NSCondition-held storage wrapper; no real Security calls.
 
 ```swift
 let coordinator = ResponsePreferencesCoordinator(storage: fixtureVault, receipts: fixtureReceipts)

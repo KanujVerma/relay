@@ -84,7 +84,7 @@ private final class LearningPaintFinished:@unchecked Sendable {
     }
     private var root:URL{URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()}
     private func quote(_ text:String)->String{"'"+text.replacingOccurrences(of:"'",with:"'\\''")+"'"}
-    private func rig(learning:Bool=true,question:String=LearningAppConversation.question)throws->(SessionApplicationModel,LearningAppConversation,URL,AppLearningKey){
+    private func rig(learning:Bool=true,question:String=LearningAppConversation.question,controlPreferences:AppLearningPreferences?=nil)throws->(SessionApplicationModel,LearningAppConversation,URL,AppLearningKey){
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("relay-learning-application-"+UUID().uuidString)
         try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:false,attributes:[.posixPermissions:0o700])
         let python=ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"] ?? "/usr/bin/python3"
@@ -95,7 +95,7 @@ private final class LearningPaintFinished:@unchecked Sendable {
         let script="#!/bin/sh\nif [ -e \(quote(log.path)) ]; then\n\(command)\(quote(directory.appendingPathComponent("calls-").path))$$.jsonl \"$@\"\nfi\n\(command)\(quote(log.path)) \"$@\"\n"
         try Data(script.utf8).write(to:launcher)
         try FileManager.default.setAttributes([.posixPermissions:0o700],ofItemAtPath:launcher.path)
-        let key=AppLearningKey(),history=AppLearningHistoryPreferences(),controls=AppLearningPreferences(),conversation=LearningAppConversation(remoteQuestion:question)
+        let key=AppLearningKey(),history=AppLearningHistoryPreferences(),controls=controlPreferences ?? AppLearningPreferences(),conversation=LearningAppConversation(remoteQuestion:question)
         let storage=HistoryVaultStorage(directory:directory.appendingPathComponent("Relay/History"),keys:key)
         let model=SessionApplicationModel(arguments:["relay","--fixture-suite","coding","--role","developer","--repository",root.path,"--python",launcher.path],
             historyPreferences:history,historyStorageFactory:{storage},learningPreferences:learning ? controls:nil,fixtureSessionStart:conversation.start)
@@ -120,7 +120,7 @@ private final class LearningPaintFinished:@unchecked Sendable {
             try await Task.sleep(for:.milliseconds(3))
         }
     }
-    private func window(_ model:SessionApplicationModel)->NSWindow{
+    private func window(_ model:SessionApplicationModel,show:Bool=true)->NSWindow{
         let application=NSApplication.shared,originalPolicy=application.activationPolicy(),frontmost=NSWorkspace.shared.frontmostApplication
         _=application.setActivationPolicy(.regular)
         if !Self.finishedCocoaLaunch{application.finishLaunching();Self.finishedCocoaLaunch=true}
@@ -131,7 +131,7 @@ private final class LearningPaintFinished:@unchecked Sendable {
         window.contentView?.layoutSubtreeIfNeeded();model.attachWindow(window,scrollView:nil)
         // Exercise the production own-window action, including app activation
         // and key-window presentation. A background XCTest window is occluded.
-        model.performWindowAction(.showPanel)
+        if show{model.performWindowAction(.showPanel)}
         addTeardownBlock{
             await MainActor.run{window.orderOut(nil);window.close();_=application.setActivationPolicy(originalPolicy);if let frontmost,!frontmost.isTerminated{_=frontmost.activate(options:[])}}
             // Settle the real close/deactivation/foreground notifications before
@@ -143,6 +143,19 @@ private final class LearningPaintFinished:@unchecked Sendable {
             }
         }
         return window
+    }
+    /// Read only this owned view's accessibility geometry. No external AX API,
+    /// screen capture or copied visibility receipt is involved.
+    private func textFrames(in root:NSObject,wanted:Set<String>)->[String:NSRect]{
+        var queue=[root],seen:Set<ObjectIdentifier>=[],result:[String:NSRect]=[:]
+        while !queue.isEmpty,seen.count<512{
+            let object=queue.removeFirst();guard seen.insert(ObjectIdentifier(object)).inserted else{continue}
+            func value(_ key:String)->Any?{object.responds(to:NSSelectorFromString(key)) ? object.value(forKey:key):nil}
+            let words=[value("accessibilityValue"),value("accessibilityLabel")].compactMap{$0 as? String}
+            if let text=words.first(where:wanted.contains),let frame=value("accessibilityFrame") as? NSValue,frame.rectValue.width>0,frame.rectValue.height>0{result[text]=frame.rectValue}
+            if let children=value("accessibilityChildren") as? [Any]{queue.append(contentsOf:children.compactMap{$0 as? NSObject})}
+        }
+        return result
     }
     func testDefaultFixtureCannotEnableLearningOrReachProductionControlAndHistoryStorage()async throws{
         let python=ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"] ?? "/usr/bin/python3"
@@ -207,25 +220,37 @@ private final class LearningPaintFinished:@unchecked Sendable {
         XCTAssertEqual(model.learning.session.episodes.count,1)
     }
     func testOffViewportLeadAndPointsCannotCreditEarlierMicBeforeActualScrollExposure()async throws{
-        let question=String((LearningAppConversation.question+" "+String(repeating:"Explain the empty input contract and preserve the original item order. ",count:7)).prefix(490))
-        let(model,conversation,_,_)=try rig(question:question),surface=window(model);surface.orderFront(nil)
+        let question=String((LearningAppConversation.question+" "+String(repeating:"WWWWW ",count:80)).prefix(490))
+        let(model,conversation,_,_)=try rig(question:question)
         try await model.history.enableSaving();try await model.learning.enable();await model.start()
         try await conversation.speak(.remoteAudio,through:model)
-        try await until{model.snapshot.card != nil && model.responseLatencySamples.last?.windowVisibleAt != nil}
-        func scrolls(_ view:NSView)->[NSScrollView]{(view as? NSScrollView).map{[$0]} ?? [] + view.subviews.flatMap{scrolls($0)}}
+        try await until{model.snapshot.card != nil}
+        model.expanded=true
+        let surface=window(model,show:false)
+        func scrolls(_ view:NSView)->[NSScrollView]{(view as? NSScrollView).map{[$0]} ?? view.subviews.flatMap{scrolls($0)}}
         surface.contentView?.layoutSubtreeIfNeeded()
-        try await until{surface.contentView.map{scrolls($0).contains{($0.documentView?.bounds.height ?? 0)>$0.contentView.bounds.height+100}} ?? false}
+        try await until{surface.contentView.map{scrolls($0).contains{($0.documentView?.bounds.height ?? 0)>$0.contentView.bounds.height+1}} ?? false}
         let scroll=try XCTUnwrap(scrolls(try XCTUnwrap(surface.contentView)).max{
             ($0.documentView?.bounds.height ?? 0)-$0.contentView.bounds.height < ($1.documentView?.bounds.height ?? 0)-$1.contentView.bounds.height
         })
         let document=try XCTUnwrap(scroll.documentView)
-        XCTAssertGreaterThan(document.bounds.height,scroll.contentView.bounds.height+100)
+        let card=try XCTUnwrap(model.snapshot.card),wanted=Set([card.lead]+card.points)
+        func frames()->[NSRect]{Array(textFrames(in:surface.contentView!,wanted:wanted).values)}
+        func viewport()->NSRect{surface.convertToScreen(scroll.contentView.convert(scroll.contentView.bounds,to:nil))}
+        print("LEARNING_VIEWPORT_GEOMETRY documentHeight=\(document.bounds.height) clipHeight=\(scroll.contentView.bounds.height)")
+        XCTAssertGreaterThan(document.bounds.height,scroll.contentView.bounds.height)
         scroll.contentView.scroll(to:.zero);scroll.reflectScrolledClipView(scroll.contentView)
+        model.performWindowAction(.showPanel)
+        try await until{surface.isVisible && surface.occlusionState.contains(.visible) && frames().count==wanted.count}
+        XCTAssertFalse(frames().allSatisfy{viewport().contains($0)},"The real lead/points must be clipped before the earlier microphone source starts")
         try await conversation.speak(.microphone,through:model)
         try await until{model.assistant.transcript.snapshot.rows.filter{$0.source == .microphone}.count==1}
         let earlier=try XCTUnwrap(model.assistant.transcript.snapshot.rows.first{$0.source == .microphone})
-        scroll.contentView.scroll(to:NSPoint(x:0,y:max(0,document.bounds.height-scroll.contentView.bounds.height)))
+        let spoken=frames().reduce(NSRect.null){$0.union($1)},local=document.convert(surface.convertFromScreen(spoken),from:nil)
+        let y=min(max(0,local.midY-scroll.contentView.bounds.height/2),max(0,document.bounds.height-scroll.contentView.bounds.height))
+        scroll.contentView.scroll(to:NSPoint(x:0,y:y))
         scroll.reflectScrolledClipView(scroll.contentView);surface.contentView?.layoutSubtreeIfNeeded()
+        try await until{frames().count==wanted.count && frames().allSatisfy{viewport().contains($0)}}
         try await Task.sleep(for:.milliseconds(33))
         try await conversation.speak(.microphone,through:model)
         try await until{model.assistant.transcript.snapshot.rows.filter{$0.source == .microphone}.count==2}
@@ -249,6 +274,20 @@ private final class LearningPaintFinished:@unchecked Sendable {
         try await until{model.snapshot.card != nil && model.assistantActive}
         XCTAssertFalse(retired,"Optional Learning read must not reopen and retire an already ready original Notes source")
         XCTAssertTrue(model.history.ownsNotesSource(source));XCTAssertEqual(model.history.snapshot.epoch,workspace)
+    }
+    func testMismatchedLearningReceiptCannotReopenReadyHistoryOrRetireNotesSource()async throws{
+        let controls=AppLearningPreferences(),(model,conversation,_,_)=try rig(controlPreferences:controls)
+        try await model.history.enableSaving();try await model.learning.enable();await model.start()
+        try await conversation.speak(.remoteAudio,through:model);try await until{model.snapshot.card != nil};await model.stop()
+        let record=try XCTUnwrap(model.history.snapshot.records.first);try await model.history.openRecord(record.id)
+        let detail=try XCTUnwrap(model.history.snapshot.selected);var retired=false
+        let source=try await model.history.prepareNotesSource(recordID:record.id,expectedRevision:detail.record.revision,
+            selection:.fullSavedTranscript,intentID:UUID(),isCurrent:{true},onRetired:{_ in retired=true})
+        let workspace=model.history.snapshot.epoch
+        controls.receipt=LearningControlReceipt(revision:UUID(),enabled:true,pending:nil)
+        model.assistant.draft="Explain bounded queues.";model.assistant.submitDraft();try await until{model.snapshot.card != nil && model.assistantActive}
+        XCTAssertFalse(retired);XCTAssertTrue(model.history.ownsNotesSource(source));XCTAssertEqual(model.history.snapshot.epoch,workspace)
+        XCTAssertNotEqual(model.learning.snapshot.phase,.ready);XCTAssertNil(model.snapshot.learningMemoryRevision)
     }
     func testActualModelPublicationReentrantLearningDisableHasOwnedWatchdogAndNoAvailability()async throws{
         let key="RELAY_LEARNING_MODEL_PAINT_CHILD"

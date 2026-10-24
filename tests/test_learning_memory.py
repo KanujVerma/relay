@@ -32,7 +32,7 @@ def retire(value):
 def interaction():
     request=str(uuid.uuid4())
     return {'episodeID':request,'question':{'sourceID':'original-remote-4','text':'How should queues handle overload?','excerpt':False},
-            'suggestion':{'requestID':request,'text':'Explain bounded queues and reject overload.','availableAt':250_000_000,'windowVisible':True,'guideRevision':None,'excerpt':False},
+            'suggestion':{'requestID':request,'text':'Explain bounded queues and reject overload.','replacement':1,'cardHash':'a'*64,'availableAt':250_000_000,'windowVisible':True,'guideRevision':None,'excerpt':False},
             'reply':{'sourceID':'original-mic-7','text':'First use bounded queues, then reject overload.','excerpt':False},
             'continuation':{'sourceID':'original-remote-10','text':'What about null items?','excerpt':False},
             'temporallyEligible':True,'possibleUptake':True,'distinctiveOverlap':4,'ambiguity':['asr_confidence_unknown']}
@@ -62,11 +62,14 @@ class LearningDecoderTests(unittest.TestCase):
                        {'ambiguity':['interviewer_approved']},{'success':True}):
             changed=copy.deepcopy(value);changed['interactions'][0].update(update)
             with self.subTest(update=update),self.assertRaises(WireError):decode_learning(changed)
+        for update in ({'replacement':0},{'cardHash':'A'*64},{'guideRevision':'bad'}):
+            changed=copy.deepcopy(value);changed['interactions'][0]['suggestion'].update(update)
+            with self.subTest(suggestion=update),self.assertRaises(WireError):decode_learning(changed)
 
     def test_native_compact_payload_budget_does_not_change_when_python_inserts_spaces(self):
         n=dict(captureSessionID=str(uuid.uuid4()),sessionEpoch=1,presentationGeneration=2,requestID=str(uuid.uuid4()),eventSequence=1)
         value=offer(n,interactions=[interaction()])
-        value['continuity'][0]['text']='x'*500
+        value['continuity'][0]['text']='x'*400
         value['examples'][0].update(text='y'*350,sourceID='z'*180)
         self.assertEqual(decode_learning(value),value)
 

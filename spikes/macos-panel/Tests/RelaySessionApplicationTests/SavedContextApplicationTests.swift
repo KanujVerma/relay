@@ -51,12 +51,14 @@ private final class AppContextKey:ProfileKeyProvider,@unchecked Sendable {
 }
 @MainActor final class SavedContextApplicationTests:XCTestCase {
     private var root:URL{URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()}
-    private func rig(directory:URL?=nil,preferences:AppContextPreferences?=nil,holdCommand:String?=nil)throws->AppContextRig {
+    private func rig(directory:URL?=nil,preferences:AppContextPreferences?=nil,holdCommand:String?=nil,fixture:Bool=true,fixtureSuite:String="coding")throws->AppContextRig {
         let ownsDirectory=directory==nil
         let directory=directory ?? FileManager.default.temporaryDirectory.appendingPathComponent("relay-app-context-"+UUID().uuidString,isDirectory:true)
         let preferences=preferences ?? AppContextPreferences(),key=AppContextKey(),receipts=AppContextReceipts(holdCommand:holdCommand)
         let python=ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"] ?? "/usr/bin/python3"
-        let model=SessionApplicationModel(arguments:["relay","--fixture-suite","coding","--repository",root.path,"--python",python],
+        var arguments=["relay","--repository",root.path,"--python",python]
+        if fixture{arguments += ["--fixture-suite",fixtureSuite]}
+        let model=SessionApplicationModel(arguments:arguments,
             ingressEnqueued:receipts.ingress,contextPreferences:preferences,
             profileVaultFactory:{ProfileVault(directory:directory,keys:key)},profileResponseObserved:receipts.observe)
         receipts.model=model
@@ -69,7 +71,7 @@ private final class AppContextKey:ProfileKeyProvider,@unchecked Sendable {
     }
     private func approveFictionalFact(_ model:SessionApplicationModel)async throws {
         let profile=model.profile
-        await profile.stageEnteredText("I implemented validation tests for Fictional Northstar.",purpose:"project",label:"Fictional project notes",role:"developer",project:"Fictional Northstar")
+        await profile.stageEnteredText("I implemented validation tests for Fictional Northstar.",purpose:"project",label:"Fictional project notes",role:model.role,project:"Fictional Northstar")
         let card=try XCTUnwrap(profile.card)
         await profile.review(card,actor:"self",claimKey:"fictional.northstar.tests",replaces:nil)
         XCTAssertEqual(profile.memoryCount,1);XCTAssertNil(profile.errorStatus)
@@ -140,5 +142,69 @@ private final class AppContextKey:ProfileKeyProvider,@unchecked Sendable {
         XCTAssertFalse(model.running);XCTAssertNil(model.currentSessionID);XCTAssertEqual(rig.receipts.nativeStarts,0)
         XCTAssertFalse(rig.preferences.useInSessions)
         await model.start();XCTAssertTrue(model.running);XCTAssertEqual(rig.receipts.nativeStarts,1)
+    }
+    func testEndJoinsAHeldActualRestoreBeforeAFreshHelperCanStart()async throws {
+        let seed=try await seed(),rig=try rig(directory:seed.directory,preferences:seed.preferences,holdCommand:"load_commit"),model=rig.model
+        let starting=Task{await model.start()}
+        try await waitUntil{rig.receipts.waiting}
+        let oldProfile=model.profile,oldHelper=try model.ensureHelper()
+        var ended=false
+        let ending=Task{await model.stop();ended=true}
+        try await waitUntil{model.stopping}
+        for _ in 0..<10{await Task.yield()}
+        XCTAssertFalse(ended);XCTAssertFalse(model.canStartSession)
+        await model.start();XCTAssertEqual(rig.receipts.nativeStarts,0)
+        XCTAssertTrue(rig.preferences.useInSessions)
+        rig.receipts.release();await starting.value;await ending.value
+        XCTAssertTrue(ended);XCTAssertFalse(oldProfile.opened);XCTAssertFalse(model.running)
+        XCTAssertEqual(rig.receipts.nativeStarts,0)
+        await model.start();XCTAssertTrue(model.running)
+        XCTAssertFalse(try model.ensureHelper() === oldHelper)
+        XCTAssertFalse(model.profile === oldProfile)
+        XCTAssertEqual(model.profile.memoryCount,1);XCTAssertEqual(rig.receipts.nativeStarts,1)
+    }
+    func testPauseRetiresActualContextAndResumeReloadsThroughTheSameSharedHelper()async throws {
+        let rig=try rig(),model=rig.model
+        model.openMyContext();await model.contextUse.waitForQuiescence();try await approveFictionalFact(model)
+        await model.start();try await waitUntil{model.snapshot.card != nil}
+        let profile=model.profile,helper=try model.ensureHelper(),session=try XCTUnwrap(model.currentSessionID)
+        try model.perform(.pause)
+        XCTAssertFalse(model.running);XCTAssertFalse(profile.opened);XCTAssertTrue(rig.preferences.useInSessions)
+        XCTAssertFalse(model.canResume)
+        try await waitUntil{model.canResume}
+        XCTAssertEqual(profile.closeOutcome,.locked)
+        await model.start();XCTAssertTrue(model.running)
+        XCTAssertTrue(try model.ensureHelper() === helper);XCTAssertTrue(model.profile === profile)
+        XCTAssertNotEqual(model.currentSessionID,session);XCTAssertEqual(profile.memoryCount,1)
+        XCTAssertEqual(rig.receipts.commands.filter{$0=="load_commit"}.count,1)
+    }
+    func testLocalAIModeRetirementPreservesPreferenceWithoutAnyAccountOrModelRequest()async throws {
+        let rig=try rig(fixture:false),model=rig.model
+        model.openMyContext();await model.contextUse.waitForQuiescence();try await approveFictionalFact(model)
+        let oldProfile=model.profile,oldHelper=try model.ensureHelper(),created=rig.key.calls.creates
+        // Only the existing local mode setting changes. No OAuth-mode helper
+        // is launched: return to no-inference mode before explicitly reopening.
+        await model.setAIEnabled(true)
+        XCTAssertTrue(model.oauth);XCTAssertTrue(rig.preferences.useInSessions)
+        XCTAssertFalse(oldProfile.opened);XCTAssertEqual(oldProfile.closeOutcome,.locked)
+        XCTAssertFalse(model.running);XCTAssertEqual(rig.receipts.nativeStarts,0)
+        await model.setAIEnabled(false);XCTAssertFalse(model.oauth)
+        model.openMyContext();await model.contextUse.waitForQuiescence()
+        XCTAssertTrue(model.profile.opened);XCTAssertEqual(model.profile.memoryCount,1)
+        XCTAssertFalse(try model.ensureHelper() === oldHelper)
+        XCTAssertEqual(rig.key.calls.creates,created);XCTAssertTrue(rig.preferences.useInSessions)
+        XCTAssertEqual(rig.receipts.nativeStarts,0)
+    }
+    func testRestoredFactReachesTheActualPersonalAnswerAndLockRemovesItsSupport()async throws {
+        let seed=try await seed(),rig=try rig(directory:seed.directory,preferences:seed.preferences,fixtureSuite:"personal-memory"),model=rig.model
+        await model.start();try await waitUntil{model.snapshot.card != nil}
+        XCTAssertEqual(model.snapshot.question,"What did you personally do on your Fictional Northstar project?")
+        XCTAssertEqual(model.snapshot.card?.points,["Your contribution: I implemented validation tests for Fictional Northstar."])
+        model.lockMyContext();XCTAssertNil(model.snapshot.card)
+        await model.contextUse.waitForQuiescence();await model.stop()
+        await model.start()
+        try await waitUntil{model.snapshot.question != nil && model.snapshot.status != "Thinking"}
+        XCTAssertNil(model.snapshot.card,"a new question after explicit Lock must not reuse the former personal facts")
+        XCTAssertFalse(rig.preferences.useInSessions)
     }
 }

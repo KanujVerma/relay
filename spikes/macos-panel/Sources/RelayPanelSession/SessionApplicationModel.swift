@@ -647,7 +647,9 @@ private actor FixtureRecognizer: ActivityRecognizer {
         }
     }
     private func startFixture() throws {
-        let question=fixtureSuite=="coding" ? "Write a Python function that returns the first item or None for an empty list." : fixtureSuite=="case" ? "Case study: design a feature for nurse handoffs. What user needs would you clarify first?":"What is the difference between WHERE and HAVING?"
+        let question:String
+        if fixtureSuite=="personal-memory" {question="What did you personally do on your Fictional Northstar project?"}
+        else{question=fixtureSuite=="coding" ? "Write a Python function that returns the first item or None for an empty list." : fixtureSuite=="case" ? "Case study: design a feature for nurse handoffs. What user needs would you clarify first?":"What is the difference between WHERE and HAVING?"}
         try native.start(selectedBundleID:"com.example.fixture",microphoneEnabled:false,components:[2:SourceComponents(vad:FixtureVAD(),recognizer:FixtureRecognizer([question],fails:fixtureSuite=="source-failure"))])
         running=true;paused=false
         refreshAssistantAfterStart()

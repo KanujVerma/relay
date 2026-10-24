@@ -41,7 +41,7 @@ import RelayContextComposition
         guard !finals.contains(where:{$0.id==final.id}) else{return}
         let late=finals.contains{$0.endUptimeNanoseconds.value>final.endUptimeNanoseconds.value}
         finals.append(final)
-        while finals.count>16 || finals.reduce(0,{$0+$1.text.utf8.count})>32*1024{finals.removeFirst();evidenceGap=true}
+        while finals.count>64 || finals.reduce(0,{$0+$1.text.utf8.count})>32*1024{finals.removeFirst();evidenceGap=true}
         let lower=final.text.lowercased()
         let unresolved=["still need","need to clarify","unresolved","what about","clarify","not yet","follow up","follow-up"].contains{lower.contains($0)}
         let constraint=["decided","agreed","must","require","constraint","assume","only","will use","we chose","let's use"].contains{lower.contains($0)}
@@ -85,16 +85,26 @@ import RelayContextComposition
         let text=([lead]+points).joined(separator:"\n")
         guard LearningText.valid(text,1024),replacement>0 else{return}
         issued.insert(binding.requestID)
-        if pending != nil{evidenceGap=true}
-        pending=Pending(available:LearningAvailableSuggestion(binding:binding,replacement:replacement,text:text,guideRevision:guideRevision,visible:visible,at:at),question:question,flags:visible ? []:["hidden_card"])
+        var flags=visible ? []:["hidden_card"]
+        if pending != nil{evidenceGap=true;flags.append("competing_card")}
+        pending=Pending(available:LearningAvailableSuggestion(binding:binding,replacement:replacement,text:text,guideRevision:guideRevision,visible:visible,at:at),question:question,flags:flags)
     }
     public func projection(question:String)->[LearningQuote]{
         let tokens=LearningText.tokens(question)
-        let ranked=quotes.enumerated().sorted{a,b in
+        let ranked=quotes.enumerated().filter{!LearningText.tokens($0.element.text).isDisjoint(with:tokens)}.sorted{a,b in
             let left=LearningText.tokens(a.element.text).intersection(tokens).count,right=LearningText.tokens(b.element.text).intersection(tokens).count
             return left==right ? a.offset>b.offset:left>right
         }
         var result=ranked.prefix(2).map(\.element)
+        if result.count<2{
+            let candidates=finals.enumerated().filter{!LearningText.tokens($0.element.text).isDisjoint(with:tokens)}.sorted{a,b in
+                let left=LearningText.tokens(a.element.text).intersection(tokens).count,right=LearningText.tokens(b.element.text).intersection(tokens).count
+                return left==right ? a.offset>b.offset:left>right
+            }
+            for candidate in candidates where !result.contains(where:{$0.sourceID==candidate.element.id}){
+                result.append(LearningQuote(candidate.element,kind:.interaction));if result.count==2{break}
+            }
+        }
         if result.count<2{
             for episode in episodes.reversed() where !LearningText.tokens(episode.question.text).isDisjoint(with:tokens){
                 let text="Original question: \(episode.question.text)\nActually spoken: \(episode.reply.text)\nRemote continuation, outcome unknown: \(episode.continuation.text)"

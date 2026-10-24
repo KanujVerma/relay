@@ -79,4 +79,51 @@ import RelayNativeSession
         e.final(4,text:"What about a full queue?",into:transcript)
         XCTAssertTrue(memory.episodes.isEmpty)
     }
+    func testTwoOriginalAvailableCardsBeforeReplyCarryCompetingCardAmbiguity()async throws{
+        let(memory,transcript,initial)=rig();var e=initial
+        e.final(1,text:"How should a bounded queue handle overload?",into:transcript);available(memory,e)
+        e.final(2,text:"How should bounded queues handle capacity?",into:transcript);available(memory,e,at:275_000_000)
+        e.final(3,text:"Keep bounded queues and make overload explicit.",source:1,into:transcript)
+        e.final(4,text:"What about a full queue?",into:transcript)
+        let episode=try XCTUnwrap(memory.episodes.first)
+        XCTAssertTrue(episode.signal.flags.contains("competing_card"))
+        XCTAssertFalse(episode.signal.eligibleForStyle)
+    }
+    func testFreshValidatedCaptureRejectsLateOriginalFinalsFromOldCapture()async throws{
+        let(memory,oldTranscript,initial)=rig();var old=initial
+        old.final(1,text:"How should a bounded queue handle overload?",into:oldTranscript);available(memory,old)
+        memory.pause()
+        let freshTranscript=SessionTranscriptStore();freshTranscript.onHistoryObservation=memory.observe
+        var fresh=LearningTestEvents();fresh.start(freshTranscript)
+        old.final(3,text:"Keep bounded queues and make overload explicit.",source:1,into:oldTranscript)
+        old.final(4,text:"What about a full queue?",into:oldTranscript)
+        XCTAssertTrue(memory.episodes.isEmpty)
+        fresh.final(1,text:"How should a bounded queue handle overload?",into:freshTranscript);available(memory,fresh)
+        fresh.final(3,text:"Keep bounded queues and make overload explicit.",source:1,into:freshTranscript)
+        fresh.final(4,text:"What about a full queue?",into:freshTranscript)
+        XCTAssertEqual(memory.episodes.count,1);XCTAssertEqual(memory.episodes.first?.question.captureSessionID,fresh.session)
+    }
+    func testExactDuplicateAvailableBindingCannotReplaceItsOriginalCardOrCreateAnotherEpisode()async throws{
+        let(memory,transcript,initial)=rig();var e=initial
+        e.final(1,text:"How should a bounded queue handle overload?",into:transcript)
+        let binding=PanelRequestBinding(lease:e.lease,requestID:UUID(),eventSequence:e.sequence)
+        memory.available(binding:binding,replacement:1,lead:"Explain bounded queues, then make overload explicit.",points:[],guideRevision:nil,visible:true,at:250_000_000)
+        memory.available(binding:binding,replacement:2,lead:"Changed duplicate must not replace the original.",points:[],guideRevision:nil,visible:true,at:260_000_000)
+        e.final(3,text:"Keep bounded queues and make overload explicit.",source:1,into:transcript);e.final(4,text:"What about a full queue?",into:transcript)
+        XCTAssertEqual(memory.episodes.count,1);XCTAssertEqual(memory.episodes.first?.suggestion.replacement.value,1)
+        XCTAssertEqual(memory.episodes.first?.suggestion.text,"Explain bounded queues, then make overload explicit.")
+    }
+    func testUnrelatedRecruiterQuestionDoesNotReceiveTechnicalDecisionAsCurrentContext()async throws{
+        let(memory,transcript,initial)=rig();var e=initial
+        e.final(1,text:"We decided timestamps must use UTC and retention is seven days.",into:transcript)
+        XCTAssertTrue(memory.projection(question:"Tell me about your background.").isEmpty)
+    }
+    func testRelevantOriginalExplanationSurvivesMoreThanTwelveUtterancesWithoutAConstraintKeyword()async throws{
+        let(memory,transcript,initial)=rig();var e=initial
+        e.final(1,text:"The existing metrics count refunds against original order date.",source:1,into:transcript)
+        for n in 2...25{e.final(UInt64(n),text:"A short unrelated discussion \(n).",into:transcript)}
+        let projection=memory.projection(question:"How are refunds dated?")
+        XCTAssertTrue(projection.contains{$0.text.contains("original order date") && $0.source == .microphone})
+        XCTAssertTrue(memory.projection(question:"Tell me about your background.").isEmpty)
+    }
 }

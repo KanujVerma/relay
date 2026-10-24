@@ -98,7 +98,7 @@ public struct LearningEpisode:Codable,Equatable,Sendable,Identifiable {
               question.captureSessionID==suggestion.captureSessionID,question.captureID==reply.captureID,reply.captureID==continuation.captureID,
               question.sessionEpoch==suggestion.sessionEpoch,question.eventSequence==suggestion.eventSequence,
               Set([question.id,reply.id,continuation.id]).count==3,signal.distinctiveOverlap>=0,signal.distinctiveOverlap<=1024,
-              Set(signal.flags).count==signal.flags.count,signal.flags.allSatisfy({["hidden_card","speech_before_available","overlap","possible_echo","asr_confidence_unknown","asr_uncertain","late_final","remote_before_reply_final"].contains($0)}),
+              Set(signal.flags).count==signal.flags.count,signal.flags.allSatisfy({["hidden_card","speech_before_available","overlap","possible_echo","asr_confidence_unknown","asr_uncertain","late_final","remote_before_reply_final","competing_card"].contains($0)}),
               (recordID==nil)==(expiresAt==nil),expiresAt.map({$0.isFinite}) ?? true else{throw HistoryError.invalid}
         let rebuilt=LearningEpisode(suggestion:suggestion,question:question,reply:reply,continuation:continuation,flags:signal.flags)
         guard rebuilt.signal==signal,scope==rebuilt.scope else{throw HistoryError.invalid}

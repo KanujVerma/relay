@@ -10,7 +10,7 @@ The existing validated-final observer is the only speech producer. The native le
 
 ## Current-session continuity
 
-Retain at most eight complete interaction episodes / 32 KiB plus sixteen exact source-linked constraint/decision/unresolved-follow-up excerpts / 4 KiB. These quotes preserve what was actually spoken and stay distinct from suggestions. A new request receives at most two relevant projections / 2 KiB total. Prefer explicit source-linked constraints and unresolved questions, then concept-matching prior interactions. Current instructions override older quotes. Eviction sets a visible evidence-gap flag. Pause preserves read-only semantic context for the same logical meeting; End clears it. A new capture cannot use the old capture's authority.
+Retain at most eight complete interaction episodes / 32 KiB plus sixteen exact source-linked constraint/decision/unresolved-follow-up excerpts / 4 KiB. A separate original-final ring retains at most64 finals/32KiB so relevant explanations without constraint keywords can survive the short raw dialogue window. These quotes preserve what was actually spoken and stay distinct from suggestions. A new request receives at most two relevant projections / 2 KiB total. Prefer explicit source-linked constraints and unresolved questions, then concept-matching prior interactions. Zero-overlap quotes do not enter unrelated requests. Current instructions override older quotes. Eviction sets a visible evidence-gap flag. Pause preserves read-only semantic context for the same logical meeting; End clears it. A new capture cannot use the old capture's authority. This is bounded continuity, never a claim to retain an unbounded entire meeting.
 
 ## Protected cross-session storage
 

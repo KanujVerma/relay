@@ -32,3 +32,19 @@ Current accepted heads, hosted checks and remaining integration gates live in [B
 - [Automatic speech original review](review-automatic-fbceb0c.md): one P2 obsolete-waiter cancellation can cancel a new prepare operation. Exact-source10/10 reproduction and positive control are preserved beside the report. All21 public asset hashes independently revalidated without download/model load. The [narrow correction re-review](review-automatic-5aa65cb-rereview.md) accepts5aa65cb: original unchanged probe and positive control remain checking10/10 each, six affected coordinator tests pass. The correction is assembled asafa1ac3; originalfbceb0c alone remains unaccepted.
 
 - [Runtime Model hook review](review-product-runtime-hook-4d557a8.md): exact4d557a8 accepted, source-only independent review. Root26 affected native +3Python entry tests pass; full frozen/bundled runtime acceptance is separate.
+
+- [Saved-context API foundation](review-saved-context-foundation-56f9558.md): accepted API56,5 independent boundary tests pass; later coordinator/View and actual app reopening remain separate.
+- [Typed stale-original finding](review-typed-stale-original-c7a4a57.md): P2 expired typed frame blocked fresh Stop receipt; author correctionbe4fbef awaits final scoped root re-review with the rest of typed source.
+
+## Typed and saved-context app continuation
+
+- [review-typed-3f18299-rereview.md](review-typed-3f18299-rereview.md)
+- [review-typed-72ed859-rereview.md](review-typed-72ed859-rereview.md)
+- [review-typed-app-b431914.md](review-typed-app-b431914.md)
+- [review-typed-app-d969249-rereview.md](review-typed-app-d969249-rereview.md)
+- [review-saved-context-352703e-rereview.md](review-saved-context-352703e-rereview.md)
+- [review-saved-context-app-2b73674.md](review-saved-context-app-2b73674.md)
+
+These are local scoped independent reviews, not GitHub approval or a main merge. The b431 report preserves its original P2; d969 closes it. Joined root source db768fd independently passes129 panel/app cases collected,124pass/5opt-in skips.
+
+- [Protected account storage/key checkpoint728](review-account-storage-728e929.md): accepted at storage boundary; actual account control/bootstrap/product UI remains separate.

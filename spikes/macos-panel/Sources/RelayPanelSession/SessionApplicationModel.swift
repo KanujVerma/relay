@@ -11,10 +11,22 @@ import RelayScreenContext
 import RelayControls
 import RelayContextComposition
 
+private enum ApplicationIngress:Sendable {
+    case session(SessionIngress)
+    case typed(NativeUserQuestionRequest,PanelRequestBinding?)
+    case answerCancel(NativeAnswerCancelRequest,PanelRequestBinding)
+    func encodedByteCount()throws->Int {
+        switch self {
+        case .session(let ingress):return try ingress.encodedByteCount()
+        case .typed(let request,_):return try request.encodedJSON().count+4
+        case .answerCancel(let request,_):return try request.encodedJSON().count+4
+        }
+    }
+}
 private final class MainEventQueue: @unchecked Sendable {
     private let lock=NSLock();private var count=0;private var bytes=0
     private var waiters:[CheckedContinuation<Void,Never>]=[]
-    func enqueue(_ ingress:SessionIngress,action:@escaping @MainActor @Sendable(SessionIngress)->Void) throws {
+    func enqueue(_ ingress:ApplicationIngress,action:@escaping @MainActor @Sendable(ApplicationIngress)->Void) throws {
         let size=try ingress.encodedByteCount()
         try lock.withLock { guard count<32,bytes+size<=262144 else { throw PanelBridgeError.overflow };count+=1;bytes+=size }
         DispatchQueue.main.async { [self] in
@@ -51,12 +63,16 @@ private actor FixtureRecognizer: ActivityRecognizer {
 }
 
 @MainActor private final class SharedProfileBinding {
+    let id=UUID()
     var retired=false
     var helper:HelperTransport?
     func shutdown() async {
         retired=true
         await helper?.shutdownAndWait()
     }
+}
+@MainActor private final class FixtureContextPreferences:SessionContextUsePreferences {
+    var useInSessions=false
 }
 
 @MainActor final class SessionApplicationModel: ObservableObject {
@@ -88,6 +104,18 @@ private actor FixtureRecognizer: ActivityRecognizer {
     let screen=ScreenContextModel()
     let visual=VisualInputSetupState()
     let speechSetup:SpeechSetupCoordinator
+    private let contextPreferencesOverride:(any SessionContextUsePreferences)?
+    private let profileVaultFactory:(@MainActor ()->ProfileVault)?
+    private let profileResponseObserved:(@MainActor (Data) async ->Void)?
+    private var hasContextUse=false
+    private var contextUseObservation:AnyCancellable?
+    lazy var contextUse:SessionContextUseCoordinator = {
+        hasContextUse=true
+        let preferences:any SessionContextUsePreferences=contextPreferencesOverride ?? (fixture ? FixtureContextPreferences():UserDefaultsSessionContextUsePreferences())
+        let use=SessionContextUseCoordinator(preferences:preferences,onInvalidate:{[weak self] in self?.retirePersonalContext()})
+        contextUseObservation=use.$snapshot.dropFirst().sink{[weak self] _ in self?.objectWillChange.send()}
+        return use
+    }()
     private var hasSelectedText=false
     lazy var selectedText:SelectedTextService = {
         hasSelectedText=true
@@ -110,6 +138,19 @@ private actor FixtureRecognizer: ActivityRecognizer {
     private var taskContextUsed=false
     private var imageContextUsed=false
     private var manualRequestToShow:UUID?
+    private var explicitRequestIDs:[UUID]=[]
+    lazy var assistant=TypedAssistantController(session:{[weak self] in
+        guard let self,self.running,!self.paused,!self.stopping,
+              (self.fixture ? self.native:self.capture.controller).isSourceActive(.microphone)
+                || (self.fixture ? self.native:self.capture.controller).isSourceActive(.remoteAudio) else{return nil}
+        return self.authority.snapshot()
+    },currentRequest:{[weak self] in self?.currentBinding},issue:{[weak self] intent,question,basis in
+        guard let self else{throw PanelBridgeError.closed}
+        return try self.issueAssistantQuestion(intent,question:question,basis:basis)
+    },cancel:{[weak self] target in
+        guard let self else{throw PanelBridgeError.closed}
+        return try await self.cancelAssistantResponse(target)
+    })
     private var lastForwardedSequence:UInt64=0
     private var startTask:Task<Void,Never>?
     private var startIdentity=UUID()
@@ -135,13 +176,13 @@ private actor FixtureRecognizer: ActivityRecognizer {
     private lazy var native:NativeSessionController = {
         let queue=events
         return NativeSessionController(authority:authority,onEvent:{ [weak self] event in
-            try queue.enqueue(.audio(event)) { [weak self] in self?.receive($0) }
+            try queue.enqueue(.session(.audio(event))) { [weak self] in self?.receiveApplication($0) }
         })
     }()
     private lazy var capture:NativeCaptureSession = {
         let queue=events
         return NativeCaptureSession(authority:authority,onEvent:{ [weak self] event in
-            try queue.enqueue(.audio(event)) { [weak self] in self?.receive($0) }
+            try queue.enqueue(.session(.audio(event))) { [weak self] in self?.receiveApplication($0) }
         })
     }()
     private var profileStorage:ProfileController?
@@ -157,21 +198,46 @@ private actor FixtureRecognizer: ActivityRecognizer {
             if let self { await self.shutdownProfile(binding) }
             else { await binding.shutdown() }
         })
-        let directory=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("Relay",isDirectory:true)
-        let controller=ProfileController(client:ProfileClient(port:port),vault:ProfileVault(directory:directory),onInvalidate:{ [weak self] in
-            guard let self else { return };self.retireRequest(status:"Background updated");self.authority.invalidate()
-        })
+        let vault:ProfileVault
+        if let profileVaultFactory{vault=profileVaultFactory()}
+        else{
+            let directory=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("Relay",isDirectory:true)
+            vault=ProfileVault(directory:directory)
+        }
+        let controller=ProfileController(client:ProfileClient(port:port),vault:vault,onInvalidate:{[weak self] in self?.retirePersonalContext()})
         profileStorage=controller;return controller
+    }
+    private func retirePersonalContext(){retireRequest(status:"Background updated");authority.invalidate()}
+    private func profileTarget()->ProfileUseTarget?{
+        let controller=profile
+        guard let binding=profileBinding else{return nil}
+        return ProfileUseTarget(controller:controller,bindingID:binding.id,isCurrent:{[weak self,weak binding,weak controller] in
+            guard let self,let binding,let controller else{return false}
+            return self.profileBinding === binding && self.profileStorage === controller && !binding.retired
+                && (binding.helper == nil || binding.helper === self.helper)
+        })
+    }
+    func openMyContext(){
+        guard !stopping,(!fixture || (contextPreferencesOverride != nil && profileVaultFactory != nil)),let target=profileTarget() else{return}
+        contextUse.openFromUserAction(target:target)
+    }
+    func lockMyContext(){
+        guard let target=profileTarget() else{return}
+        contextUse.lockFromUserAction(target:target)
     }
     private func profileRequest(_ data:Data,binding:SharedProfileBinding) async throws -> Data {
         guard !binding.retired,profileBinding === binding else { throw PanelBridgeError.closed }
         let transport:HelperTransport
         if let bound=binding.helper { transport=bound }
         else { transport=try ensureHelper();binding.helper=transport }
-        return try await transport.requestProfile(data)
+        let response=try await transport.requestProfile(data)
+        if let profileResponseObserved{await profileResponseObserved(data)}
+        guard !binding.retired,profileBinding === binding,binding.helper === transport,helper === transport else{throw PanelBridgeError.closed}
+        return response
     }
     private func shutdownProfile(_ binding:SharedProfileBinding) async {
         binding.retired=true
+        if hasContextUse{contextUse.retireForHelperChange()}
         if let old=binding.helper,old === helper {
             // Close all old admission before the first await. Queued frames and
             // source events cannot cross into a replacement helper lifecycle.
@@ -192,9 +258,14 @@ private actor FixtureRecognizer: ActivityRecognizer {
          contextWriteAcknowledged:(@MainActor (Data,PanelRequestBinding) async ->Void)?=nil,
          ingressEnqueued:(@MainActor (SessionIngress)->Void)?=nil,
          speechSetup:SpeechSetupCoordinator?=nil,
+         contextPreferences:(any SessionContextUsePreferences)?=nil,
+         profileVaultFactory:(@MainActor ()->ProfileVault)?=nil,
+         profileResponseObserved:(@MainActor (Data) async ->Void)?=nil,
          bundleURL:URL=Bundle.main.bundleURL,
          workingDirectory:URL=URL(fileURLWithPath:FileManager.default.currentDirectoryPath)) {
         self.speechSetup=speechSetup ?? SpeechSetupCoordinator()
+        contextPreferencesOverride=contextPreferences;self.profileVaultFactory=profileVaultFactory
+        self.profileResponseObserved=profileResponseObserved
         self.contextCoordinatorOverride=contextCoordinator
         self.contextWriteAcknowledged=contextWriteAcknowledged;self.ingressEnqueued=ingressEnqueued
         fixture=arguments.contains("--fixture-suite")
@@ -226,6 +297,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     isolated deinit {
         startTask?.cancel()
         speechSetup.cancel()
+        if hasContextUse{contextUse.retireForHelperChange()}
         if let focusObserver { NSWorkspace.shared.notificationCenter.removeObserver(focusObserver) }
         if let windowObserver { NotificationCenter.default.removeObserver(windowObserver) }
         if let helper { helper.stop();Task.detached { await helper.shutdownAndWait() } }
@@ -250,6 +322,59 @@ private actor FixtureRecognizer: ActivityRecognizer {
         })
         try helper.start();self.helper=helper;return helper
     }
+    private func issueAssistantQuestion(_ intent:UserQuestionIntent,question:String?,basis:UUID?)throws->NativeUserQuestionRequest {
+        guard running,!stopping,let lease=authority.snapshot(),helper != nil else{throw PanelBridgeError.closed}
+        let queue=events,old=currentBinding
+        do {
+            let issued=try (fixture ? native:capture.controller).issueUserQuestion(expectedLease:lease,intent:intent,question:question,baseRequestID:basis,enqueue:{[weak self] request in
+                try queue.enqueue(.typed(request,old)){[weak self] in self?.receiveApplication($0)}
+            })
+            explicitRequestIDs.append(issued.requestID)
+            if explicitRequestIDs.count>8{explicitRequestIDs.removeFirst()}
+            return issued
+        }catch NativeSessionError.notAuthorized{throw NativeSessionError.notAuthorized}
+        catch{failSession();throw error}
+    }
+    private func cancelAssistantResponse(_ target:PanelRequestBinding)async throws->AnswerCancellationResponse {
+        guard running,!stopping,currentBinding==target,let helper else{throw PanelBridgeError.closed}
+        let queue=events
+        do {
+            let issued=try (fixture ? native:capture.controller).issueAnswerCancellation(expectedLease:target.lease,targetRequestID:target.requestID,enqueue:{[weak self] request in
+                _=try helper.registerAnswerCancellation(request)
+                try queue.enqueue(.answerCancel(request,target)){[weak self] in self?.receiveApplication($0)}
+            })
+            return try await helper.registerAnswerCancellation(issued).value()
+        }catch NativeSessionError.notAuthorized{throw NativeSessionError.notAuthorized}
+        catch{
+            if self.helper === helper,running,!stopping{failSession()}
+            throw error
+        }
+    }
+    private func receiveApplication(_ ingress:ApplicationIngress) {
+        switch ingress {
+        case .session(let event):receive(event)
+        case .typed(let request,let original):
+            guard helper != nil,forwardedSessionID==request.lease.captureSessionID else{return}
+            do {
+                if let original{try retireExplicitOriginal(original)}
+                try eventForwarder().enqueueUserQuestion(request,retiring:original)
+            }catch{failSession()}
+        case .answerCancel(let request,let original):
+            guard helper != nil,forwardedSessionID==request.lease.captureSessionID else{return}
+            do {
+                try retireExplicitOriginal(original)
+                try eventForwarder().enqueueAnswerCancellation(request,retiring:original)
+            }catch{failSession()}
+        }
+        assistant.refresh()
+    }
+    /// Deny the original request before callbacks can flush a held EOU/PNG.
+    private func retireExplicitOriginal(_ original:PanelRequestBinding)throws {
+        guard let helper else{throw PanelBridgeError.closed}
+        try helper.sendJSON(original.retirementJSON())
+        guard enqueueContextRetirement(original) else{throw PanelBridgeError.closed}
+        if currentBinding==original{retireRequest(status:"Listening")}
+    }
     func receive(_ ingress:SessionIngress) {
         guard helper != nil else { return }
         switch ingress {
@@ -257,9 +382,11 @@ private actor FixtureRecognizer: ActivityRecognizer {
             if event.kind == .sessionStarted {
                 guard authority.snapshot()?.captureSessionID==event.captureSessionID else { return }
                 forwardedSessionID=event.captureSessionID;lastForwardedSequence=0
+                explicitRequestIDs=[]
             }
             guard forwardedSessionID==event.captureSessionID else { return }
             if let active=authority.snapshot(),active.captureSessionID != event.captureSessionID { return }
+            assistant.observeNative(event)
             if !stopping && ([.stopping,.stopped].contains(event.kind)
                 || (event.sourceCode==2 && [.sourceUnavailable,.discontinuity].contains(event.kind))) {
                 // Spontaneous native failure takes the same real owner join and
@@ -300,17 +427,58 @@ private actor FixtureRecognizer: ActivityRecognizer {
                 }
             }
             return await self.contextComposer.captureForForwarding(for:binding,readSelectedText:{if case .manual=ingress{return true};return false}(),imageWriter:writer)
-        },send:{ [weak self] ingress,frames in try self?.send(ingress,context:frames) },onFailure:{ [weak self] in self?.failSession() })
+        },send:{ [weak self] ingress,frames in try self?.send(ingress,context:frames) },onFailure:{ [weak self] in self?.failSession() },explicit:ExplicitContextForwardingPorts(shouldCapture:{[weak self] request in
+            guard let self,self.running,!self.stopping,self.authority.snapshot()==request.lease else{return false}
+            return (self.contextCoordinatorOverride?.isEnabled ?? self.screen.isEnabled) || self.selectedText.isEnabled
+        },capture:{[weak self] request in
+            guard let self else{return []}
+            return await self.captureExplicitContext(request)
+        },retire:{[weak self] original in
+            guard let self else{throw PanelBridgeError.closed}
+            try self.retireExplicitOriginal(original)
+        },sendQuestion:{[weak self] request,frames in
+            guard let self,let helper=self.helper else{throw PanelBridgeError.closed}
+            let binding=PanelRequestBinding(lease:request.lease,requestID:request.requestID,eventSequence:request.anchorEventSequence)
+            if self.authority.snapshot() != binding.lease{try helper.sendJSON(binding.retirementJSON())}
+            self.bind(binding)
+            for frame in frames{try helper.sendJSON(frame)}
+            try helper.sendJSON(request.encodedJSON())
+        },sendCancellation:{[weak self] request in
+            guard let helper=self?.helper else{throw PanelBridgeError.closed}
+            try helper.sendJSON(request.encodedJSON())
+        }))
         forwarder=created;return created
     }
     private func bind(_ request:PanelRequestBinding) {
         guard authority.snapshot()==request.lease,currentBinding != request else { return }
         currentBinding=request;lastContextRetirement=nil;terminalObserved=false;taskContextUsed=false;imageContextUsed=false
         publication.bind(request);panel.bind(request)
+        assistant.observeRequest(request)
+    }
+    private func captureExplicitContext(_ request:NativeUserQuestionRequest)async->[Data] {
+        let binding=PanelRequestBinding(lease:request.lease,requestID:request.requestID,eventSequence:request.anchorEventSequence)
+        bind(binding)
+        let deadline=DispatchTime.now().uptimeNanoseconds+1_500_000_000
+        var writer:(@MainActor (Data)async throws->Void)?
+        if let generation=visual.offerGeneration,let helper {
+            let identity=helperIdentity
+            writer={[weak self] data in
+                try await helper.sendJSONAwaitingWrite(data,deadline:deadline,isCurrent:{[weak self] in
+                    guard let self else{return false}
+                    return self.helperIdentity==identity && self.helper === helper && self.currentBinding==binding
+                        && self.visual.ownsOfferGeneration(generation) && self.contextComposer.ownsCurrent(binding)
+                })
+                await self?.contextWriteAcknowledged?(data,binding)
+            }
+        }
+        return await contextComposer.captureForForwarding(for:binding,readSelectedText:true,imageWriter:writer)
     }
     private func send(_ ingress:SessionIngress,context:[Data]) throws {
         guard let helper else { throw PanelBridgeError.closed }
-        if let binding=ingress.binding { bind(binding) }
+        if let binding=ingress.binding {
+            if authority.snapshot() != binding.lease{try helper.sendJSON(binding.retirementJSON())}
+            bind(binding)
+        }
         for frame in context { try helper.sendJSON(frame) }
         switch ingress {
         case .audio(let event):
@@ -322,6 +490,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     private func acceptFrame(_ data:Data) throws {
         let decision=try SessionAnswerDecision(data:data)
+        assistant.observeDecision(decision)
         guard let binding=currentBinding,!terminalObserved,
             decision.sessionID==binding.lease.captureSessionID,decision.epoch==binding.lease.sessionEpoch,
             decision.generation==binding.lease.presentationGeneration,decision.requestID==binding.requestID,
@@ -363,6 +532,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
         currentBinding=nil;acceptedQuestion=nil;terminalObserved=true;taskContextUsed=false;imageContextUsed=false;manualRequestToShow=nil
         publication.retire();if hasContextComposer { contextComposer.retire() };if hasSelectedText { selectedText.invalidate() }
         if notified{forwarder?.cancelOptionalWork()}else{forwarder?.retire()}
+        assistant.refresh()
     }
     private func retireRequest(status:String) { retireOptionalWork();panel.clear(status:status) }
     func contextSourceChanged() {
@@ -405,6 +575,22 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     func retryPreparation()async{await start()}
     private func ownsStart(_ identity:UUID)->Bool{startIdentity==identity && !Task.isCancelled && !stopping}
+    private func restoreContextForStart(_ identity:UUID,sourceIsCurrent:@escaping @MainActor ()->Bool)async->Bool{
+        let use=contextUse
+        guard use.useInSessions else{return !use.isBusy && profileStorage?.busy != true && ownsStart(identity) && sourceIsCurrent()}
+        guard let target=profileTarget() else{error="Saved context is unavailable. Open My Context, or lock it and retry.";return false}
+        let result=await use.restoreBeforeSession(target:target,startIntentID:identity,isStartCurrent:{[weak self] in
+            self?.ownsStart(identity)==true && sourceIsCurrent()
+        })
+        guard ownsStart(identity),sourceIsCurrent() else{return false}
+        guard result == .ready,use.useInSessions,!use.isBusy,target.controller.opened,!target.controller.busy,
+              profileStorage === target.controller,let binding=profileBinding,binding.id==target.bindingID,!binding.retired,
+              binding.helper === helper else{
+            error=result == .missing || result == .unavailable ? use.snapshot.message:"Saved context changed while starting. Start again, or open My Context."
+            return false
+        }
+        return true
+    }
     private func startOwned(identity:UUID) async {
         defer { if startIdentity==identity { starting=false } }
         guard !running,!stopping else { return };error=nil
@@ -412,7 +598,10 @@ private actor FixtureRecognizer: ActivityRecognizer {
         var preparingManaged=false
         do {
             if !fixture && capture.phase != .idle { error="Waiting for capture to finish stopping.";return }
-            if fixture { _=try ensureHelper();try startFixture();return }
+            if fixture {
+                guard await restoreContextForStart(identity,sourceIsCurrent:{true}) else{return}
+                _=try ensureHelper();try startFixture();return
+            }
             guard authorizedConversation else {
                 error="Confirm this is a permitted conversation before starting.";return
             }
@@ -436,10 +625,15 @@ private actor FixtureRecognizer: ActivityRecognizer {
                 error="Audio choices changed during preparation. Check them and start again.";return
             }
             try configuration.validateLocalModels()
+            guard await restoreContextForStart(identity,sourceIsCurrent:{[weak self] in
+                guard let self else{return false}
+                return self.authorizedConversation && self.microphoneEnabled==microphone && self.selectedBundleID==bundle
+            }) else{return}
             _=try ensureHelper();captureAttempted=true
             try await capture.start(configuration:configuration)
             guard ownsStart(identity) else{throw CancellationError()}
             running=capture.phase == .running;paused=false
+            refreshAssistantAfterStart()
         } catch is CancellationError { if ownsStart(identity){panel.clear(status:"Stopped")} }
         catch {
             guard ownsStart(identity) else{return}
@@ -453,9 +647,12 @@ private actor FixtureRecognizer: ActivityRecognizer {
         }
     }
     private func startFixture() throws {
-        let question=fixtureSuite=="coding" ? "Write a Python function that returns the first item or None for an empty list." : fixtureSuite=="case" ? "Case study: design a feature for nurse handoffs. What user needs would you clarify first?":"What is the difference between WHERE and HAVING?"
+        let question:String
+        if fixtureSuite=="personal-memory" {question="What did you personally do on your Fictional Northstar project?"}
+        else{question=fixtureSuite=="coding" ? "Write a Python function that returns the first item or None for an empty list." : fixtureSuite=="case" ? "Case study: design a feature for nurse handoffs. What user needs would you clarify first?":"What is the difference between WHERE and HAVING?"}
         try native.start(selectedBundleID:"com.example.fixture",microphoneEnabled:false,components:[2:SourceComponents(vad:FixtureVAD(),recognizer:FixtureRecognizer([question],fails:fixtureSuite=="source-failure"))])
         running=true;paused=false
+        refreshAssistantAfterStart()
         let clock=NativeClockCalibration.now()
         let start=mach_absolute_time()-UInt64(2_000_000_000)*UInt64(clock.nsDenom)/UInt64(clock.nsNumer)
         for sequence:UInt64 in 1...2 {
@@ -463,10 +660,16 @@ private actor FixtureRecognizer: ActivityRecognizer {
         }
     }
     func ingestFixturePacket(_ packet:SessionAudioPacket){guard fixture else{return};native.ingest(packet)}
+    private func refreshAssistantAfterStart(){
+        assistant.refresh()
+        guard running,let currentBinding else{return}
+        if !terminalObserved{assistant.observeRequest(currentBinding)}
+        if let acceptedQuestion{assistant.recordQuestion(currentBinding,question:acceptedQuestion)}
+    }
     var currentSessionID:UUID? { authority.snapshot()?.captureSessionID ?? forwardedSessionID }
     var canStartSession:Bool {
         guard case .success=helperRuntime else{return false}
-        return !running && !starting && !stopping && teardown==nil && !speechSetup.snapshot.isBusy && !visual.isBusy && visual.status != .busy && (fixture || capture.phase == .idle)
+        return !running && !starting && !stopping && teardown==nil && !speechSetup.snapshot.isBusy && !visual.isBusy && visual.status != .busy && profileStorage?.busy != true && !(hasContextUse && contextUse.isBusy) && (fixture || capture.phase == .idle)
     }
     var canResume:Bool { paused && canStartSession }
     func beginRetirement(end:Bool) {
@@ -479,13 +682,18 @@ private actor FixtureRecognizer: ActivityRecognizer {
         // Real source/ASR admission and native paint retire before any await.
         if fixture { native.beginStop() } else { capture.retireAdmission(reason:.userStop) }
         authority.stop();running=false;paused = !end;stopping=true
+        if end{assistant.transcript.end()}else{assistant.transcript.pause()}
+        assistant.refresh()
         if hasContextComposer,let old=contextComposer.binding{enqueueContextRetirement(old)}
         disableVisualInput() // Enqueue before its callback can release old EOU.
         retireRequest(status:end ? "Stopped":"Paused · recent conversation will reset on resume")
+        let oldContextUse=hasContextUse ? contextUse:nil
+        oldContextUse?.retireForHelperChange()
         teardown=Task { [weak self] in
             guard let self else{return}
             await self.speechSetup.waitForQuiescence()
             await oldStart?.value
+            await oldContextUse?.waitForQuiescence()
             if self.fixture { await self.native.waitForQuiescence();self.native.finishStop(quiesced:true) }
             else {
                 await self.capture.stop(reason:.userStop)
@@ -500,7 +708,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
                 self.error="The old helper did not acknowledge shutdown. Its profile was retired; reopen background to recover."
             }
             if self.endRequested {
-                if let profile=self.profileStorage { await profile.close() }
+                if let profile=self.profileStorage,profile.opened || profile.busy { await profile.close() }
                 if let oldHelper {
                     if self.helper === oldHelper { self.helper=nil;self.helperIdentity=UUID();self.helperFailures.activate(self.helperIdentity) }
                     self.profileBinding?.retired=true
@@ -531,11 +739,12 @@ private actor FixtureRecognizer: ActivityRecognizer {
         case .endSession:beginRetirement(end:true)
         case .resume:guard canResume else { throw ControlsError.actionFailed(action) };Task { await start() }
         case .requestHelp:
+            if let currentBinding,explicitRequestIDs.contains(currentBinding.requestID){assistant.requestCurrentQuestionHelp();return}
             guard running,!stopping,forwarder?.isIdle != false,let question=acceptedQuestion,let lease=authority.snapshot() else { error="Ask a question first.";window?.makeKeyAndOrderFront(nil);return }
             let queue=events
             do {
                 _=try (fixture ? native:capture.controller).issueManualHelp(expectedEventSequence:lastForwardedSequence,expectedLease:lease,question:question,enqueue:{ [weak self] request in
-                    try queue.enqueue(.manual(request)) { [weak self] in self?.receive($0) }
+                    try queue.enqueue(.session(.manual(request))) { [weak self] in self?.receiveApplication($0) }
                 })
             } catch { self.error="The discussion changed. Help will be available after the current question." }
         default:throw ControlsError.actionFailed(action)
@@ -584,14 +793,15 @@ private actor FixtureRecognizer: ActivityRecognizer {
         guard canChangeAIMode,enabled != oauth else { return }
         error=nil
         let oldProfile=profileStorage
+        let neededProfileLock=oldProfile?.opened==true || oldProfile?.busy==true
         await stop()
         guard !stopping,helper==nil else { return }
-        if let oldProfile,oldProfile.closeOutcome != .locked {
+        if let oldProfile,neededProfileLock,oldProfile.closeOutcome != .locked {
             error="Background could not be locked. Its helper was stopped; reopen saved background before trying again."
             return
         }
         oauth=enabled
-        contextStatus="AI mode changed. Reopen saved background if needed."
+        contextStatus="AI mode changed."
     }
     func performWindowAction(_ action:ControlAction) {
         do { try windowActions.perform(action) } catch { self.error=error.localizedDescription }

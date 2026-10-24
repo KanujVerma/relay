@@ -80,7 +80,7 @@ private struct RelayAppCommands:Commands {
     private var router:RelayCommandRouter{RelayCommandRouter(state:{model.relayPresentation},control:model.performWindowAction,start:{await model.start()},cancelPreparation:model.cancelPreparation,retryPreparation:{await model.retryPreparation()},openContext:{openWindow(id:"relay-context")},openSettings:{openWindow(id:"relay-settings")},showSession:{openWindow(id:"relay-live")})}
     var body:some View {
         TimelineView(.periodic(from:.now,by:1)){_ in
-            LiveSessionView(state:model.relayPresentation,question:model.snapshot.question,answer:model.relayAnswer,status:model.snapshot.status,contextLabel:model.relayContextLabel,contextDetail:model.contextStatus.isEmpty ? nil:model.contextStatus,error:model.error,elapsed:elapsed,fixture:model.fixture,attachScroll:{window,scroll in model.attachWindow(window,scrollView:scroll)},expanded:$shell.expanded,detailExpanded:$model.expanded,onAction:{router.perform($0)})
+            LiveSessionView(state:model.relayPresentation,question:model.snapshot.question,answer:model.relayAnswer,status:model.snapshot.status,contextLabel:model.relayContextLabel,contextDetail:model.contextStatus.isEmpty ? nil:model.contextStatus,error:model.error,elapsed:elapsed,fixture:model.fixture,assistant:model.assistant,attachScroll:{window,scroll in model.attachWindow(window,scrollView:scroll)},expanded:$shell.expanded,detailExpanded:$model.expanded,onAction:{router.perform($0)})
         }
         .background(RelayLiveWindowAttachment(shell:shell,attach:{window in model.attachWindow(window,scrollView:nil)}))
         .onAppear{if model.running{startedAt=ProcessInfo.processInfo.systemUptime}}
@@ -91,7 +91,12 @@ private struct RelayAppCommands:Commands {
     }
     private var elapsed:String?{guard model.running,let startedAt else{return nil};let seconds=max(0,Int(ProcessInfo.processInfo.systemUptime-startedAt));return String(format:"%02d:%02d",seconds/60,seconds%60)}
 }
-@MainActor private struct RelayMemoryWorkspace:View {
+@MainActor struct RelayMemoryWorkspace:View {
     @ObservedObject var model:SessionApplicationModel
-    var body:some View{ProfilePreparationView(controller:model.profile,role:model.role).frame(minWidth:760,minHeight:670).preferredColorScheme(.dark).disabled(model.fixture)}
+    @ObservedObject private var use:SessionContextUseCoordinator
+    init(model:SessionApplicationModel){self.model=model;use=model.contextUse}
+    var body:some View{
+        ProfilePreparationView(controller:model.profile,role:model.role,sessionUse:use.snapshot,onOpen:model.openMyContext,onLock:model.lockMyContext)
+            .frame(minWidth:760,minHeight:670).preferredColorScheme(.dark).disabled(model.fixture)
+    }
 }

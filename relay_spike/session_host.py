@@ -53,6 +53,8 @@ class Request:
     display_question: str
     bundle: object
     accepted_at: float
+    origin: str = "remote_final"
+    projection: object = None
 
 
 class SessionHost:
@@ -68,12 +70,15 @@ class SessionHost:
         self.session=None;self.sequence=0;self.presentation=0;self.live=False;self.stopped_session=None
         self.activities={};self.used_requests=set();self.terminal=set();self.tasks=set();self.active=None
         self.model_requests=0
-        self._worker=None;self._pending_work=None
+        self._worker=None;self._worker_request=None;self._pending_work=None
         self._microphone_available=False
+        from .user_question import UserQuestionCoordinator
+        self.user=UserQuestionCoordinator(self)
         from .visual_host import HostVisualInput
         self.visual=HostVisualInput(self,visual_transport)
 
     def _invalidate(self):
+        self.user.invalidate_retired_help()
         self.visual.retire_request()
         if self.active is not None:
             self.terminal.add(self.active.native['requestID'])
@@ -89,6 +94,7 @@ class SessionHost:
 
     def close(self,*,preserve_visual=False):
         if not preserve_visual:self.visual.disable(cancel_work=False)
+        self.user.close()
         self._clear_context_provider()
         self._invalidate();self.permission.revoke();self.bridge.stop();self.live=False;self.context.clear();self.activities.clear()
 
@@ -98,6 +104,7 @@ class SessionHost:
             batch=tuple(self.tasks)
             await asyncio.gather(*batch,return_exceptions=True)
             self.tasks.difference_update(task for task in batch if task.done())
+        await self.user.drain()
 
     def _current(self,request):
         try:
@@ -123,6 +130,7 @@ class SessionHost:
         # Encode before sealing: overflow fails closed; no truncation of facts/code.
         encode_frame(value)
         if not pending: self.terminal.add(n['requestID'])
+        self.user.note_result(value)
         self.emit(value)
         return True
 
@@ -132,7 +140,7 @@ class SessionHost:
         value={key:n[key] for key in ('captureSessionID','sessionEpoch','presentationGeneration','requestID','eventSequence')}
         value.update(schemaVersion=1,resultRevision=2,disposition='abstain',reasonCode=reason,
                      pythonToken=None,displayID=None,question='',answerID=None,answerKind=None,card=None,provenance=None)
-        encode_frame(value);self.terminal.add(n['requestID']);self.emit(value)
+        encode_frame(value);self.terminal.add(n['requestID']);self.user.note_result(value);self.emit(value)
 
     async def handle(self,raw):
         try: n,inner=decode_event(raw)
@@ -166,6 +174,7 @@ class SessionHost:
         previous_presentation=self.presentation
         self.sequence=n['eventSequence'];self.presentation=max(self.presentation,n['presentationGeneration'])
         if source==1 and kind in ('source_unavailable','discontinuity'):
+            self.user.invalidate_retired_help()
             self._microphone_available=False
             self.activities={k:v for k,v in self.activities.items() if k[0]!=1}
             self.context.mark_gap('microphone_unavailable' if kind=='source_unavailable' else 'microphone_discontinuity')
@@ -220,6 +229,7 @@ class SessionHost:
         if len(self.used_requests)>=512: self.close();raise WireError('request_ledger_budget')
         self.used_requests.add(request_id)
         if inner.text: self.context.observe('remote',inner.text,order=inner.start_ms)
+        if self.user.is_retired(n):return
         observation=FinalizedASRObservation('remote',inner.stream_generation,logical,inner.revision,inner.start_ms,inner.end_ms,inner.received_ms,'final',inner.text or '',inner.finalized_ms,inner.confidence)
         result=self.bridge.ingest(observation,context=CaptureContext('authorized',True))
         if result.disposition!='ready' or result.token is None:
@@ -233,7 +243,9 @@ class SessionHost:
             self._withhold_native(n,'question_overflow');return
         try: bundle=self.provider.retrieve(question,self.role) if self.provider else None
         except ValueError: bundle=None
-        req=Request(dict(n),result.token,uuid.uuid4().hex,question,display_question,bundle,time.monotonic());self.active=req
+        projection=self.context.fork()
+        req=Request(dict(n),result.token,uuid.uuid4().hex,question,display_question,bundle,time.monotonic(),projection=projection);self.active=req
+        self.user.note_request(req,projection)
         self._route(req)
 
     def supplemental_request_current(self,native):
@@ -287,7 +299,7 @@ class SessionHost:
             self._personal(req);return
         supplemental=self._admit_supplemental(req)
         if supplemental is None:
-            route=publish_reference(PolicyInput(req.question,self.role,'sql',source_channel='remote_final',question_status='final',host_authorized=True),turns=self.machine.turns,token=req.token,consent=self.permission,on_present=lambda _:None)
+            route=publish_reference(PolicyInput(req.question,self.role,'sql',source_channel=req.origin,question_status='final',host_authorized=True),turns=self.machine.turns,token=req.token,consent=self.permission,on_present=lambda _:None)
             if route.card:
                 authorized=[]
                 render_queued_card(route.card,turns=self.machine.turns,consent=self.permission,on_paint=authorized.append)
@@ -297,12 +309,22 @@ class SessionHost:
                 return
             if route.reason_code=='reviewed_fixture_changed':
                 self._result(req,'abstain','reference_unavailable');return
-        if self.context.snapshot().task.state!='ready':
-            self._result(req,'clarify','task_context_'+('overflow' if self.context.snapshot().task.state=='overflow' else 'unresolved'));return
+        dialogue=(req.projection or self.context).snapshot()
+        if dialogue.task.state!='ready':
+            self._result(req,'clarify','task_context_'+('overflow' if dialogue.task.state=='overflow' else 'unresolved'));return
         if self.complete is None:
             self._result(req,'abstain','inference_disabled');return
         self._result(req,'pending','generating_with_task_context' if supplemental is not None else 'generating',pending=True)
-        self._queue_work(req,self.context.snapshot())
+        self._queue_work(req,dialogue)
+
+    async def handle_user_question(self,raw):
+        return await self.user.question(raw)
+
+    def handle_answer_retirement(self,raw):
+        self.user.retire(raw)
+
+    def handle_answer_cancel(self,raw):
+        return self.user.cancel(raw)
 
     async def handle_manual_help(self,raw):
         from .manual_help import decode_manual_help
@@ -324,8 +346,9 @@ class SessionHost:
             self._withhold_native(n,'manual_context_unavailable');return False
         try:bundle=self.provider.retrieve(previous.question,self.role) if self.provider else None
         except ValueError:bundle=None
-        req=Request(n,previous.token,uuid.uuid4().hex,previous.question,previous.display_question,bundle,time.monotonic())
-        self.active=req;self._route(req);return True
+        projection=self.context.fork()
+        req=Request(n,previous.token,uuid.uuid4().hex,previous.question,previous.display_question,bundle,time.monotonic(),projection=projection)
+        self.active=req;self.user.note_request(req,projection);self._route(req);return True
 
     def _queue_work(self,req,dialogue):
         self._pending_work=(req,dialogue)
@@ -335,13 +358,13 @@ class SessionHost:
     def _start_pending(self):
         work,self._pending_work=self._pending_work,None
         if work is None or not self._current(work[0]): return
-        task=asyncio.create_task(self._generate(*work));self._worker=task
+        task=asyncio.create_task(self._generate(*work));self._worker=task;self._worker_request=work[0]
         self.tasks.add(task)
         def finished(done):
             if not done.cancelled(): done.exception()  # consume; never log provider/private errors
             self.tasks.discard(done)
             if self._worker is done:
-                self._worker=None
+                self._worker=None;self._worker_request=None
                 self._start_pending()
         task.add_done_callback(finished)
 
@@ -350,7 +373,7 @@ class SessionHost:
 
     def personal_context_changed(self):
         # Called before native-selected review/revocation changes the ledger.
-        self._invalidate()
+        self._invalidate();self.user.replies.clear()
 
     @staticmethod
     def _personal_question(question):
@@ -493,6 +516,12 @@ async def run_stdio(args,*,oauth_stream=None):
                     await host.drain()
                     emit({'schemaVersion':1,'kind':'session_quiescence_response','requestID':value['requestID'],
                         'captureSessionID':value['captureSessionID'],'sessionEpoch':value['sessionEpoch'],'quiesced':True})
+                elif isinstance(value,dict) and value.get('kind')=='user_question_request':
+                    await host.handle_user_question(value)
+                elif isinstance(value,dict) and value.get('kind')=='answer_request_retired':
+                    host.handle_answer_retirement(value)
+                elif isinstance(value,dict) and value.get('kind')=='answer_cancel_request':
+                    host.handle_answer_cancel(value)
                 elif isinstance(value,dict) and value.get('kind')=='manual_help_request':
                     await host.handle_manual_help(value)
                 elif isinstance(value,dict) and value.get('kind')=='supplemental_context_retired':

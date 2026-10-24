@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 import RelaySessionPanel
+import RelayControls
 @testable import RelayPanelSession
 
 @MainActor final class ProductRuntimeApplicationTests:XCTestCase {
@@ -33,5 +34,40 @@ import RelaySessionPanel
         XCTAssertTrue(model.running);XCTAssertNotNil(model.snapshot.card)
         await model.stop()
         XCTAssertFalse(model.running);XCTAssertFalse(model.stopping)
+    }
+    func testOptInActualBundleRunsItsHelperWithoutDeveloperOverrides()async throws {
+        guard let path=ProcessInfo.processInfo.environment["RELAY_BUNDLED_RUNTIME_APP"] else {
+            throw XCTSkip("Explicit built-app default-runtime check; no repository/Python fallback or live capture.")
+        }
+        let app=URL(fileURLWithPath:path,isDirectory:true)
+        let model=SessionApplicationModel(arguments:["Relay","--fixture-suite","coding"],bundleURL:app,workingDirectory:URL(fileURLWithPath:"/"))
+        addTeardownBlock{await model.stop()}
+        XCTAssertNil(model.error);XCTAssertTrue(model.canStartSession)
+        guard model.canStartSession else{return}
+        XCTAssertTrue(model.root.path.hasPrefix(app.path+"/"))
+        await model.start()
+        for _ in 0..<5000 {
+            if model.snapshot.card != nil || !model.running{break}
+            try await Task.sleep(for:.milliseconds(2))
+        }
+        XCTAssertTrue(model.running);XCTAssertNotNil(model.snapshot.question);XCTAssertNotNil(model.snapshot.card)
+        let question="Write a Python function to get the first item or None when a list is empty."
+        model.assistant.draft=question;model.assistant.submitDraft()
+        for _ in 0..<5000{
+            if model.snapshot.question==question,model.snapshot.card != nil{break}
+            try await Task.sleep(for:.milliseconds(2))
+        }
+        XCTAssertEqual(model.snapshot.question,question);XCTAssertNotNil(model.snapshot.card)
+        let replacement=model.snapshot.replacement
+        try model.perform(.requestHelp)
+        for _ in 0..<5000{
+            if model.snapshot.replacement>replacement,model.snapshot.card != nil{break}
+            try await Task.sleep(for:.milliseconds(2))
+        }
+        XCTAssertGreaterThan(model.snapshot.replacement,replacement)
+        XCTAssertEqual(model.snapshot.question,question);XCTAssertNotNil(model.snapshot.card)
+        XCTAssertEqual(model.assistant.transcript.snapshot.rows.count,1,"typed questions must not become recognized speech")
+        await model.stop()
+        XCTAssertFalse(model.running);XCTAssertFalse(model.stopping);XCTAssertNil(model.snapshot.card)
     }
 }

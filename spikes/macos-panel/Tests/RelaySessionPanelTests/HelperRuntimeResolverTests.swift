@@ -6,9 +6,10 @@ import XCTest
 final class HelperRuntimeResolverTests:XCTestCase {
     private func fixture()throws->URL {
         let app=FileManager.default.temporaryDirectory.appendingPathComponent("relay-runtime-"+UUID().uuidString).appendingPathComponent("Moved Relay.app")
-        let runtime=app.appendingPathComponent("Contents/Helpers/RelayRuntime"),data=runtime.appendingPathComponent("_internal")
+        let runtime=app.appendingPathComponent("Contents/Helpers/RelayRuntime.app"),data=runtime.appendingPathComponent("Contents/Resources")
         try FileManager.default.createDirectory(at:data,withIntermediateDirectories:true)
-        let executable=runtime.appendingPathComponent("relay-helper")
+        let executable=runtime.appendingPathComponent("Contents/MacOS/relay-helper")
+        try FileManager.default.createDirectory(at:executable.deletingLastPathComponent(),withIntermediateDirectories:true)
         try Data("synthetic executable".utf8).write(to:executable)
         try FileManager.default.setAttributes([.posixPermissions:0o700],ofItemAtPath:executable.path)
         let paths=["EVALS/interview-questions.jsonl","EVALS/publication-policy-cases.jsonl","EVALS/technical-answer-gate.jsonl","EVALS/asr-intent-cases.jsonl","ROLE_PACKS/junior-data-analytics.md","ROLE_PACKS/epic-software-developer.md"]
@@ -27,17 +28,17 @@ final class HelperRuntimeResolverTests:XCTestCase {
     func testBundledLocationUsesItsOwnExecutableDataAndNoPythonPrefix()throws{
         let app=try fixture();defer{remove(app)}
         let value=try HelperRuntimeResolver.resolve(bundleURL:app,arguments:["Relay"],workingDirectory:URL(fileURLWithPath:"/"))
-        XCTAssertEqual(value.executable,app.appendingPathComponent("Contents/Helpers/RelayRuntime/relay-helper"))
-        XCTAssertEqual(value.resourceRoot,app.appendingPathComponent("Contents/Helpers/RelayRuntime/_internal"));XCTAssertEqual(value.arguments,[])
+        XCTAssertEqual(value.executable,app.appendingPathComponent("Contents/Helpers/RelayRuntime.app/Contents/MacOS/relay-helper"))
+        XCTAssertEqual(value.resourceRoot,app.appendingPathComponent("Contents/Helpers/RelayRuntime.app/Contents/Resources"));XCTAssertEqual(value.arguments,[])
     }
     func testBrokenAppNeverUsesWorkingDirectoryOrSystemPython()throws{
         let app=try fixture();defer{remove(app)}
-        try FileManager.default.removeItem(at:app.appendingPathComponent("Contents/Helpers/RelayRuntime/relay-helper"))
+        try FileManager.default.removeItem(at:app.appendingPathComponent("Contents/Helpers/RelayRuntime.app/Contents/MacOS/relay-helper"))
         XCTAssertThrowsError(try HelperRuntimeResolver.resolve(bundleURL:app,arguments:["Relay"],workingDirectory:URL(fileURLWithPath:FileManager.default.currentDirectoryPath)))
     }
     func testCorruptedResourceOrUnsafeManifestFailsClosed()throws{
         let app=try fixture();defer{remove(app)}
-        let data=app.appendingPathComponent("Contents/Helpers/RelayRuntime/_internal")
+        let data=app.appendingPathComponent("Contents/Helpers/RelayRuntime.app/Contents/Resources")
         try Data("changed".utf8).write(to:data.appendingPathComponent("EVALS/interview-questions.jsonl"))
         XCTAssertThrowsError(try HelperRuntimeResolver.resolve(bundleURL:app,arguments:["Relay"],workingDirectory:URL(fileURLWithPath:"/")))
         try Data("{\"schema\":true}".utf8).write(to:data.appendingPathComponent("runtime-manifest.json"))
@@ -52,9 +53,16 @@ final class HelperRuntimeResolverTests:XCTestCase {
     }
     func testBundledExecutableSymlinkCannotEscapeTheApp()throws{
         let app=try fixture();defer{remove(app)}
-        let executable=app.appendingPathComponent("Contents/Helpers/RelayRuntime/relay-helper")
+        let executable=app.appendingPathComponent("Contents/Helpers/RelayRuntime.app/Contents/MacOS/relay-helper")
         try FileManager.default.removeItem(at:executable)
         try FileManager.default.createSymbolicLink(at:executable,withDestinationURL:URL(fileURLWithPath:"/usr/bin/true"))
         XCTAssertThrowsError(try HelperRuntimeResolver.resolve(bundleURL:app,arguments:["Relay"],workingDirectory:URL(fileURLWithPath:"/")))
+    }
+    func testActualPackagedArtifactUsesItsVerifiedManifest()throws{
+        guard let path=ProcessInfo.processInfo.environment["RELAY_TEST_PRODUCT_APP"] else{throw XCTSkip("actual product bundle is an explicit packaging gate")}
+        let app=URL(fileURLWithPath:path,isDirectory:true)
+        let value=try HelperRuntimeResolver.resolve(bundleURL:app,arguments:["Relay"],workingDirectory:URL(fileURLWithPath:"/"))
+        XCTAssertEqual(value.executable.path,app.appendingPathComponent("Contents/Helpers/RelayRuntime.app/Contents/MacOS/relay-helper").path)
+        XCTAssertEqual(value.arguments,[])
     }
 }

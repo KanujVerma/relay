@@ -1,8 +1,12 @@
-# Current build state, 2026-10-23
+# Relay build status
 
-Main remains `eb28d1586e52b7f0fd2e3b15580ae08ff295872e`, verified through live PR metadata. The controller [integration draft PR71](https://github.com/KanujVerma/relay/pull/71) assembles all accepted text/context/control, visual service/backend and native image producer/settings source. Source checkpoint `5ed2b5005b8d415ee8b43a5451d992c0d7c12794` includes accepted PR79c707 and the prospective-routing correction. Setup-only checkpoint951b062 then removes a machine-specific test interpreter path; product runtime and root CI workflow remain unchanged. Documentation commits may advance the branch. Scoped implementation/re-review is complete. The full integration CI is green at7685572. Locked-Mac UI inspection, main merge and real hardware/account/quality acceptance remain separate.
+Current source **db768fd** on controller branch `build/copilot-integration-2026-10-23`, draft [PR71](https://github.com/KanujVerma/relay/pull/71). Main remains unmerged at `eb28d15`. [HANDOFF](../HANDOFF.md) is the canonical current continuation record; historical checkpoints below retain their exact attribution.
 
-The owner authorizes frequent scoped commits/pushes and requires GPT-6.1 Sol extra-high workers. No private source, Keychain material, real capture, model download/load or actual account inference was used by this effort. Default/fixture helpers and normal image setup remain inert until explicitly enabled.
+The actual app now joins automatic speech setup, Cluely-style Home/live/Settings/My Context, selected screen/text/image context, typed Send/Help/Stop and transient audio transcript. Current root verification:129 panel/app collected,124 pass,5 explicit opt-in skips;598 Python collected,24 skips and two sandbox localhost bind denials, with the affected3-case OAuth file passing under permitted loopback. Independent typed/root10 app cases also pass. Source-loss basis protection and saved-context APP reopening are independently reviewed and joined. Protected account setup, idle Ask and broad résumé coverage remain active parallel features. The04fe/b431 release artifact passed its own bundled typed/default/relocation checks; the currentdb768 release passes its own18 resolver/app and3converter/relocation gates with100native audits/strict signatures. See [exact current artifact evidence](evidence/2026-10-23-bundled-runtime.md); installer/notarization remains separate. No full parity/installer/notarization/account or hardware acceptance is claimed.
+
+Frequent scoped publication is authorized. Every worker uses GPT-6.1 Sol extra-high. No private data or real account/capture/Keychain was used; public pinned speech assets and synthetic audio/documents were used and are documented. [Typed app evidence](evidence/2026-10-23-typed-app-join.md) records current versus historical results.
+
+## Historical and preceding checkpoints
 
 ## New active product target
 

@@ -4,6 +4,7 @@ from collections import deque
 from dataclasses import asdict, dataclass
 import json
 import re
+import copy
 from .correction_grammar import CORRECTION_PREFIX
 
 
@@ -53,6 +54,26 @@ class ConversationContext:
     def mark_gap(self,reason):
         if reason not in ('microphone_unavailable','microphone_discontinuity'): raise ValueError('Invalid context gap.')
         self._gaps=tuple(dict.fromkeys((*self._gaps,reason)))
+
+    def fork(self):
+        """Private bounded task state; no source, permission or memory authority."""
+        return copy.deepcopy(self)
+
+    def project_user_request(self,text,*,basis=None):
+        if not isinstance(text,str) or not text.strip() or len(text.encode())>500:
+            raise ValueError('Invalid explicit task text.')
+        projected=basis.fork() if basis is not None else ConversationContext(max_utterances=self._max_count,max_bytes=self._max_bytes)
+        # Preserve typed basis context and current actual audio as labelled data.
+        prior=[row for row in projected._history if row[0]=='user_text']
+        projected._history=deque([*self._history,*prior])
+        projected._gaps=tuple(dict.fromkeys((*projected._gaps,*self._gaps)))
+        order=max((row[2] for row in projected._history),default=0)
+        order=max(order,projected._task_order)+1
+        projected._update_task(text,order)
+        projected._history.append(('user_text',text,order));projected._explicit_current=text
+        while len(projected._history)>projected._max_count or sum(len(row[1].encode()) for row in projected._history)>projected._max_bytes:
+            projected._history.popleft()
+        return projected
 
     @staticmethod
     def _kind_of(text):
@@ -140,7 +161,7 @@ class ConversationContext:
 
     def snapshot(self):
         remote=tuple(t for c,t,_ in self._history if c=='remote');user=tuple(t for c,t,_ in self._history if c=='microphone')
-        current=remote[-1].lower() if remote else '';stage='clarify'
+        current=getattr(self,'_explicit_current',remote[-1] if remote else '').lower();stage='clarify'
         for name,pattern in (('validation',r'validat|test|measure|success'),('tradeoffs',r'tradeoff|improv|scale|optimi'),('flows',r'workflow|user flow|journey'),('requirements',r'require|constraint|capacity'),('users',r'who|user|customer'),('design',r'design|architect'),('implementation',r'code|implement|solve|function|query')):
             if re.search(pattern,current): stage=name;break
         assumptions=('Only explicitly supplied requirements are known.',)

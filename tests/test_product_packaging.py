@@ -6,6 +6,7 @@ import tarfile
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 class ProductPackagingTests(unittest.TestCase):
@@ -66,6 +67,29 @@ Load command 3
                 "PIP_CONFIG_FILE":"/synthetic/private/config"})
             for key in ("PYTHONPATH","PYTHONHOME","VIRTUAL_ENV","PIP_INDEX_URL","PIP_EXTRA_INDEX_URL"):self.assertNotIn(key,value)
             self.assertEqual(value["PIP_CONFIG_FILE"],os.devnull);self.assertEqual(value["PATH"],"/usr/bin:/bin")
+
+    def test_explicit_retained_module_caches_are_preserved_without_creating_defaults(self):
+        with tempfile.TemporaryDirectory() as name:
+            root=Path(name);work=root/"work";modules=root/"Retained Modules"
+            modules.mkdir()
+            value=self.module.build_environment(work,{"CLANG_MODULE_CACHE_PATH":str(modules),
+                "SWIFTPM_MODULECACHE_OVERRIDE":str(modules)})
+            self.assertEqual(value["CLANG_MODULE_CACHE_PATH"],str(modules))
+            self.assertEqual(value["SWIFTPM_MODULECACHE_OVERRIDE"],str(modules))
+            self.assertFalse(work.exists())
+
+    def test_retained_swift_cache_reaches_real_stock_build_command_before_any_assembly(self):
+        class CapturedNativeLaunch(Exception):pass
+        with tempfile.TemporaryDirectory() as name:
+            root=Path(name);cache=root/"Retained Swift Cache";cache.mkdir();commands=[]
+            def capture(arguments,**_):
+                commands.append([str(item) for item in arguments]);raise CapturedNativeLaunch()
+            with patch.object(self.module,"run",side_effect=capture),self.assertRaises(CapturedNativeLaunch):
+                self.module.assemble(root,root/"helper",root/"native",{"RELAY_BUILD_SWIFT_CACHE":str(cache)},root/"Relay.app","release")
+            self.assertEqual(len(commands),1)
+            self.assertEqual(commands[0][commands[0].index("--cache-path")+1],str(cache))
+            self.assertEqual(commands[0][commands[0].index("--jobs")+1],"2")
+            self.assertFalse((root/"Relay.staging.app").exists())
 
     def test_native_history_resource_copy_contains_actual_grdb_privacy_bundle_and_license(self):
         with tempfile.TemporaryDirectory() as name:

@@ -32,7 +32,8 @@ def build_environment(work,parent):
         environment.pop(key,None)
     environment.update(PIP_CONFIG_FILE=os.devnull,PYINSTALLER_CONFIG_DIR=str(work/"pyinstaller-cache"),MACOSX_DEPLOYMENT_TARGET="15.2",PYTHONDONTWRITEBYTECODE="1",
         XDG_CACHE_HOME=str(work/"cache"),HF_HUB_OFFLINE="1",TRANSFORMERS_OFFLINE="1",
-        CLANG_MODULE_CACHE_PATH=str(work/"clang-cache"),SWIFTPM_MODULECACHE_OVERRIDE=str(work/"swift-module-cache"))
+        CLANG_MODULE_CACHE_PATH=parent.get("CLANG_MODULE_CACHE_PATH") or str(work/"clang-cache"),
+        SWIFTPM_MODULECACHE_OVERRIDE=parent.get("SWIFTPM_MODULECACHE_OVERRIDE") or str(work/"swift-module-cache"))
     return environment
 
 
@@ -210,7 +211,8 @@ def copy_native_resources(binary_directory,resources):
 
 
 def assemble(work,helper,native_scratch,environment,output,configuration):
-    arguments=["swift","build","--disable-sandbox","--disable-automatic-resolution","--configuration",configuration,"--jobs","2","--package-path",ROOT/"spikes/macos-panel","--scratch-path",native_scratch,"--cache-path",work/"swift-cache","--product","relay-panel-session"]
+    swift_cache=environment.get("RELAY_BUILD_SWIFT_CACHE") or work/"swift-cache"
+    arguments=["swift","build","--disable-sandbox","--disable-automatic-resolution","--configuration",configuration,"--jobs","2","--package-path",ROOT/"spikes/macos-panel","--scratch-path",native_scratch,"--cache-path",swift_cache,"--product","relay-panel-session"]
     run(arguments,env=environment)
     binary_directory=Path(run(arguments[:-2]+["--show-bin-path"],env=environment,capture=True).strip())
     expected=ROOT/"spikes/macos-panel/.build/Relay.app"

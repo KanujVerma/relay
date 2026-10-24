@@ -63,7 +63,8 @@ class NotesTextPermitTests(unittest.IsolatedAsyncioTestCase):
         def token():entered.set();release.wait(3);return 'synthetic'
         h,stream,out=self.host(token);_,begin,_=self.staged(h);h.handle_notes(generate(begin))
         self.assertTrue(await asyncio.to_thread(entered.wait,1))
-        h.handle_notes(generate(begin,'notes_cancel'));await h.notes.drain();release.set();await asyncio.sleep(.01)
+        h.handle_notes(generate(begin,'notes_cancel'));joining=asyncio.create_task(h.notes.drain())
+        release.set();await joining;await asyncio.sleep(.01)
         self.assertEqual(self.posts,[]);self.assertEqual(out[-1]['status'],'cancelled')
         self.assertEqual(stream.last_timing.outcome,'cancelled');self.assertIsNone(stream.last_timing.request_started_ms)
     async def test_actual_config_change_after_token_await_withholds_before_post(self):
@@ -118,6 +119,46 @@ class NotesTextPermitTests(unittest.IsolatedAsyncioTestCase):
                     _,begin,_=self.staged(h);h.handle_notes(generate(begin));await h.drain()
                     self.assertEqual(out[-1]['status'],'completed');self.assertEqual(len(self.posts),1)
                     h.close();await h.drain();await h.notes.drain();await stream.aclose()
+            finally:
+                os.close(read)
+                if write is not None:os.close(write)
+    async def test_cancel_and_close_do_not_ack_until_the_actual_credential_thread_returns(self):
+        entered=threading.Event();release=threading.Event();self.releases.append(release)
+        def token():entered.set();release.wait();return 'synthetic'
+        h,stream,out=self.host(token);opened,begin,_=self.staged(h);h.handle_notes(generate(begin))
+        self.assertTrue(await asyncio.to_thread(entered.wait,1))
+        h.handle_notes(generate(begin,'notes_cancel'));closing=scope('close',scopeID=opened['scopeID']);h.handle_notes(closing)
+        joined=asyncio.create_task(h.notes.drain());await asyncio.sleep(.02)
+        self.assertFalse(joined.done())
+        self.assertFalse(any(x.get('status') in ('cancelled','closed') for x in out))
+        self.assertTrue(stream._active);self.assertEqual(self.posts,[])
+        release.set();await joined;await h.drain()
+        self.assertEqual(out[-1]['status'],'closed');self.assertTrue(out[-1]['quiesced']);self.assertEqual(self.posts,[])
+    async def test_actual_encrypted_generation_change_during_sse_withholds_completed_notes(self):
+        from relay_spike.account_store import AccountCredentialStore
+        from relay_spike.product_session import protected_answer_stream
+        from relay_spike.panel_wire import encode_frame
+        from tests.test_account_store import grant
+        entered=asyncio.Event();release=asyncio.Event();self.releases.append(release)
+        class Held(httpx.AsyncByteStream):
+            async def __aiter__(self):entered.set();await release.wait();yield completed_wire(encode(output_value()).decode())
+        with tempfile.TemporaryDirectory() as folder:
+            directory=Path(folder)/'Relay'/'Accounts';key=bytes(range(32));store=AccountCredentialStore(directory,key)
+            hostID=store.initialize();identity=store.save_registration(grant(hostID,saved_at=time.time()))
+            generation=str(uuid.uuid4());store.select(identity,generation)
+            bootstrap=dict(schemaVersion=1,kind='account_secret_bootstrap',purpose='oauth_session',key=base64.b64encode(key).decode(),
+                vaultDirectory=str(directory),registrationID=identity,accountGeneration=generation)
+            read,write=os.pipe()
+            async def handler(request):self.posts.append(request);return httpx.Response(200,headers={'content-type':'text/event-stream'},stream=Held())
+            try:
+                os.write(write,encode_frame(bootstrap));os.close(write);write=None
+                stream=protected_answer_stream('gpt-synthetic-first',input_fd=read,client_factory=lambda **kw:httpx.AsyncClient(transport=httpx.MockTransport(handler),**kw))
+                out=[];h=SessionHost(complete=stream.complete,visual_transport=stream,emit=out.append);self.streams.append(stream);self.hosts.append(h)
+                _,begin,_=self.staged(h);h.handle_notes(generate(begin));await entered.wait()
+                store.select(identity,str(uuid.uuid4()));release.set();await h.drain()
+                self.assertFalse(any(x.get('status')=='completed' for x in out));self.assertEqual(out[-1]['status'],'unavailable')
+                self.assertEqual(len(self.posts),1)
+                h.close();await h.drain();await h.notes.drain();await stream.aclose()
             finally:
                 os.close(read)
                 if write is not None:os.close(write)

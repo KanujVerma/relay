@@ -35,7 +35,7 @@ public enum HistoryGap:String,Codable,Sendable,CaseIterable{
     case .sourceDeleted:"Source text was deleted"
     case .invalidObservation:"A transcript observation was rejected"
     case .unfinishedSpeech:"Speech was still being processed when audio stopped"
-    case .captureEndUnknown:"Capture cleanup end was not recorded"
+    case .captureEndUnknown:"Audio end time unavailable"
     }}
 }
 public struct HistoryRecord:Sendable,Equatable,Codable,Identifiable {

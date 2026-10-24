@@ -9,11 +9,13 @@ public struct HistoryCaptureStop:Sendable,Equatable,Codable{
     let originalEventJSON:Data
     private struct Evidence{
         let session:UUID,epoch:UInt64,sequence:UInt64,emitted:UInt64,quiesced:Bool
+        let reason:SessionReason
     }
     init(_ event:NativeSessionEvent,now:TimeInterval)throws{
         observedWallTime=now;originalEventJSON=try HistoryJSON.encode(event)
         _=try evidence()
     }
+    var reason:SessionReason?{try? evidence().reason}
     public var quiesced:Bool{(try? evidence().quiesced)==true}
     public var eventSequence:HistoryCounter?{(try? evidence()).map{HistoryCounter($0.sequence)}}
     public var emittedUptimeNanoseconds:HistoryCounter?{(try? evidence()).map{HistoryCounter($0.emitted)}}
@@ -37,11 +39,11 @@ public struct HistoryCaptureStop:Sendable,Equatable,Codable{
               o["sourceCode"]?.isNull==true,o["streamGeneration"]?.isNull==true,o["requestID"]?.isNull==true,
               let payload=o["payload"] else{throw HistoryError.invalid}
         let p=try payload.object(["reasonCode","quiesced"])
-        guard case .string(let reason)=p["reasonCode"],SessionReason(rawValue:reason) != nil,
+        guard case .string(let code)=p["reasonCode"],let reason=SessionReason(rawValue:code),
               case .bool(let quiesced)=p["quiesced"] else{throw HistoryError.invalid}
         let epoch=try number("sessionEpoch"),sequence=try number("eventSequence"),emitted=try number("emittedUptimeNanoseconds")
         _=try number("presentationGeneration")
         guard epoch>0,sequence>1 else{throw HistoryError.invalid}
-        return Evidence(session:session,epoch:epoch,sequence:sequence,emitted:emitted,quiesced:quiesced)
+        return Evidence(session:session,epoch:epoch,sequence:sequence,emitted:emitted,quiesced:quiesced,reason:reason)
     }
 }

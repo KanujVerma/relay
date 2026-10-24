@@ -204,6 +204,9 @@ final class HistoryStore:@unchecked Sendable {
                     let stop=try HistoryCaptureStop(observation.event,now:clock().timeIntervalSince1970)
                     if let old=capture.stop{guard old.originalEventJSON==stop.originalEventJSON else{throw HistoryError.invalid};return}
                     capture.stop=stop;try capture.validate()
+                    // Actual cleanup can complete after an audio fault. Keep
+                    // its original end evidence without claiming complete text.
+                    if stop.reason != .userStop,!r.gaps.contains(.captureFailure){r.gaps.append(.captureFailure)}
                     try db.execute(sql:"UPDATE history_capture SET payload=? WHERE id=? AND record_id=?",arguments:[try HistoryJSON.encode(capture),captureID,Self.key(id)])
                 }else if let final=observation.final{
                     guard r.state == .recording,!r.blockedSources.contains(final.source) else{throw HistoryError.stale};try final.validate()
@@ -337,6 +340,7 @@ final class HistoryStore:@unchecked Sendable {
                 let c=try HistoryJSON.decode(HistoryCapture.self,data);try c.validate()
                 let id=try row.decode(String.self,forColumn:"id"),owner=try row.decode(String.self,forColumn:"record_id"),ordinal=try row.decode(Int.self,forColumn:"ordinal")
                 guard id==c.id,records[owner] != nil,(0..<HistoryBounds.captures).contains(ordinal) else{throw HistoryError.invalid}
+                if let reason=c.stop?.reason,reason != .userStop,records[owner]?.gaps.contains(.captureFailure) != true{throw HistoryError.invalid}
                 captureCount[owner,default:0]+=1;guard captureCount[owner]!<=HistoryBounds.captures else{throw HistoryError.capacity};captures[id]=(owner,c)
             }
             let finalRows=try Row.fetchAll(db,sql:"SELECT * FROM history_final")

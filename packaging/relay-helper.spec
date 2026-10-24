@@ -39,7 +39,7 @@ for package in ["docling", "docling_core", "docling_parse", "doclang", "latex2ma
     datas += collect_data_files(package)
 
 a = Analysis([str(root/"packaging/relay_helper_entry.py")], pathex=[str(root)], binaries=[], datas=datas,
-             hiddenimports=["relay_spike.session_host", "relay_spike.profile_bridge", "jwt.algorithms",
+             hiddenimports=["relay_spike.session_host", "relay_spike.profile_bridge", "relay_spike.account_bridge", "relay_spike.product_session", "jwt.algorithms",
                             "cryptography.hazmat.primitives.asymmetric.rsa", "docling.models.plugins.defaults"],
              hookspath=[], hooksconfig={}, runtime_hooks=[],
              excludes=["markitdown", "magika", "onnxruntime", "torch", "torchvision", "transformers", "tkinter", "pytest"],

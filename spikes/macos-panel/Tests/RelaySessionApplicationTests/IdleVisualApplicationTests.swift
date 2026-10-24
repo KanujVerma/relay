@@ -9,16 +9,16 @@ import RelayProfile
 
 @MainActor private final class IdleVisualPreferences:SessionContextUsePreferences {var useInSessions=false}
 
-@MainActor private final class IdlePixels:ScreenFrameProvider {
+@MainActor final class IdlePixels:ScreenFrameProvider {
     func capture(source:ScreenSource)async throws->ScreenFrame {
         let context=CGContext(data:nil,width:2,height:2,bitsPerComponent:8,bytesPerRow:8,space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue)!
         return ScreenFrame(image:context.makeImage()!,capturedUptimeNanoseconds:DispatchTime.now().uptimeNanoseconds)
     }
 }
-private actor IdleOCR:ScreenTextRecognizer {
+actor IdleOCR:ScreenTextRecognizer {
     func recognize(_ image:CGImage)async throws->[OCRLine]{[OCRLine(text:"Synthetic task: group completed records",bounds:CGRect(x:0,y:0,width:1,height:1),confidence:1)]}
 }
-@MainActor private final class IdleImageAcknowledgment {
+@MainActor final class IdleImageAcknowledgment {
     var held:CheckedContinuation<Void,Never>?
     var original:PanelRequestBinding?
     func wrote(_ data:Data,_ binding:PanelRequestBinding)async {

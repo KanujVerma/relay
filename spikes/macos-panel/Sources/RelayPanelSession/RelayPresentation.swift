@@ -37,6 +37,22 @@ struct RelayPreparationPresentation {
         self.busy=busy;self.recovery=recovery
     }
 }
+/// The large empty-card message uses the actual panel status, independently of
+/// whether the current question remains visible after a terminal decision.
+struct RelayEmptyAnswerPresentation {
+    let symbol:String
+    let title:String
+    let detail:String
+    init(state:RelaySessionPresentation,status:String,hasQuestion:Bool) {
+        symbol=state.paused ? "pause.circle":state.stopping ? "stop.circle":"waveform"
+        if state.paused{title="Take your time."}
+        else if state.stopping || state.assistantClosing{title="Finishing the session…"}
+        else if status == "Thinking"{title="Thinking it through…"}
+        else if !status.isEmpty && (hasQuestion || !["Ready","Ready · not listening","Listening"].contains(status)){title=status}
+        else{title=state.running ? "Listening for the next question.":"Ask Relay a question."}
+        detail=state.paused ? "Resume starts a fresh conversation. Your saved context stays available.":state.stopping || state.assistantClosing ? "Relay is waiting for active work to finish.":state.running ? "Talking points appear automatically as the conversation develops.":"Audio recording is off. Type a question or follow-up above."
+    }
+}
 @MainActor struct RelayCommandRouter {
     let state:()->RelaySessionPresentation
     let control:(ControlAction)->Void

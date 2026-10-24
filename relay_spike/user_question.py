@@ -130,7 +130,11 @@ class UserQuestionCoordinator:
         if len(self.retired)>=512:h.close();raise WireError('retirement_budget')
         owner=h._worker if h._worker_request is not None and self.key(h._worker_request.native)==key else None
         self.retired[key]=owner
-        if h.active is not None and self.key(h.active.native)==key:h._invalidate()
+        if h.active is not None and self.key(h.active.native)==key:
+            original=h.active.native
+            h._invalidate()
+            retire_current=getattr(h.supplemental_provider,'retire_current',None)
+            if callable(retire_current):retire_current(original)
         elif owner is not None and not owner.done() and not owner.cancelling():owner.cancel()
         staged=getattr(h.supplemental_provider,'retire_staged',None)
         if callable(staged):staged(n)
@@ -143,9 +147,11 @@ class UserQuestionCoordinator:
         active=h.active
         current_target=active is not None and active.native['requestID'].lower()==target
         target_generation=active.native['presentationGeneration'] if current_target else (keys[-1][2] if keys else None)
-        # The native issuer advances exactly the actual target's lease once.
-        # A known old tombstone cannot withdraw a newer request's generation.
-        if target_generation!=h.presentation or n['presentationGeneration']!=target_generation+1:return False
+        # The original denied frame may expire before admission, leaving this
+        # helper behind its actual native target. A fresh cancellation can
+        # acknowledge that known target, but never cross a newer presentation.
+        if (target_generation is None or target_generation<h.presentation
+            or n['presentationGeneration']!=target_generation+1):return False
         if current_target:
             self.retire({**{k:active.native[k] for k in _IDENTITY},'schemaVersion':1,
                 'kind':'answer_request_retired','reasonCode':'request_retired'})

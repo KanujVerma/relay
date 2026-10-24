@@ -91,7 +91,12 @@ private struct RelayAppCommands:Commands {
     }
     private var elapsed:String?{guard model.running,let startedAt else{return nil};let seconds=max(0,Int(ProcessInfo.processInfo.systemUptime-startedAt));return String(format:"%02d:%02d",seconds/60,seconds%60)}
 }
-@MainActor private struct RelayMemoryWorkspace:View {
+@MainActor struct RelayMemoryWorkspace:View {
     @ObservedObject var model:SessionApplicationModel
-    var body:some View{ProfilePreparationView(controller:model.profile,role:model.role).frame(minWidth:760,minHeight:670).preferredColorScheme(.dark).disabled(model.fixture)}
+    @ObservedObject private var use:SessionContextUseCoordinator
+    init(model:SessionApplicationModel){self.model=model;use=model.contextUse}
+    var body:some View{
+        ProfilePreparationView(controller:model.profile,role:model.role,sessionUse:use.snapshot,onOpen:model.openMyContext,onLock:model.lockMyContext)
+            .frame(minWidth:760,minHeight:670).preferredColorScheme(.dark).disabled(model.fixture)
+    }
 }

@@ -15,7 +15,7 @@ public struct HistoryWorkspaceSnapshot:Sendable,Equatable {
     public internal(set) var nextOffset:Int?
     public internal(set) var recordingID:UUID?
 }
-private final class HistoryAdmission:@unchecked Sendable {
+final class HistoryAdmission:@unchecked Sendable {
     private let lock=NSLock();private var current=true
     var allowed:Bool{lock.withLock{current}}
     func retire(){lock.withLock{current=false}}
@@ -39,6 +39,7 @@ private final class HistoryAdmission:@unchecked Sendable {
 @MainActor public final class SessionHistoryCoordinator:ObservableObject {
     @Published public private(set) var snapshot=HistoryWorkspaceSnapshot()
     public var onRecordsUnavailable:(@MainActor (HistoryRecordsUnavailable)->Void)?
+    public var onSourceDenial:(@MainActor (HistorySourceDenial)->Void)?
     private var state=HistoryWorkspaceSnapshot()
     private let factory:@Sendable ()throws->any ProtectedSnapshotStorage
     private let preferences:any HistorySavingPreferences
@@ -62,7 +63,18 @@ private final class HistoryAdmission:@unchecked Sendable {
     private var exportTask:Task<Void,Error>?,exportID:UUID?,exportGate:HistoryAdmission?
     private var pauseWriter=false
     private var closeRequested=false
-    public var isBusy:Bool{flight != nil || writer != nil || retirement != nil || exclusive != nil || exportTask != nil}
+    @MainActor private final class NotesPreparation {
+        let id=UUID(),gate=HistoryAdmission(),recordID:UUID,revision:Int64,selection:HistoryNotesSelection,intentID:UUID,epoch:UUID,selected:UUID,store:HistoryStore
+        let isCurrent:@MainActor ()->Bool,onRetired:@MainActor (HistoryNotesSource)->Void
+        var task:Task<HistoryNotesSource,Error>?
+        init(recordID:UUID,revision:Int64,selection:HistoryNotesSelection,intentID:UUID,epoch:UUID,selected:UUID,store:HistoryStore,
+             isCurrent:@escaping @MainActor ()->Bool,onRetired:@escaping @MainActor (HistoryNotesSource)->Void){
+            self.recordID=recordID;self.revision=revision;self.selection=selection;self.intentID=intentID;self.epoch=epoch;self.selected=selected;self.store=store
+            self.isCurrent=isCurrent;self.onRetired=onRetired
+        }
+    }
+    private var notesPreparation:NotesPreparation?,notesSource:HistoryNotesSource?
+    public var isBusy:Bool{flight != nil || writer != nil || retirement != nil || exclusive != nil || exportTask != nil || notesPreparation != nil}
     public var savingEnabled:Bool{preferences.savingEnabled}
     /// A read view of current private retention ownership, never capture or
     /// request authority. End/Lock/failed storage deny it synchronously.
@@ -94,6 +106,76 @@ private final class HistoryAdmission:@unchecked Sendable {
         if let store{return store}
         let value=HistoryStore(storage:try factory(),clock:clock);store=value;return value
     }
+    private func notesReadBaseCurrent(_ original:NotesPreparation)->Bool{
+        opened && state.phase == .ready && epoch==original.epoch && selectionEpoch==original.selected && store === original.store
+            && notesPreparation === original && original.gate.allowed && !tombstones.contains(original.recordID)
+            && state.selected?.record.id==original.recordID && state.selected?.record.revision==original.revision
+            && retirement==nil && exclusive==nil && exportTask==nil && writer==nil
+    }
+    private func notesReadCurrent(_ original:NotesPreparation)->Bool{
+        guard notesReadBaseCurrent(original),original.isCurrent() else{return false};return notesReadBaseCurrent(original)
+    }
+    private func ownsNotesBase(_ original:HistoryNotesSource)->Bool{
+        let now=clock().timeIntervalSince1970
+        return notesSource === original && original.gate.allowed && opened && state.phase == .ready
+            && epoch==original.workspaceEpoch && selectionEpoch==original.selectionEpoch && store === original.store
+            && !tombstones.contains(original.data.recordID) && state.selected?.record.id==original.data.recordID
+            && state.selected?.record.revision==original.data.recordRevision && now.isFinite && now<original.read.expiresAt
+    }
+    public func ownsNotesSource(_ original:HistoryNotesSource)->Bool{
+        guard ownsNotesBase(original),original.current() else{return false};return ownsNotesBase(original)
+    }
+    /// Prefix only. Call notifyRetired only after the caller has reserved its
+    /// original close/exclusive operation; callbacks may synchronously Lock.
+    private func denyNotes()->HistoryNotesSource?{
+        notesPreparation?.gate.retire();notesPreparation?.task?.cancel()
+        let original=notesSource;original?.deny();notesSource=nil;return original
+    }
+    public func retireNotesSource(_ original:HistoryNotesSource){
+        original.deny();if notesSource === original{notesSource=nil};original.notifyRetired()
+    }
+    public func prepareNotesSource(recordID:UUID,expectedRevision:Int64,selection:HistoryNotesSelection,intentID:UUID,
+        isCurrent:@escaping @MainActor ()->Bool,onRetired:@escaping @MainActor (HistoryNotesSource)->Void)async throws->HistoryNotesSource{
+        try Task.checkCancellation()
+        if let original=notesPreparation{
+            guard original.intentID==intentID,original.recordID==recordID,original.revision==expectedRevision,original.selection==selection,
+                  original.gate.allowed,original.isCurrent() else{throw HistoryError.stale}
+            return try await awaitNotesPreparation(original)
+        }
+        guard !isBusy,opened,state.phase == .ready,let store,state.selected?.record.id==recordID,state.selected?.record.revision==expectedRevision,
+              !tombstones.contains(recordID),isCurrent(),pending.isEmpty,terminalStop==nil,
+              current == nil || hasPausedSession else{throw HistoryError.stale}
+        let original=NotesPreparation(recordID:recordID,revision:expectedRevision,selection:selection,intentID:intentID,epoch:epoch,selected:selectionEpoch,store:store,isCurrent:isCurrent,onRetired:onRetired)
+        let old=denyNotes();notesPreparation=original
+        original.task=Task{[weak self,original] in
+            guard let self,self.notesReadCurrent(original),!Task.isCancelled else{throw HistoryError.stale}
+            let gate=original.gate
+            let read=try await self.run(gate:gate){store in
+                try store.readNotesSource(recordID,expectedRevision:expectedRevision,selection:selection,intentID:intentID,admission:{gate.allowed})
+            }
+            guard self.notesReadCurrent(original),!Task.isCancelled else{throw HistoryError.stale}
+            let source=HistoryNotesSource(read:read,store:original.store,workspaceEpoch:original.epoch,selectionEpoch:original.selected,gate:original.gate,current:original.isCurrent,onRetired:original.onRetired)
+            self.notesSource=source;return source
+        }
+        old?.notifyRetired();publish()
+        return try await awaitNotesPreparation(original)
+    }
+    private func awaitNotesPreparation(_ original:NotesPreparation)async throws->HistoryNotesSource{
+        guard let task=original.task else{throw HistoryError.stale}
+        let gate=original.gate
+        do{
+            let source=try await withTaskCancellationHandler(operation:{try await task.value},onCancel:{gate.retire();task.cancel()})
+            if notesPreparation === original{notesPreparation=nil};publish()
+            guard !Task.isCancelled,ownsNotesSource(source) else{retireNotesSource(source);throw HistoryError.stale}
+            return source
+        }catch{
+            if notesPreparation === original{notesPreparation=nil};publish();throw error
+        }
+    }
+    private func joinNotesPreparation(_ original:NotesPreparation?)async{
+        guard let original,let task=original.task else{return};_=await task.result
+        while notesPreparation === original{await Task.yield()}
+    }
     private func run<T:Sendable>(gate:HistoryAdmission,_ body:@escaping @Sendable (HistoryStore)throws->T)async throws->T{
         guard flight==nil,gate.allowed else{throw HistoryError.stale}
         let store=try ownedStore(),id=UUID(),originalEpoch=epoch
@@ -116,6 +198,9 @@ private final class HistoryAdmission:@unchecked Sendable {
         onRecordsUnavailable?(HistoryRecordsUnavailable(retiredEpoch:epoch,recordIDs:ids))
     }
     private func applyExpiredRecords(_ ids:Set<UUID>?,epoch original:UUID){
+        let oldNotes:HistoryNotesSource?
+        if let source=notesSource,ids?.contains(source.data.recordID) ?? true{oldNotes=denyNotes()}
+        else{oldNotes=nil}
         visibilityEpoch=UUID()
         state.records.removeAll{ids?.contains($0.id) ?? true}
         if let selected=state.selected,ids?.contains(selected.record.id) ?? true{state.selected=nil;selectionEpoch=UUID()}
@@ -125,6 +210,9 @@ private final class HistoryAdmission:@unchecked Sendable {
         }
         // The detached operation and receipt drain have returned; no store or
         // native/session lock is held while the owned observer clears its data.
+        oldNotes?.notifyRetired()
+        if let ids{for id in ids{onSourceDenial?(.record(retiredEpoch:original,recordID:id,reason:.expired))}}
+        else{onSourceDenial?(.workspace(retiredEpoch:original,reason:.expired))}
         notifyUnavailable(ids,epoch:original)
     }
     private func join(_ original:Flight?)async{
@@ -141,18 +229,24 @@ private final class HistoryAdmission:@unchecked Sendable {
         }catch{}
     }
     private func fail(_ error:any Error){
+        let oldNotes=denyNotes(),retiredEpoch=epoch
         current?.acceptsNew=false;current?.failed=true;current?.gate.retire();pending=[];pendingBytes=0;terminalStop=nil
         state.phase = .unavailable;state.records=[];state.selected=nil
         if case HistoryError.capacity=error{state.message="History is full. Delete saved sessions or turn saving off."}
         else if case HistoryError.inUse=error{state.message="Local history is in use. Close or lock another Relay app, then retry, or turn saving off here."}
         else if case HistoryError.missing=error{state.message="Saved history is missing. Enable saving explicitly, or turn it off before starting."}
         else{state.message="History is unavailable. Open it to retry, or turn saving off before starting."}
-        publish()
+        oldNotes?.notifyRetired();onSourceDenial?(.workspace(retiredEpoch:retiredEpoch,reason:.unavailable));publish()
     }
     public func enableSaving()async throws{
         try Task.checkCancellation()
         guard !isBusy,canEnable(),current==nil else{throw HistoryError.stale}
-        epoch=UUID();let original=epoch,gate=HistoryAdmission();state.selected=nil;state.phase = .opening;state.message="Opening local history…";publish()
+        let retiredEpoch=epoch,oldNotes=denyNotes()
+        epoch=UUID();let original=epoch,gate=HistoryAdmission();state.selected=nil;state.phase = .opening;state.message="Opening local history…"
+        oldNotes?.notifyRetired();onSourceDenial?(.workspace(retiredEpoch:retiredEpoch,reason:.ownerRetired))
+        guard epoch==original,state.phase == .opening else{throw HistoryError.stale}
+        publish()
+        guard epoch==original,state.phase == .opening else{throw HistoryError.stale}
         do{
             let page=try await withTaskCancellationHandler(operation:{try await run(gate:gate){store in try store.open(create:true,admission:{gate.allowed});return try store.list()}},onCancel:{gate.retire()})
             guard epoch==original,gate.allowed,!isBusy,canEnable(),!Task.isCancelled else{throw HistoryError.stale}
@@ -166,7 +260,12 @@ private final class HistoryAdmission:@unchecked Sendable {
         try Task.checkCancellation()
         guard !isBusy else{throw HistoryError.stale}
         if current != nil{guard state.phase == .ready else{throw HistoryError.unavailable};return}
-        epoch=UUID();let original=epoch,gate=HistoryAdmission();state.selected=nil;state.phase = .opening;state.message="Opening saved history…";publish()
+        let retiredEpoch=epoch,oldNotes=denyNotes()
+        epoch=UUID();let original=epoch,gate=HistoryAdmission();state.selected=nil;state.phase = .opening;state.message="Opening saved history…"
+        oldNotes?.notifyRetired();onSourceDenial?(.workspace(retiredEpoch:retiredEpoch,reason:.ownerRetired))
+        guard epoch==original,state.phase == .opening else{throw HistoryError.stale}
+        publish()
+        guard epoch==original,state.phase == .opening else{throw HistoryError.stale}
         do{
             let page=try await withTaskCancellationHandler(operation:{try await run(gate:gate){store in try store.open(create:false,admission:{gate.allowed});return try store.list()}},onCancel:{gate.retire()})
             guard original==epoch,gate.allowed,!isBusy,!Task.isCancelled else{throw HistoryError.stale}
@@ -176,6 +275,7 @@ private final class HistoryAdmission:@unchecked Sendable {
         }catch{if original==epoch{fail(error)};throw error}
     }
     public func beginSession(intentID:UUID,resuming:Bool,isCurrent:@escaping @MainActor ()->Bool)async throws->HistorySessionPermit?{
+        let oldNotes=denyNotes();oldNotes?.notifyRetired();onSourceDenial?(.workspace(retiredEpoch:epoch,reason:.sessionStarting))
         try Task.checkCancellation()
         guard !isBusy,isCurrent() else{throw HistoryError.stale}
         guard preferences.savingEnabled else{return nil}
@@ -277,6 +377,7 @@ private final class HistoryAdmission:@unchecked Sendable {
         if permit.preparing{permit.gate.retire()};publish();return permit
     }
     public func finishSession(_ permit:HistorySessionPermit,paused:Bool)async throws{
+        let oldNotes=denyNotes();oldNotes?.notifyRetired();onSourceDenial?(.record(retiredEpoch:epoch,recordID:permit.recordID,reason:.recordChanged))
         permit.acceptsNew=false;permit.retiring=true
         await waitForQuiescence()
         guard current === permit,retirement==nil,!tombstones.contains(permit.recordID) else{return}
@@ -313,16 +414,22 @@ private final class HistoryAdmission:@unchecked Sendable {
         // Snapshot observers may repeat either action while its original owner
         // publishes. Only a new Lock escalation or preference change publishes.
         if retirement != nil,(!lock || closeRequested),state.savingEnabled==preferences.savingEnabled{return}
+        state.savingEnabled=preferences.savingEnabled
         let retiredEpoch=epoch
+        let oldNotesPreparation=notesPreparation,oldNotes=denyNotes()
         if lock{closeRequested=true;epoch=UUID();selectionEpoch=UUID();state.records=[];state.selected=nil;state.phase = .closing;state.message="Closing history…"}
         let permit=current;permit?.acceptsNew=false;permit?.gate.retire();flight?.gate.retire()
         pending=[];pendingBytes=0;terminalStop=nil;terminalGap=nil;pauseWriter=true
-        guard retirement==nil else{if lock{notifyUnavailable(nil,epoch:retiredEpoch)};publish();return}
+        guard retirement==nil else{
+            oldNotes?.notifyRetired();onSourceDenial?(.workspace(retiredEpoch:retiredEpoch,reason:lock ? .locked:.savingDisabled))
+            if lock{notifyUnavailable(nil,epoch:retiredEpoch)};publish();return
+        }
         exportGate?.retire()
         let oldWriter=writer,oldFlight=flight,oldExclusive=exclusive,oldExport=exportTask,id=UUID()
         retirementID=id
         retirement=Task{[weak self] in
             guard let self else{return}
+            await self.joinNotesPreparation(oldNotesPreparation)
             await oldWriter?.value;await self.join(oldFlight);_=await oldExclusive?.result;_=await oldExport?.result
             if let permit,!self.tombstones.contains(permit.recordID){await self.clean(permit,gap:.savingStopped)}
             if !self.closeRequested{await self.refreshRecords()}
@@ -342,6 +449,7 @@ private final class HistoryAdmission:@unchecked Sendable {
             else{self.state.phase = self.opened ? .ready:.unavailable;self.state.message="Saving is off. Open History to view previously saved sessions."}
             self.publish()
         }
+        oldNotes?.notifyRetired();onSourceDenial?(.workspace(retiredEpoch:retiredEpoch,reason:lock ? (preservePreference ? .ownerRetired:.locked):.savingDisabled))
         if lock{notifyUnavailable(nil,epoch:retiredEpoch)}
         publish()
     }
@@ -353,6 +461,7 @@ private final class HistoryAdmission:@unchecked Sendable {
             if let retirement{await retirement.value;continue}
             if let exclusive{_=await exclusive.result;continue}
             if let exportTask{_=await exportTask.result;continue}
+            if let original=notesPreparation{await joinNotesPreparation(original);continue}
             if let writer{await writer.value;continue}
             if let flight{await flight.join.value;await Task.yield();continue}
             return
@@ -361,8 +470,12 @@ private final class HistoryAdmission:@unchecked Sendable {
     public func openRecord(_ id:UUID,offset:Int=0)async throws{
         try Task.checkCancellation()
         guard !isBusy,state.phase == .ready,!tombstones.contains(id) else{throw HistoryError.stale}
+        let oldNotes=denyNotes()
         selectionEpoch=UUID();let selected=selectionEpoch,original=epoch,gate=HistoryAdmission()
-        state.selected=nil;publish()
+        state.selected=nil;oldNotes?.notifyRetired()
+        guard epoch==original,selectionEpoch==selected,state.phase == .ready else{throw HistoryError.stale}
+        publish()
+        guard epoch==original,selectionEpoch==selected,state.phase == .ready else{throw HistoryError.stale}
         let detail=try await withTaskCancellationHandler(operation:{try await run(gate:gate){try $0.detail(id,offset:offset)}},onCancel:{gate.retire()})
         guard epoch==original,selectionEpoch==selected,gate.allowed,!Task.isCancelled,!tombstones.contains(id) else{throw HistoryError.stale}
         state.selected=detail;publish()
@@ -386,7 +499,12 @@ private final class HistoryAdmission:@unchecked Sendable {
     }
     @discardableResult public func saveNotes(_ id:UUID,expectedRevision:Int64,title:String,note:String)async throws->HistoryNoteSaveReceipt{
         try Task.checkCancellation()
-        guard !isBusy,state.phase == .ready,!tombstones.contains(id),state.selected?.record.id==id else{throw HistoryError.stale}
+        guard state.phase == .ready,!tombstones.contains(id),state.selected?.record.id==id else{throw HistoryError.stale}
+        let oldNotesPreparation=notesPreparation,oldNotes=denyNotes(),before=epoch,selectionBefore=selectionEpoch
+        oldNotes?.notifyRetired();onSourceDenial?(.record(retiredEpoch:before,recordID:id,reason:.recordChanged))
+        await joinNotesPreparation(oldNotesPreparation)
+        try Task.checkCancellation()
+        guard !isBusy,epoch==before,selectionEpoch==selectionBefore,state.phase == .ready,!tombstones.contains(id),state.selected?.record.id==id else{throw HistoryError.stale}
         let original=epoch,selected=selectionEpoch,gate=HistoryAdmission(),originalStore=store
         let result=try await withTaskCancellationHandler(operation:{try await run(gate:gate){store in
             _=try store.edit(id,expectedRevision:expectedRevision,title:title,note:note,admission:{gate.allowed})
@@ -401,6 +519,7 @@ private final class HistoryAdmission:@unchecked Sendable {
     }
     public func export(_ id:UUID,expectedRevision:Int64,format:HistoryExportFormat,to destination:any HistoryExportDestination)->Task<Void,Error>{
         guard !isBusy,state.phase == .ready,state.selected?.record.id==id,!tombstones.contains(id) else{return Task{throw HistoryError.stale}}
+        let oldNotes=denyNotes()
         let original=epoch,selected=selectionEpoch,operationID=UUID(),gate=HistoryAdmission()
         exportID=operationID;exportGate=gate;pauseWriter=true
         let task=Task{[weak self] in
@@ -421,7 +540,7 @@ private final class HistoryAdmission:@unchecked Sendable {
             }
             self.endExport(operationID)
         }
-        exportTask=task;publish();return task
+        exportTask=task;oldNotes?.notifyRetired();publish();return task
     }
     private func endExport(_ id:UUID){
         if exportID==id{exportTask=nil;exportID=nil;exportGate=nil}
@@ -431,6 +550,7 @@ private final class HistoryAdmission:@unchecked Sendable {
     /// before the caller awaits the actual deletion receipt.
     public func delete(_ id:UUID,expectedRevision:Int64)->Task<Void,Error>{
         guard retirement==nil,exclusive==nil,state.phase == .ready else{return Task{throw HistoryError.stale}}
+        let oldNotesPreparation=notesPreparation,oldNotes=denyNotes()
         exportGate?.retire()
         tombstones.insert(id);selectionEpoch=UUID();visibilityEpoch=UUID();state.records.removeAll{$0.id==id}
         if state.selected?.record.id==id{state.selected=nil}
@@ -440,6 +560,7 @@ private final class HistoryAdmission:@unchecked Sendable {
         exclusiveID=operationID
         let task=Task{[weak self] in
             guard let self else{throw HistoryError.closed}
+            await self.joinNotesPreparation(oldNotesPreparation)
             await oldWriter?.value;await self.join(oldFlight);_=await oldExport?.result
             do{
                 let page=try await self.run(gate:gate){store in
@@ -458,12 +579,13 @@ private final class HistoryAdmission:@unchecked Sendable {
             }
             if self.exclusiveID==operationID{self.exclusive=nil;self.exclusiveID=nil};self.pauseWriter=false;self.publish();self.startWriter()
         }
-        exclusive=task;notifyUnavailable([id],epoch:original);publish();return task
+        exclusive=task;oldNotes?.notifyRetired();onSourceDenial?(.record(retiredEpoch:original,recordID:id,reason:.deleted));notifyUnavailable([id],epoch:original);publish();return task
     }
     /// Delete one recorded capture/source and block future saved text from that
     /// logical source for this record. Other sources and user notes remain.
     public func deleteSource(_ id:UUID,expectedRevision:Int64,captureID:String,source:TranscriptSource)->Task<Void,Error>{
         guard retirement==nil,exclusive==nil,state.phase == .ready,!tombstones.contains(id) else{return Task{throw HistoryError.stale}}
+        let oldNotesPreparation=notesPreparation,oldNotes=denyNotes()
         exportGate?.retire();selectionEpoch=UUID();visibilityEpoch=UUID();state.selected=nil
         if current?.recordID==id{
             current?.blocked.insert(source)
@@ -474,6 +596,7 @@ private final class HistoryAdmission:@unchecked Sendable {
         exclusiveID=operationID
         let task=Task{[weak self] in
             guard let self else{throw HistoryError.closed}
+            await self.joinNotesPreparation(oldNotesPreparation)
             await oldWriter?.value;await self.join(oldFlight);_=await oldExport?.result
             do{
                 let result=try await self.run(gate:gate){store in
@@ -490,11 +613,12 @@ private final class HistoryAdmission:@unchecked Sendable {
             }
             self.endExclusive(operationID)
         }
-        exclusive=task;publish();return task
+        exclusive=task;oldNotes?.notifyRetired();onSourceDenial?(.source(retiredEpoch:original,recordID:id,captureID:captureID,source:source));publish();return task
     }
     public func deleteAll()->Task<Void,Error>{
         guard retirement==nil,exclusive==nil,state.phase == .ready else{return Task{throw HistoryError.stale}}
         let retiredEpoch=epoch
+        let oldNotesPreparation=notesPreparation,oldNotes=denyNotes()
         preferences.savingEnabled=false;exportGate?.retire();epoch=UUID();selectionEpoch=UUID();visibilityEpoch=UUID()
         state.records=[];state.selected=nil;state.nextOffset=nil
         current?.acceptsNew=false;current?.gate.retire();pending=[];pendingBytes=0;terminalStop=nil;terminalGap=nil;pauseWriter=true
@@ -502,6 +626,7 @@ private final class HistoryAdmission:@unchecked Sendable {
         exclusiveID=operationID
         let task=Task{[weak self] in
             guard let self else{throw HistoryError.closed}
+            await self.joinNotesPreparation(oldNotesPreparation)
             await oldWriter?.value;await self.join(oldFlight);_=await oldExport?.result
             do{
                 try await self.run(gate:gate){try $0.deleteAll(admission:{gate.allowed})}
@@ -514,7 +639,7 @@ private final class HistoryAdmission:@unchecked Sendable {
             }
             self.endExclusive(operationID)
         }
-        exclusive=task;notifyUnavailable(nil,epoch:retiredEpoch);publish();return task
+        exclusive=task;oldNotes?.notifyRetired();onSourceDenial?(.workspace(retiredEpoch:retiredEpoch,reason:.deleted));notifyUnavailable(nil,epoch:retiredEpoch);publish();return task
     }
     private func endExclusive(_ id:UUID){
         if exclusiveID==id{exclusive=nil;exclusiveID=nil}

@@ -12,7 +12,7 @@ U64 = 2**64 - 1
 I64 = 2**63 - 1
 COUNT, TEXT_BYTES, SOURCE_CAP, DERIVED_CAP = 1024, 256 * 1024, 2 * 1024 * 1024, 256 * 1024
 UUID = 'ffffffff-ffff-4fff-bfff-ffffffffffff'
-GAPS = ['sourceUnavailable','sequenceGap','capacity','storageFailure','savingStopped','interrupted','captureFailure','sourceDeleted','invalidObservation','unfinishedSpeech']
+GAPS = ['sourceUnavailable','sequenceGap','capacity','storageFailure','savingStopped','interrupted','captureFailure','sourceDeleted','invalidObservation','unfinishedSpeech','captureEndUnknown']
 def encoded(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
 def row_id(index):

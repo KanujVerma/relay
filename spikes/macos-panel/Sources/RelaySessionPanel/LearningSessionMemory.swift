@@ -75,7 +75,7 @@ import RelayContextComposition
         while episodes.count>LearningBounds.liveEpisodes || ((try? HistoryJSON.encode(episodes).count) ?? Int.max)>LearningBounds.liveBytes{episodes.removeFirst();evidenceGap=true}
         onEpisode?(episode)
     }
-    public func available(binding:PanelRequestBinding,replacement:UInt64,lead:String,points:[String],guideRevision:UUID?,visible:Bool,at:UInt64){
+    public func available(binding:PanelRequestBinding,replacement:UInt64,lead:String,points:[String],detail:String?=nil,guideRevision:UUID?,visible:Bool,at:UInt64){
         guard !sealed,let scope,scope.0==binding.lease.captureSessionID,scope.1==binding.lease.sessionEpoch,
               !issued.contains(binding.requestID),issued.count<512,
               let question=finals.last(where:{$0.source == .selectedAppAudio && $0.eventSequence.value==binding.eventSequence}),
@@ -83,11 +83,11 @@ import RelayContextComposition
               let original=try? JSONSerialization.jsonObject(with:question.originalEventJSON) as? [String:Any],
               let emitted=original["emittedUptimeNanoseconds"] as? NSNumber,emitted.uint64Value<=at else{return}
         let text=([lead]+points).joined(separator:"\n")
-        guard LearningText.valid(text,1024),replacement>0 else{return}
+        guard LearningText.valid(text,1024),detail.map({LearningText.valid($0,4200)}) ?? true,replacement>0 else{return}
         issued.insert(binding.requestID)
         var flags=visible ? []:["hidden_card"]
         if pending != nil{evidenceGap=true;flags.append("competing_card")}
-        pending=Pending(available:LearningAvailableSuggestion(binding:binding,replacement:replacement,text:text,guideRevision:guideRevision,visible:visible,at:at),question:question,flags:flags)
+        pending=Pending(available:LearningAvailableSuggestion(binding:binding,replacement:replacement,text:text,detail:detail,guideRevision:guideRevision,visible:visible,at:at),question:question,flags:flags)
     }
     public func projection(question:String)->[LearningQuote]{
         let tokens=LearningText.tokens(question)
@@ -107,10 +107,17 @@ import RelayContextComposition
         }
         if result.count<2{
             for episode in episodes.reversed() where !LearningText.tokens(episode.question.text).isDisjoint(with:tokens){
-                let text="Original question: \(episode.question.text)\nActually spoken: \(episode.reply.text)\nRemote continuation, outcome unknown: \(episode.continuation.text)"
-                result.append(LearningQuote(episode.reply,kind:.interaction,text:text));if result.count==2{break}
+                if !result.contains(where:{$0.sourceID==episode.reply.id}){result.append(LearningQuote(episode.reply,kind:.interaction))}
+                if result.count==2{break}
+                if !result.contains(where:{$0.sourceID==episode.continuation.id}){result.append(LearningQuote(episode.continuation,kind:.interaction))}
+                if result.count==2{break}
             }
         }
         return result
+    }
+    public func interactionProjection(question:String)->LearningInteractionProjection?{
+        let tokens=LearningText.tokens(question)
+        guard let episode=episodes.reversed().first(where:{!LearningText.tokens($0.question.text+" "+$0.continuation.text).isDisjoint(with:tokens)}) else{return nil}
+        return LearningInteractionProjection(episode)
     }
 }

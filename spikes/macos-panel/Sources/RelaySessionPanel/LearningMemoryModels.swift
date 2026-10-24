@@ -24,32 +24,38 @@ public struct LearningQuote:Codable,Equatable,Sendable {
     public let sourceID:String,captureID:String,text:String
     public let source:TranscriptSource,kind:LearningQuoteKind
     public let start:HistoryCounter,end:HistoryCounter
+    public let excerpt:Bool
     init(_ final:HistoryFinal,kind:LearningQuoteKind,text:String?=nil){
         sourceID=final.id;captureID=final.captureID;source=final.source;start=final.startUptimeNanoseconds;end=final.endUptimeNanoseconds
-        self.kind=kind;self.text=LearningText.bounded(text ?? final.text,700)
+        let original=text ?? final.text;self.kind=kind;self.text=LearningText.bounded(original,700);excerpt=original.utf8.count>700
     }
     func validate()throws{
         guard !sourceID.isEmpty,sourceID.utf8.count<=180,!captureID.isEmpty,captureID.utf8.count<=80,
               start.value<=end.value,LearningText.valid(text,700) else{throw HistoryError.invalid}
     }
-    var wire:[String:Any]{["sourceID":sourceID,"kind":kind.rawValue,"text":text]}
+    var wire:[String:Any]{["sourceID":sourceID,"kind":kind.rawValue,"text":text,"excerpt":excerpt]}
 }
 /// This records availability, never attention. Construction remains inside the
 /// native learner called by the Model's drained current-card publication seam.
 public struct LearningAvailableSuggestion:Codable,Equatable,Sendable {
     public let requestID:UUID,captureSessionID:UUID
     public let sessionEpoch:HistoryCounter,presentationGeneration:HistoryCounter,eventSequence:HistoryCounter,replacement:HistoryCounter,availableAt:HistoryCounter
-    public let cardHash:String,text:String,guideRevision:UUID?
+    public let cardHash:String,text:String,detail:String?,guideRevision:UUID?
     public let windowVisible:Bool
-    init(binding:PanelRequestBinding,replacement:UInt64,text:String,guideRevision:UUID?,visible:Bool,at:UInt64){
+    init(binding:PanelRequestBinding,replacement:UInt64,text:String,detail:String?,guideRevision:UUID?,visible:Bool,at:UInt64){
         requestID=binding.requestID;captureSessionID=binding.lease.captureSessionID;sessionEpoch=HistoryCounter(binding.lease.sessionEpoch)
         presentationGeneration=HistoryCounter(binding.lease.presentationGeneration);eventSequence=HistoryCounter(binding.eventSequence)
-        self.replacement=HistoryCounter(replacement);availableAt=HistoryCounter(at);self.text=text;self.guideRevision=guideRevision;windowVisible=visible
-        cardHash=SHA256.hash(data:Data(text.utf8)).map{String(format:"%02x",$0)}.joined()
+        self.replacement=HistoryCounter(replacement);availableAt=HistoryCounter(at);self.text=text;self.detail=detail;self.guideRevision=guideRevision;windowVisible=visible
+        cardHash=Self.hash(text:text,detail:detail)
+    }
+    private static func hash(text:String,detail:String?)->String{
+        var bytes=Data(text.utf8);bytes.append(contentsOf:[0,detail==nil ? 0:1]);if let detail{bytes.append(Data(detail.utf8))}
+        return SHA256.hash(data:bytes).map{String(format:"%02x",$0)}.joined()
     }
     func validate()throws{
         guard sessionEpoch.value>0,presentationGeneration.value>0,eventSequence.value>0,replacement.value>0,
-              LearningText.valid(text,1024),cardHash==SHA256.hash(data:Data(text.utf8)).map({String(format:"%02x",$0)}).joined() else{throw HistoryError.invalid}
+              LearningText.valid(text,1024),detail.map({LearningText.valid($0,4200)}) ?? true,
+              cardHash==Self.hash(text:text,detail:detail) else{throw HistoryError.invalid}
     }
 }
 public struct LearningSignal:Codable,Equatable,Sendable {

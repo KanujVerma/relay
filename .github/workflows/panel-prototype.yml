@@ -13,7 +13,6 @@ jobs:
     timeout-minutes: 15
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
-      RELAY_DIAGNOSTIC_SCRATCH: ${{ runner.temp }}/relay-presentation-build
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,6 +25,7 @@ jobs:
         run: python -m pip install httpx==0.28.1
       - name: Build the one test package without running it
         run: |
+          export RELAY_DIAGNOSTIC_SCRATCH="$RUNNER_TEMP/relay-presentation-build"
           swift --version
           test "$(git rev-parse HEAD)" = 666d104ffff82dd17112872be08e4ef76e01adfe
           swift build --build-tests --scratch-path "$RELAY_DIAGNOSTIC_SCRATCH" --package-path spikes/macos-panel
@@ -33,6 +33,7 @@ jobs:
         shell: bash
         run: |
           export RELAY_TEST_PYTHON="$(command -v python3)"
+          export RELAY_DIAGNOSTIC_SCRATCH="$RUNNER_TEMP/relay-presentation-build"
           python3 - <<'PY'
           from pathlib import Path
           import json, os, re, signal, subprocess, time

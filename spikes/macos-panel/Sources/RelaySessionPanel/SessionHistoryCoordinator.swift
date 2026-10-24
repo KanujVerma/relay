@@ -263,6 +263,65 @@ final class HistoryAdmission:@unchecked Sendable {
             throw error
         }
     }
+    private func notesLocalAnchor(_ id:UUID,revision:Int64,expectedEpoch:UUID)throws->(HistoryStore,HistoryDetail,UUID){
+        guard epoch==expectedEpoch,!isBusy,opened,state.phase == .ready,let store,let detail=state.selected,
+              !tombstones.contains(id),detail.record.id==id,detail.record.revision==revision else{throw HistoryError.stale}
+        return(store,detail,selectionEpoch)
+    }
+    private func applyNotesLocalRevision(_ revision:Int64,detail:HistoryDetail,epoch original:UUID,selected:UUID,store originalStore:HistoryStore){
+        guard epoch==original,selectionEpoch==selected,store === originalStore,!Task.isCancelled,state.phase == .ready,
+              !tombstones.contains(detail.record.id),state.selected?.record.id==detail.record.id,
+              state.selected?.record.revision==detail.record.revision else{return}
+        var record=detail.record;record.revision=revision
+        state.selected=HistoryDetail(record:record,captures:detail.captures,rows:detail.rows,nextOffset:detail.nextOffset,totalRows:detail.totalRows)
+        state.records=state.records.map{$0.id==record.id ? record:$0}
+    }
+    /// Explicit user wording edits retain the original citations/provenance;
+    /// account/helper/model readiness is deliberately unnecessary here.
+    @discardableResult public func editGeneratedNotes(_ id:UUID,expectedRecordRevision:Int64,noteID:UUID,expectedNoteRevision:Int64,
+        texts:HistoryNotesEditedTexts,epoch expectedEpoch:UUID,operationID:UUID)async throws->HistoryNotesCommitOutcome{
+        try Task.checkCancellation()
+        let(originalStore,detail,selected)=try notesLocalAnchor(id,revision:expectedRecordRevision,expectedEpoch:expectedEpoch)
+        let old=denyNotes();old?.notifyRetired();onSourceDenial?(.record(retiredEpoch:expectedEpoch,recordID:id,reason:.recordChanged))
+        _=try notesLocalAnchor(id,revision:expectedRecordRevision,expectedEpoch:expectedEpoch)
+        let gate=HistoryAdmission()
+        do{
+            let result=try await withTaskCancellationHandler(operation:{try await run(gate:gate){store in
+                guard store === originalStore else{throw HistoryError.stale}
+                return try store.editGeneratedNotes(id,expectedRecordRevision:expectedRecordRevision,noteID:noteID,
+                    expectedNoteRevision:expectedNoteRevision,texts:texts,operationID:operationID,admission:{gate.allowed})
+            }},onCancel:{gate.retire()})
+            if result.cleanupComplete{applyNotesLocalRevision(result.receipt.savedAtRecordRevision,detail:detail,epoch:expectedEpoch,selected:selected,store:originalStore)}
+            else if epoch==expectedEpoch,store === originalStore{fail(HistoryError.unavailable)}
+            publish();return result
+        }catch{
+            if case HistoryNotesCommitError.indeterminate=error,epoch==expectedEpoch,store === originalStore{fail(error)}
+            throw error
+        }
+    }
+    /// Explicit deletion of AI notes never removes original transcript,
+    /// manual wording or Learning support, and never requires inference.
+    @discardableResult public func deleteGeneratedNotes(_ id:UUID,expectedRecordRevision:Int64,noteID:UUID,expectedNoteRevision:Int64,
+        epoch expectedEpoch:UUID,operationID:UUID)async throws->HistoryNotesDeleteOutcome{
+        try Task.checkCancellation()
+        let(originalStore,detail,selected)=try notesLocalAnchor(id,revision:expectedRecordRevision,expectedEpoch:expectedEpoch)
+        let old=denyNotes();old?.notifyRetired();onSourceDenial?(.record(retiredEpoch:expectedEpoch,recordID:id,reason:.recordChanged))
+        _=try notesLocalAnchor(id,revision:expectedRecordRevision,expectedEpoch:expectedEpoch)
+        let gate=HistoryAdmission()
+        do{
+            let result=try await withTaskCancellationHandler(operation:{try await run(gate:gate){store in
+                guard store === originalStore else{throw HistoryError.stale}
+                return try store.deleteGeneratedNotes(id,expectedRecordRevision:expectedRecordRevision,noteID:noteID,
+                    expectedNoteRevision:expectedNoteRevision,operationID:operationID,admission:{gate.allowed})
+            }},onCancel:{gate.retire()})
+            if result.cleanupComplete{applyNotesLocalRevision(result.receipt.savedAtRecordRevision,detail:detail,epoch:expectedEpoch,selected:selected,store:originalStore)}
+            else if epoch==expectedEpoch,store === originalStore{fail(HistoryError.unavailable)}
+            publish();return result
+        }catch{
+            if case HistoryNotesCommitError.indeterminate=error,epoch==expectedEpoch,store === originalStore{fail(error)}
+            throw error
+        }
+    }
     public func prepareNotesSource(recordID:UUID,expectedRevision:Int64,selection:HistoryNotesSelection,intentID:UUID,
         isCurrent:@escaping @MainActor ()->Bool,onRetired:@escaping @MainActor (HistoryNotesSource)->Void)async throws->HistoryNotesSource{
         try Task.checkCancellation()

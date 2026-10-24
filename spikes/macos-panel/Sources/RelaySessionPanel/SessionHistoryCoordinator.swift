@@ -75,12 +75,19 @@ private final class HistoryAdmission:@unchecked Sendable {
         factory=storageFactory;self.preferences=preferences;self.canEnable=canEnable;self.clock=clock
         state.epoch=epoch;state.savingEnabled=preferences.savingEnabled;snapshot=state
     }
+    private var publishingSnapshot=false,publicationPending=false
     private func publish(){
-        state.epoch=epoch;state.isBusy=isBusy;state.pendingCount=pending.count+(terminalStop==nil ? 0:1);state.savingEnabled=preferences.savingEnabled
-        let original=epoch;snapshot=state
-        // @Published observers may synchronously Lock. Never leave their
-        // cleared private state overwritten by the older completion's setter.
-        if epoch != original{state.epoch=epoch;state.isBusy=isBusy;state.pendingCount=pending.count+(terminalStop==nil ? 0:1);snapshot=state}
+        publicationPending=true
+        guard !publishingSnapshot else{return}
+        publishingSnapshot=true;defer{publishingSnapshot=false}
+        while publicationPending{
+            publicationPending=false
+            state.epoch=epoch;state.isBusy=isBusy;state.pendingCount=pending.count+(terminalStop==nil ? 0:1);state.savingEnabled=preferences.savingEnabled
+            // @Published notifies before storing. Synchronous Lock/deletion can
+            // change actual private state while this setter is running. Drain
+            // that newer state after it returns, including same-epoch changes.
+            snapshot=state
+        }
     }
     private func ownedStore()throws->HistoryStore{
         if let store{return store}

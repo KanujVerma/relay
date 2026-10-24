@@ -54,3 +54,11 @@ These are local scoped independent reviews, not GitHub approval or a main merge.
 - [Standalone scope foundation369](review-idle-foundation-3698e28.md): accepted96Python+10native; actual transport/app follow.
 - [Native account consumer28](review-account-native-28d5948.md): accepted17native+3launcher tests; full product consumer follows.
 - [Résumé backendf353 first review](review-resume-backend-f353253.md): one P2 shared-name employer relevance finding, correction pending.
+
+- [Idle transport/preparationdae](review-idle-preparation-dae0675.md): accepted34native, actual app next.
+- [Résumé backendc043 re-review](review-resume-c043887-rereview.md): original shared-name and prefix P2 findings closed;64focused pass.
+- [Résumé nativebd594](review-resume-native-bd59453.md): accepted5independent native cases, real format/join next.
+
+- [Résumé final34ed app/formats](review-resume-final-34ed5aa.md): accepted17Python/4actualModel cases with all real formats enabled and zero skips; joinedab8c42d.
+- [Protected product provider506](review-account-product-5067392.md): accepted53clean-env cases; source-child fixture portability corrected.
+- [Explicit account readinessd04](review-account-readiness-d04e0e7.md): accepted20native at component boundary; actual product join follows.

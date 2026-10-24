@@ -1,7 +1,7 @@
 # Personal Brain storage contract, Slice 02A-A
 
 Status: local SQLite prototype on Python stdlib; synthetic tests only.
-Implementation: [relay_spike/personal_brain.py](https://github.com/KanujVerma/relay/blob/30fbf85/relay_spike/personal_brain.py).
+Implementation: [relay_spike/personal_brain.py](https://github.com/KanujVerma/relay/blob/04fe8095e7ba874154ae5bece09c71eb6680561f/relay_spike/personal_brain.py).
 This is NOT an imported resume, a verified user profile, a secure shipping macOS
 database, or an automatic AI memory engine.
 
@@ -128,7 +128,7 @@ Those require separate benchmarks and source-level trust boundaries.
 
 ## Acceptance and next boundary
 
-Offline tests in [tests/test_personal_brain.py](https://github.com/KanujVerma/relay/blob/30fbf85/tests/test_personal_brain.py)
+Offline tests in [tests/test_personal_brain.py](https://github.com/KanujVerma/relay/blob/04fe8095e7ba874154ae5bece09c71eb6680561f/tests/test_personal_brain.py)
 exercise migrations, foreign keys, source consent, actor ownership,
 unverified candidate isolation, conflicting facts and atomic correction,
 approval-reference reuse, cross-source experience invalidation, no content

@@ -4,16 +4,16 @@ The first six Relay view renders use the Swift sources and pure fixture inputs f
 
 | Export | Pure input |
 | --- | --- |
-| [Home](home.png) | Selected synthetic app, microphone enabled, assistance permitted, AI label enabled; no model object |
-| [Live](live.png) | Synthetic Python question, fixed lead/two points/code, `02:41`, fixed local-OCR label |
-| [Paused](paused.png) | Paused state, no old question/answer, fresh-conversation resume message |
-| [Preparing](preparing.png) | Explicit synthetic45% preparation input,225 MB label; not observed download progress |
-| [Error](error.png) | Fixed unavailable/retry preparation input |
-| [Pill](pill.png) | Collapsed live surface using the same fixed synthetic state |
-| [Microphone only](microphone-only.png) | Explicit microphone-only source; copy explains that automatic question help requires a conversation app |
-| [Context locked](context-locked.png) | Locked My Context, before any fictional open command |
-| [Context memory](context-memory.png) | Two fictional saved facts with separate self/team ownership and one fictional source |
-| [Context review](context-review.png) | One pending fictional claim, ownership unknown, plus the same two fictional saved facts |
+| [Home](https://github.com/KanujVerma/relay/blob/04fe8095e7ba874154ae5bece09c71eb6680561f/docs/evidence/2026-10-23-cluely-ui/home.png) | Selected synthetic app, microphone enabled, assistance permitted, AI label enabled; no model object |
+| [Live](https://github.com/KanujVerma/relay/blob/04fe8095e7ba874154ae5bece09c71eb6680561f/docs/evidence/2026-10-23-cluely-ui/live.png) | Synthetic Python question, fixed lead/two points/code, `02:41`, fixed local-OCR label |
+| [Paused](https://github.com/KanujVerma/relay/blob/04fe8095e7ba874154ae5bece09c71eb6680561f/docs/evidence/2026-10-23-cluely-ui/paused.png) | Paused state, no old question/answer, fresh-conversation resume message |
+| [Preparing](https://github.com/KanujVerma/relay/blob/04fe8095e7ba874154ae5bece09c71eb6680561f/docs/evidence/2026-10-23-cluely-ui/preparing.png) | Explicit synthetic45% preparation input,225 MB label; not observed download progress |
+| [Error](https://github.com/KanujVerma/relay/blob/04fe8095e7ba874154ae5bece09c71eb6680561f/docs/evidence/2026-10-23-cluely-ui/error.png) | Fixed unavailable/retry preparation input |
+| [Pill](https://github.com/KanujVerma/relay/blob/04fe8095e7ba874154ae5bece09c71eb6680561f/docs/evidence/2026-10-23-cluely-ui/pill.png) | Collapsed live surface using the same fixed synthetic state |
+| [Microphone only](https://github.com/KanujVerma/relay/blob/04fe8095e7ba874154ae5bece09c71eb6680561f/docs/evidence/2026-10-23-cluely-ui/microphone-only.png) | Explicit microphone-only source; copy explains that automatic question help requires a conversation app |
+| [Context locked](https://github.com/KanujVerma/relay/blob/04fe8095e7ba874154ae5bece09c71eb6680561f/docs/evidence/2026-10-23-cluely-ui/context-locked.png) | Locked My Context, before any fictional open command |
+| [Context memory](https://github.com/KanujVerma/relay/blob/04fe8095e7ba874154ae5bece09c71eb6680561f/docs/evidence/2026-10-23-cluely-ui/context-memory.png) | Two fictional saved facts with separate self/team ownership and one fictional source |
+| [Context review](https://github.com/KanujVerma/relay/blob/04fe8095e7ba874154ae5bece09c71eb6680561f/docs/evidence/2026-10-23-cluely-ui/context-review.png) | One pending fictional claim, ownership unknown, plus the same two fictional saved facts |
 
 Home/preparing/error are920×670. Live/paused are706×576 including the690-wide answer and outer padding. The pill's control region is350×50 within a706×66 transparent view surface; the extra width preserves the answer window's anchor. Synthetic labels are visible on the expanded surfaces. The collapsed pill is still synthetic and its elapsed time is fixed input.
 

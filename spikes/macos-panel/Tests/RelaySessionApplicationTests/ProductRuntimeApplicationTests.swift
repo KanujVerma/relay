@@ -66,6 +66,15 @@ import RelayControls
         }
         XCTAssertGreaterThan(model.snapshot.replacement,replacement)
         XCTAssertEqual(model.snapshot.question,question);XCTAssertNotNil(model.snapshot.card)
+        for technical in ["How does Python implement lists?","How would our team design a feature for nurse handoffs?"]{
+            model.assistant.draft=technical;model.assistant.sendDraftAsNewQuestion()
+            for _ in 0..<5000{
+                if model.snapshot.question==technical,model.snapshot.status != "Thinking"{break}
+                try await Task.sleep(for:.milliseconds(2))
+            }
+            XCTAssertEqual(model.snapshot.question,technical)
+            XCTAssertNotNil(model.snapshot.card,"ordinary technical and prospective case-study questions must not require a personal vault")
+        }
         XCTAssertEqual(model.assistant.transcript.snapshot.rows.count,1,"typed questions must not become recognized speech")
         await model.stop()
         XCTAssertFalse(model.running);XCTAssertFalse(model.stopping);XCTAssertNil(model.snapshot.card)

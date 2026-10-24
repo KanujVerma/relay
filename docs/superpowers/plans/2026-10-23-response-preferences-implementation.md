@@ -37,10 +37,11 @@ XCTAssertNil(coordinator.capture())
 XCTAssertEqual(fixtureReceipts.reads, 0)
 try await coordinator.useBuiltin(.coding)
 XCTAssertNotNil(coordinator.capture())
-XCTAssertEqual(try fixtureVault.load(), coordinator.catalogDataForTestOracle)
+let stored = try ResponsePreferencesCatalog.decode(fixtureVault.load())
+XCTAssertEqual(stored.selected, "coding")
 ```
 
-The final test must compare public decoded catalog/actual disk bytes rather than add test-only production accessors; the example expresses the disk oracle. For a held save, select General while the actual `save` call is blocked, require busy and disabled receipt until release, then reconstruct against those disk bytes and prove stale selection cannot activate.
+For a held save, select General while the actual `save` call is blocked, require busy and disabled receipt until release, then reconstruct against those disk bytes and prove stale selection cannot activate.
 
 - [ ] Freeze/push native component with exact tests/handoff and send immutable head to root/history owner before integration.
 

@@ -1,6 +1,6 @@
 # Relay build status
 
-Active goal: finish speed, Learning Memory and meeting notes end to end under the [current acceptance plan](superpowers/plans/2026-10-24-finish-live-copilot.md). Canonical codef6f2fa9 now joins actual helper-owned transport lifetime/timing and strict Learning request projections. Root combined Python:773collected/741pass/32optional skips, zero failures,9.049seconds. These are accepted components; native Learning/Notes storage/UI and full live latency remain unfinished. Root independently accepted History82e manual-edit receipts/retirement notifications with34native passes/zero skips; not yet assembled here. User approved automatic tentative style changes with visible why/undo. Current exact status is the top HANDOFF override; older checkpoints below retain their historical scope.
+Active goal remains incomplete under the [acceptance plan](superpowers/plans/2026-10-24-finish-live-copilot.md). Current canonical source e5f00f0 adds reviewed strict/protected Notes backend and native wire DATA to accepted 9cef original-source lifecycle and earlier schema2/CAS/manual editor/timing. Root 128 affected Python cases pass without skips; actual native Notes completion/save/UI integration is still pending. Learning's corrected matcher, checked CF receipts and schema3 candidate are not yet independently joined. The actual synthetic ASR comparison saved about 95 ms after VAD closure with identical text/cutoffs, but normal capture remains unchanged and full app/cloud/usefulness latency is unmeasured. Automatic tentative wording/length with why/undo is approved; new career facts still need confirmation. [HANDOFF](../HANDOFF.md) owns exact refs/results/limits. Earlier checkpoints below are historical.
 
 Canonical code checkpoint **24b5285** includes the accepted pure generated-notes DATA validator on runtime **3de0419**, whose app/preferences source matches independently reviewed **b270297**. Later documentation can advance HEAD. Draft [PR71](https://github.com/KanujVerma/relay/pull/71); main remains unmerged eb28d15. [HANDOFF](../HANDOFF.md) owns exact refs, owners and continuation.
 
@@ -25,6 +25,10 @@ The accepted Notes component reads the complete bounded original saved source ra
 ## Accepted storage and timing foundation
 
 Source3b3ee29 includes accepted Notesv2 e19 and timing/compact23 plus canonical optional-wire documentation591. Root complete Python gate:786collected/754pass/32optional skips,9.340seconds. Root independent combined native gate:89collected/88pass/oneexisting opt-in render skip,98.315seconds. No failures. Actual protected notes saving, source CAS/restart/delete and indeterminate-versus-positive-save/cleanup outcomes are now verified as internal components. SourceCoordinator, protected generation and UI remain pending. Corrected Learning matching/derivation, schema3 and actualModel hooks also remain pending. The full active goal is still incomplete; no live latency improvement is established by these tests.
+
+## Corrected source lifecycle
+
+Source9cef52d joins original Notes205 plus narrow797caller-admission correction. Root original stale/cancelled Start and repeated-old-End finding is reproduced and closed without changing fixtures or source/store schema. Independent joined native gate:67collected/66pass/one opt-in render skip, zero failures,94.932seconds. This includes all11Notes source cases,17legacy coordinator,6manual receipts,10actual ownership and23actualApp History/editor cases. This enables the actual Memory source adapter; it does not deliver the remaining Notes scope/UI or Learning schema3/Model pipeline. Exact prior690 hosted native/contract/converter checks are all green.
 
 ## Historical and preceding checkpoints
 

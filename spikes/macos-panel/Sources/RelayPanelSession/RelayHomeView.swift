@@ -1,4 +1,5 @@
 import SwiftUI
+import RelaySessionPanel
 
 /// Side-effect-free Home surface; source controls and commands come from the owner adapter.
 struct RelayHomeView<SourceControls:View>:View {
@@ -7,11 +8,12 @@ struct RelayHomeView<SourceControls:View>:View {
     let aiEnabled:Bool
     let error:String?
     var fixture=false
+    var assistant:TypedAssistantController?
     let onAction:(RelayUIAction)->Void
     @ViewBuilder let sourceControls:()->SourceControls
     var body:some View {
         HStack(spacing:0){
-            VStack(alignment:.leading,spacing:24){
+            VStack(alignment:.leading,spacing:assistant == nil ? 24:16){
                 RelayBrand().padding(.bottom,12)
                 Label("Session",systemImage:"waveform").font(.system(size:13,weight:.medium)).frame(maxWidth:.infinity,alignment:.leading).padding(10).background(.white.opacity(0.06),in:RoundedRectangle(cornerRadius:10))
                 Button{onAction(.context)}label:{Label("My Context",systemImage:"person.text.rectangle").frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).font(.system(size:13)).foregroundStyle(RelayTheme.secondary).padding(.horizontal,10).disabled(fixture)
@@ -25,6 +27,16 @@ struct RelayHomeView<SourceControls:View>:View {
                 VStack(alignment:.leading,spacing:12){
                     Text(state.stopping ? "Finishing the session…":state.paused ? "Take your time.":state.running ? "Your session is live.":state.visualBusy ? "Updating image settings…":"Ready when you are.").font(.system(size:30,weight:.semibold)).tracking(-0.7)
                     Text("Listen to the conversation. Get clear talking points, with your own experience close at hand.").font(.system(size:14)).lineSpacing(5).foregroundStyle(RelayTheme.secondary).fixedSize(horizontal:false,vertical:true)
+                }
+                if let assistant{
+                    VStack(alignment:.leading,spacing:8){
+                        HStack{
+                            Text("Ask Relay").font(.system(size:15,weight:.semibold));Spacer()
+                            if state.assistantActive{Button("Open assistant"){onAction(.showSession)}.buttonStyle(.plain).font(.system(size:12)).foregroundStyle(RelayTheme.secondary)}
+                        }
+                        Text("Ask a question without starting audio recording.").font(.system(size:12)).foregroundStyle(RelayTheme.muted)
+                        AssistantComposerView(assistant:assistant)
+                    }.padding(16).background(RelayTheme.raised,in:RoundedRectangle(cornerRadius:16)).overlay{RoundedRectangle(cornerRadius:16).strokeBorder(RelayTheme.line)}
                 }
                 VStack(alignment:.leading,spacing:16){
                     sourceControls()
@@ -55,7 +67,7 @@ struct RelayHomeView<SourceControls:View>:View {
                 Spacer(minLength:0)
                 if fixture{Text("SYNTHETIC DEMO · no audio capture or account request").font(.system(size:10,weight:.medium)).foregroundStyle(RelayTheme.muted)}
             }.padding(36).frame(maxWidth:.infinity,maxHeight:.infinity)
-        }.frame(width:920,height:670).background(RelayTheme.base).foregroundStyle(.white).preferredColorScheme(.dark)
+        }.frame(width:920,height:assistant == nil ? 670:790).background(RelayTheme.base).foregroundStyle(.white).preferredColorScheme(.dark)
     }
 }
 struct PreparationStatusView:View {

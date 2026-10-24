@@ -5,6 +5,16 @@ import RelayScreenContext
 @testable import RelayPanelSession
 
 @MainActor final class RelayPresentationTests:XCTestCase {
+    func testAssistantReadinessOffersAnswerActionsWithoutClaimingAudioOrConsent() {
+        var state=RelaySessionPresentation(hasQuestion:true,hasAnswer:true,assistantActive:true)
+        XCTAssertFalse(state.running);XCTAssertEqual(state.status,"Assistant · not listening")
+        XCTAssertTrue(state.allows(.help));XCTAssertTrue(state.allows(.copy));XCTAssertTrue(state.allows(.end))
+        XCTAssertFalse(state.allows(.start));XCTAssertTrue(state.allows(.showSession))
+        state.assistantActive=false;state.assistantPreparing=true
+        XCTAssertTrue(state.allows(.cancelPreparation));XCTAssertTrue(state.allows(.end));XCTAssertFalse(state.allows(.copy))
+        state.assistantPreparing=false;state.assistantClosing=true
+        XCTAssertFalse(state.allows(.help));XCTAssertFalse(state.allows(.start));XCTAssertTrue(state.allows(.end))
+    }
     func testStartNeedsRealOwnerAdmissionSourceAndConsent() {
         var state=RelaySessionPresentation(ownerCanStart:true)
         XCTAssertFalse(state.allows(.start))

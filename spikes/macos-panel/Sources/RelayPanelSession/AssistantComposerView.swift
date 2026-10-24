@@ -32,7 +32,9 @@ import RelaySessionPanel
             HStack{
                 Button{assistant.setTranscriptVisible(!assistant.snapshot.transcriptVisible)}label:{Label(assistant.snapshot.transcriptVisible ? "Hide transcript":"Transcript",systemImage:"text.alignleft")}.buttonStyle(.plain)
                 Spacer()
-                if assistant.snapshot.canStop {
+                if assistant.snapshot.isPreparing {
+                    Button{assistant.cancelPreparation()}label:{Label("Cancel preparation",systemImage:"xmark.circle")}.buttonStyle(.plain)
+                }else if assistant.snapshot.canStop {
                     Button{Task{await assistant.cancelCurrentResponse()}}label:{Label("Stop response",systemImage:"stop.fill")}.buttonStyle(.plain)
                 }else if !assistant.snapshot.status.isEmpty{Text(assistant.snapshot.status).lineLimit(1)}
             }.font(.system(size:11)).foregroundStyle(RelayTheme.muted)

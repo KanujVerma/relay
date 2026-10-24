@@ -90,7 +90,9 @@ private final class AccountHistoryStorage:HistoryOwnedSnapshotStorage,@unchecked
                 var prefix = [repository.appendingPathComponent("tests/support/account_product_helper.py").path, "--synthetic-product-account-test", "--log", log.path]
                 if let holdRefresh { prefix += ["--hold-refresh", holdRefresh.path] }; return prefix
             })
-        let historyFactory:(@Sendable ()throws->any ProtectedSnapshotStorage)?=historyStorage.map{value in {value}}
+        let historyFactory:(@Sendable ()throws->any ProtectedSnapshotStorage)?
+        if let historyStorage{historyFactory={@Sendable in historyStorage}}
+        else{historyFactory=nil}
         let model = SessionApplicationModel(arguments: ["Relay", "--fixture-suite", "reviewed", "--repository", repository.path, "--python", interpreter],
             contextCoordinator: screen, contextWriteAcknowledged: { data, binding in await acknowledgment?.wrote(data, binding) },
             contextPreferences: context, profileVaultFactory: { ProfileVault(directory: relay, keys: AppAccountKey(value: 81)) },

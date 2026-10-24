@@ -5,6 +5,47 @@ import RelayContextComposition
 @testable import RelaySessionPanel
 
 final class AnswerCancellationTests:XCTestCase {
+    @MainActor func testMismatchedOwnedReceiptResolvesTheOriginalWaiterWithError()async throws {
+        let script="""
+        import json,struct,sys,uuid
+        size=struct.unpack('>I',sys.stdin.buffer.read(4))[0]
+        request=json.loads(sys.stdin.buffer.read(size))
+        reply={key:request[key] for key in ('captureSessionID','sessionEpoch','presentationGeneration','requestID','targetRequestID')}
+        reply.update(schemaVersion=1,kind='answer_cancel_response',resultRevision=2,reasonCode='request_cancelled',quiesced=True)
+        reply[sys.argv[1]]=str(uuid.uuid4())
+        body=json.dumps(reply).encode()
+        sys.stdout.buffer.write(struct.pack('>I',len(body))+body)
+        sys.stdout.buffer.flush()
+        sys.stdin.buffer.read()
+        """
+        let root=URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let python=try XCTUnwrap(ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"])
+        for field in ["targetRequestID","captureSessionID"] {
+            let helper=HelperTransport(root:root,python:URL(fileURLWithPath:python),
+                pythonArguments:["-u","-c",script,field],mode:.noInference,onFrame:{_ in},onFailure:{})
+            try helper.start()
+            let native=NativeSessionController(onEvent:{_ in})
+            try native.start(selectedBundleID:"com.example.fixture",microphoneEnabled:false,
+                components:[2:SourceComponents(vad:CancelQuietVAD(),recognizer:CancelQuietRecognizer())])
+            let request=try native.issueUserQuestion(expectedLease:try XCTUnwrap(native.authority.snapshot()),intent:.ask,
+                question:"Explain event loops.",baseRequestID:nil,enqueue:{_ in})
+            let cancellation=try native.issueAnswerCancellation(expectedLease:request.lease,targetRequestID:request.requestID,enqueue:{_ in})
+            let pending=try helper.registerAnswerCancellation(cancellation)
+            XCTAssertTrue(pending === (try helper.registerAnswerCancellation(cancellation)))
+            try helper.sendJSON(cancellation.encodedJSON())
+            let resolved=expectation(description:"owned waiter rejects wrong \(field)")
+            Task{@MainActor in
+                defer{resolved.fulfill()}
+                do{_=try await pending.value();XCTFail("wrong identity succeeded")}
+                catch{}
+            }
+            await fulfillment(of:[resolved],timeout:2)
+            XCTAssertThrowsError(try helper.sendJSON(Data("{}".utf8)))
+            native.beginStop();await native.waitForQuiescence();native.finishStop(quiesced:true)
+            await helper.shutdownAndWait()
+        }
+    }
     func testReceiptRequiresExactTargetIdentityAndActualQuiescence()throws {
         let value:[String:Any]=["schemaVersion":1,"kind":"answer_cancel_response",
             "captureSessionID":"00000000-0000-0000-0000-000000000001","sessionEpoch":1,

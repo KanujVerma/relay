@@ -7,7 +7,7 @@ import RelaySessionPanel
 import RelaySessionCapture
 
 @MainActor struct SessionSettingsView:View {
-    enum Section:String,CaseIterable{case general="General",screen="Screen context",ai="AI",shortcuts="Shortcuts",advanced="Advanced";var symbol:String{switch self{case .general:"slider.horizontal.3";case .screen:"rectangle.dashed";case .ai:"sparkles";case .shortcuts:"keyboard";case .advanced:"wrench.and.screwdriver"}}}
+    enum Section:String,CaseIterable{case general="General",screen="Screen context",ai="AI",history="History",shortcuts="Shortcuts",advanced="Advanced";var symbol:String{switch self{case .general:"slider.horizontal.3";case .screen:"rectangle.dashed";case .ai:"sparkles";case .history:"clock.arrow.circlepath";case .shortcuts:"keyboard";case .advanced:"wrench.and.screwdriver"}}}
     @ObservedObject var model:SessionApplicationModel
     @ObservedObject private var setup:SpeechSetupCoordinator
     @ObservedObject private var visual:VisualInputSetupState
@@ -51,6 +51,8 @@ import RelaySessionCapture
         case .shortcuts:
             settingsTitle("Keyboard shortcuts","Control Relay's own window and current answer.")
             ControlsSettingsView(controller:model.controls).onAppear{model.restoreShortcuts()}.onChange(of:model.controls.shortcuts){_,_ in model.saveShortcuts()}.onDisappear{model.saveShortcuts()}
+        case .history:
+            HistorySettingsOptions(model:model)
         case .advanced:
             settingsTitle("Advanced speech files","Leave both paths empty to use automatic setup. Custom files require both folders and explicit permission to use their models.")
             VStack(alignment:.leading,spacing:12){TextField("ASR model folder",text:$model.asrFolder);Button("Choose speech folder"){selectingASR=true};TextField("Compiled VAD model",text:$model.vadFolder);Button("Choose detector"){selectingVAD=true};Toggle("I have permission to use these custom speech models",isOn:$model.modelLicensesAcknowledged)}.disabled(model.running || model.starting || model.stopping || setup.snapshot.isBusy)
@@ -67,6 +69,22 @@ import RelaySessionCapture
     }
     private var preparationWithoutRecovery:RelayPreparationPresentation{var value=RelayPreparationPresentation(setup.snapshot);value.recovery = .none;return value}
     private func settingsTitle(_ title:String,_ subtitle:String)->some View{VStack(alignment:.leading,spacing:8){Text(title).font(.system(size:18,weight:.semibold));Text(subtitle).font(.system(size:13)).lineSpacing(4).foregroundStyle(RelayTheme.secondary)}}
+}
+@MainActor private struct HistorySettingsOptions:View{
+    @ObservedObject var model:SessionApplicationModel
+    @ObservedObject private var history:SessionHistoryCoordinator
+    @Environment(\.openWindow) private var openWindow
+    init(model:SessionApplicationModel){self.model=model;history=model.history}
+    var body:some View{
+        VStack(alignment:.leading,spacing:16){
+            Text("Local session history").font(.system(size:18,weight:.semibold))
+            Text("Optional saving keeps final transcript text and your manual notes encrypted on this Mac for 30 days. No raw audio, screenshots or screen text is saved. Nothing is added to My Context automatically.").font(.system(size:13)).lineSpacing(4).foregroundStyle(RelayTheme.secondary)
+            Toggle("Save session text locally",isOn:Binding(get:{history.savingEnabled},set:{enabled in if enabled{Task{try? await history.enableSaving()}}else{history.stopSaving()}})).disabled(!history.savingEnabled && (!model.canEnableHistory || history.isBusy))
+            Text(history.snapshot.message).font(.system(size:12)).foregroundStyle(RelayTheme.muted)
+            HStack{Button("Open History"){openWindow(id:"relay-history")}.buttonStyle(RelayQuietButtonStyle());Button("Lock history"){history.lock()}.buttonStyle(RelayQuietButtonStyle())}
+            Text("Enable saving while idle. Stop saving keeps existing history available. Lock turns saving off and closes it. Recording permission changes do not delete saved history; use History to delete a source, a session or everything. Expiry runs when history is accessed, and exported copies remain yours to manage.").font(.system(size:12)).lineSpacing(4).foregroundStyle(RelayTheme.muted)
+        }
+    }
 }
 @MainActor private struct VisualInputOptions:View {
     @ObservedObject var model:SessionApplicationModel

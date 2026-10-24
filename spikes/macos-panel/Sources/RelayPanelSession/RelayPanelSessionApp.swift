@@ -12,6 +12,7 @@ import RelayControls
         Window("Relay",id:"relay-home"){RelayHomeAdapter(model:model,shell:shell)}.defaultSize(width:920,height:670).windowResizability(.contentSize)
         Window("Relay session",id:"relay-live"){RelayLiveAdapter(model:model,shell:shell)}.windowStyle(.hiddenTitleBar).windowResizability(.contentSize)
         Window("My Context",id:"relay-context"){RelayMemoryWorkspace(model:model)}.defaultSize(width:920,height:720)
+        Window("History",id:"relay-history"){RelayHistoryWorkspace(model:model)}.defaultSize(width:920,height:670)
         Window("Relay Settings",id:"relay-settings"){SessionSettingsView(model:model)}.defaultSize(width:920,height:670).windowResizability(.contentSize)
         MenuBarExtra("Relay",systemImage:model.running ? "waveform.circle.fill":"waveform"){RelayMenu(model:model)}
         .commands{RelayAppCommands(model:model)}
@@ -22,7 +23,7 @@ private struct RelayAppCommands:Commands {
     @Environment(\.openWindow) private var openWindow
     var body:some Commands {
         CommandGroup(replacing:.appSettings){Button("Settings…"){openWindow(id:"relay-settings")}.keyboardShortcut(",",modifiers:.command)}
-        CommandGroup(replacing:.appTermination){Button("Quit Relay"){Task{await model.stop();NSApplication.shared.terminate(nil)}}.keyboardShortcut("q",modifiers:.command)}
+        CommandGroup(replacing:.appTermination){Button("Quit Relay"){Task{await model.shutdown();NSApplication.shared.terminate(nil)}}.keyboardShortcut("q",modifiers:.command)}
     }
 }
 @MainActor private struct RelayMenu:View {
@@ -37,9 +38,10 @@ private struct RelayAppCommands:Commands {
         Button("End session"){model.performWindowAction(.endSession)}.disabled(!model.relayPresentation.allows(.end))
         Divider()
         Button("My Context"){openWindow(id:"relay-context")}.disabled(model.fixture)
+        Button("History"){openWindow(id:"relay-history")}
         Button("Settings…"){openWindow(id:"relay-settings")}
         Divider()
-        Button("Quit Relay"){Task{await model.stop();NSApplication.shared.terminate(nil)}}
+        Button("Quit Relay"){Task{await model.shutdown();NSApplication.shared.terminate(nil)}}
     }
 }
 @MainActor private struct RelayHomeAdapter:View {
@@ -51,7 +53,7 @@ private struct RelayAppCommands:Commands {
     init(model:SessionApplicationModel,shell:RelayWindowShell){self.model=model;self.shell=shell;setup=model.speechSetup;visual=model.visual}
     private var router:RelayCommandRouter{RelayCommandRouter(state:{model.relayPresentation},control:model.performWindowAction,start:{await model.start();if model.running{openWindow(id:"relay-live")}},cancelPreparation:model.cancelPreparation,retryPreparation:{await model.retryPreparation();if model.running{openWindow(id:"relay-live")}},openContext:{openWindow(id:"relay-context")},openSettings:{openWindow(id:"relay-settings")},showSession:{openWindow(id:"relay-live")})}
     var body:some View {
-        RelayHomeView(state:model.relayPresentation,preparation:RelayPreparationPresentation(setup.snapshot),aiEnabled:model.oauth,error:model.error,fixture:model.fixture,assistant:model.assistant,onAction:{router.perform($0)}){RelaySourceControls(model:model)}
+        RelayHomeView(state:model.relayPresentation,preparation:RelayPreparationPresentation(setup.snapshot),aiEnabled:model.oauth,error:model.error,fixture:model.fixture,assistant:model.assistant,openHistory:{openWindow(id:"relay-history")},onAction:{router.perform($0)}){RelaySourceControls(model:model)}
             .task{if model.fixture && shell.claimFixtureStart(){await model.start();if model.running{openWindow(id:"relay-live")}}}
             .onChange(of:model.running){_,running in if running{shell.expanded=true;openWindow(id:"relay-live")}}
             .onChange(of:model.assistantActive){_,active in if active{shell.expanded=true;openWindow(id:"relay-live")}}

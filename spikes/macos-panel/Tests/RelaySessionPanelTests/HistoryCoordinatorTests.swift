@@ -212,6 +212,11 @@ private final class HeldHistoryExport:HistoryExportDestination,@unchecked Sendab
         let json=try XCTUnwrap(try JSONSerialization.jsonObject(with:XCTUnwrap(destination.data)) as? [String:Any])
         XCTAssertEqual((json["transcript"] as? [Any])?.count,70)
         XCTAssertEqual(json["title"] as? String,"Practice notes")
+        let output=FileManager.default.temporaryDirectory.appendingPathComponent("relay-explicit-history-export-"+UUID().uuidString+".md")
+        defer{try? FileManager.default.removeItem(at:output)}
+        try await history.export(permit.recordID,expectedRevision:revision,format:.markdown,to:HistoryFileExportDestination(url:output)).value
+        XCTAssertTrue(try String(contentsOf:output,encoding:.utf8).contains("Fictional row 70"))
+        XCTAssertEqual((try FileManager.default.attributesOfItem(atPath:output.path)[.posixPermissions] as? NSNumber)?.intValue,0o600)
         history.lock();await history.waitForQuiescence();try await history.openExisting();try await history.openRecord(permit.recordID)
         XCTAssertEqual(history.snapshot.selected?.record.note,"User wrote this, not a confirmed fact.")
         history.lock();await history.waitForQuiescence()
@@ -252,6 +257,45 @@ private final class HeldHistoryExport:HistoryExportDestination,@unchecked Sendab
         XCTAssertTrue(history.snapshot.records.isEmpty);XCTAssertFalse(prefs.savingEnabled)
         try await purge.value;history.lock();await history.waitForQuiescence()
         try await history.openExisting();XCTAssertTrue(history.snapshot.records.isEmpty)
+        history.lock();await history.waitForQuiescence()
+    }
+    func testReentrantLockObserverCannotRecursivelyRepublishTheSameClosingOwner()async throws{
+        let(_,port,prefs)=try fixture(),history=coordinator(port,prefs)
+        try await history.enableSaving();var callbackCount=0
+        let observation=history.$snapshot.sink{value in
+            if value.recordingID != nil{
+                callbackCount+=1
+                // Bounded probe avoids overflowing the stack on the red path.
+                if callbackCount<20{history.lock()}
+            }
+        }
+        do{_=try await history.beginSession(intentID:UUID(),resuming:false,isCurrent:{true});XCTFail("Reentrant Lock cannot admit Start")}catch{}
+        await history.waitForQuiescence();observation.cancel()
+        XCTAssertLessThan(callbackCount,20,"One close owner must not recursively republish itself")
+        XCTAssertEqual(history.snapshot.phase,.locked);XCTAssertFalse(prefs.savingEnabled)
+    }
+    func testRepeatedStopSavingFromObserverAlsoCoalescesItsOriginalJoin()async throws{
+        let(_,port,prefs)=try fixture(),history=coordinator(port,prefs)
+        try await history.enableSaving();var callbackCount=0
+        let observation=history.$snapshot.sink{value in
+            if value.recordingID != nil{callbackCount+=1;if callbackCount<20{history.stopSaving()}}
+        }
+        do{_=try await history.beginSession(intentID:UUID(),resuming:false,isCurrent:{true});XCTFail("Off cannot admit Start")}catch{}
+        await history.waitForQuiescence();observation.cancel()
+        XCTAssertLessThan(callbackCount,20);XCTAssertFalse(prefs.savingEnabled)
+        XCTAssertTrue(history.snapshot.records.isEmpty);history.lock();await history.waitForQuiescence()
+    }
+    func testUnfinishedSpeechGapSurvivesPauseResumeWithoutInventingAFinalPassage()async throws{
+        let(_,port,prefs)=try fixture(),history=coordinator(port,prefs)
+        let(first,transcript,_)=try await start(history)
+        history.retireCurrentSession(gap:.unfinishedSpeech);try await history.finishSession(first,paused:true)
+        let second=try await history.beginSession(intentID:UUID(),resuming:true,isCurrent:{true})!
+        var events=HistoryTestEvents();events.start(transcript)
+        history.retireCurrentSession();try await history.finishSession(second,paused:false)
+        try await history.openRecord(first.recordID)
+        XCTAssertEqual(history.snapshot.selected?.record.state,.partial)
+        XCTAssertTrue(history.snapshot.selected?.record.gaps.contains(.unfinishedSpeech)==true)
+        XCTAssertTrue(history.snapshot.selected?.rows.isEmpty==true)
         history.lock();await history.waitForQuiescence()
     }
 }

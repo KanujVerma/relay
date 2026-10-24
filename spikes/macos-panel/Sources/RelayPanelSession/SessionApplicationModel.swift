@@ -90,6 +90,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
 @MainActor private final class FixtureContextPreferences:SessionContextUsePreferences {
     var useInSessions=false
 }
+@MainActor private final class FixtureHistoryPreferences:HistorySavingPreferences{var savingEnabled=false}
 
 @MainActor final class SessionApplicationModel: ObservableObject {
     @Published private(set) var snapshot=SessionPanelSnapshot()
@@ -133,6 +134,25 @@ private actor FixtureRecognizer: ActivityRecognizer {
     private let profileResponseObserved:(@MainActor (Data) async ->Void)?
     private var hasContextUse=false
     private var contextUseObservation:AnyCancellable?
+    private let historyPreferencesOverride:(any HistorySavingPreferences)?
+    private let historyStorageFactory:(@Sendable ()throws->any ProtectedSnapshotStorage)?
+    private var historyObservation:AnyCancellable?
+    private var hasHistory=false
+    private var historyPermit:HistorySessionPermit?
+    lazy var history:SessionHistoryCoordinator = {
+        hasHistory=true
+        let preferences:any HistorySavingPreferences=historyPreferencesOverride ?? (fixture ? FixtureHistoryPreferences():UserDefaultsHistoryPreferences())
+        let factory:@Sendable ()throws->any ProtectedSnapshotStorage=historyStorageFactory ?? {
+            let directory=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("Relay/History",isDirectory:true)
+            return ProtectedSnapshotVault(directory:directory,purpose:.history,keys:KeychainProfileKey(purpose:.history))
+        }
+        let coordinator=SessionHistoryCoordinator(storageFactory:factory,preferences:preferences,canEnable:{[weak self] in
+            self?.canEnableHistory==true
+        })
+        assistant.transcript.onHistoryObservation={ [weak coordinator] in coordinator?.observe($0) }
+        historyObservation=coordinator.$snapshot.dropFirst().sink{[weak self] _ in self?.objectWillChange.send()}
+        return coordinator
+    }()
     lazy var contextUse:SessionContextUseCoordinator = {
         hasContextUse=true
         let preferences:any SessionContextUsePreferences=contextPreferencesOverride ?? (fixture ? FixtureContextPreferences():UserDefaultsSessionContextUsePreferences())
@@ -288,6 +308,8 @@ private actor FixtureRecognizer: ActivityRecognizer {
             // Close all old admission before the first await. Queued frames and
             // source events cannot cross into a replacement helper lifecycle.
             let oldOwner=currentOwner
+            let oldHistory=hasHistory ? history:nil
+            let oldHistoryPermit=oldHistory?.retireCurrentSession(gap:.captureFailure)
             oldOwner?.retireAdmission();assistant.cancelPreparation()
             if oldOwner?.kind == .capture{if fixture{native.beginStop()}else{capture.retireAdmission(reason:.transportClosed)}}
             retireOptionalWork();helperIdentity=UUID();owners.activateHelper(helperIdentity)
@@ -298,6 +320,8 @@ private actor FixtureRecognizer: ActivityRecognizer {
             if oldOwner?.kind == .capture {
                 if fixture{await native.waitForQuiescence();native.finishStop(quiesced:true)}else{await capture.stop(reason:.transportClosed)}
             }
+            await events.drain()
+            if let oldHistory,let oldHistoryPermit{try? await oldHistory.finishSession(oldHistoryPermit,paused:false);if historyPermit === oldHistoryPermit{historyPermit=nil}}
             if let oldOwner{owners.remove(oldOwner)}
         }
         await binding.shutdown()
@@ -311,6 +335,8 @@ private actor FixtureRecognizer: ActivityRecognizer {
          contextPreferences:(any SessionContextUsePreferences)?=nil,
          profileVaultFactory:(@MainActor ()->ProfileVault)?=nil,
          profileResponseObserved:(@MainActor (Data) async ->Void)?=nil,
+         historyPreferences:(any HistorySavingPreferences)?=nil,
+         historyStorageFactory:(@Sendable ()throws->any ProtectedSnapshotStorage)?=nil,
          explicitAccountPreparation:(@MainActor (UUID,@escaping @MainActor ()->Bool)async throws->Void)?=nil,
          bundleURL:URL=Bundle.main.bundleURL,
          workingDirectory:URL=URL(fileURLWithPath:FileManager.default.currentDirectoryPath)) {
@@ -318,6 +344,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
         self.explicitAccountPreparation=explicitAccountPreparation
         contextPreferencesOverride=contextPreferences;self.profileVaultFactory=profileVaultFactory
         self.profileResponseObserved=profileResponseObserved
+        historyPreferencesOverride=historyPreferences;self.historyStorageFactory=historyStorageFactory
         self.contextCoordinatorOverride=contextCoordinator
         self.contextWriteAcknowledged=contextWriteAcknowledged;self.ingressEnqueued=ingressEnqueued
         fixture=arguments.contains("--fixture-suite")
@@ -797,6 +824,21 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     func retryPreparation()async{await start()}
     private func ownsStart(_ identity:UUID)->Bool{startIdentity==identity && !Task.isCancelled && !stopping}
+    private func restoreHistoryForStart(_ identity:UUID,sourceIsCurrent:@escaping @MainActor ()->Bool)async->Bool{
+        do{
+            let coordinator=history
+            let permit=try await coordinator.beginSession(intentID:identity,resuming:paused,isCurrent:{[weak self] in self?.ownsStart(identity)==true && sourceIsCurrent()})
+            guard ownsStart(identity),sourceIsCurrent(),!coordinator.isBusy,
+                  permit.map({coordinator.owns($0)}) ?? !coordinator.savingEnabled else{
+                if let permit{coordinator.retireCurrentSession();try? await coordinator.finishSession(permit,paused:false)}
+                return false
+            }
+            historyPermit=permit;return true
+        }catch{
+            if ownsStart(identity){self.error="Local history could not open. Open History to retry, or turn saving off and start again."}
+            return false
+        }
+    }
     private func restoreContextForStart(_ identity:UUID,sourceIsCurrent:@escaping @MainActor ()->Bool)async->Bool{
         let use=contextUse
         guard use.useInSessions else{return !use.isBusy && profileStorage?.busy != true && ownsStart(identity) && sourceIsCurrent()}
@@ -824,6 +866,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
             if !fixture && capture.phase != .idle { error="Waiting for capture to finish stopping.";return }
             if fixture {
                 guard await restoreContextForStart(identity,sourceIsCurrent:{true}) else{return}
+                guard await restoreHistoryForStart(identity,sourceIsCurrent:{true}) else{return}
                 let transport=try ensureHelper();try installCaptureOwner(transport);try startFixture();return
             }
             guard authorizedConversation else {
@@ -853,6 +896,10 @@ private actor FixtureRecognizer: ActivityRecognizer {
                 guard let self else{return false}
                 return self.authorizedConversation && self.microphoneEnabled==microphone && self.selectedBundleID==bundle
             }) else{return}
+            guard await restoreHistoryForStart(identity,sourceIsCurrent:{[weak self] in
+                guard let self else{return false}
+                return self.authorizedConversation && self.microphoneEnabled==microphone && self.selectedBundleID==bundle
+            }) else{return}
             let transport=try ensureHelper();try installCaptureOwner(transport);captureAttempted=true
             try await capture.start(configuration:configuration)
             guard ownsStart(identity) else{throw CancellationError()}
@@ -868,6 +915,10 @@ private actor FixtureRecognizer: ActivityRecognizer {
                 self.error=preparingManaged ? speechSetup.snapshot.userMessage:
                     ((error as? SpeechSetupError)?.localizedDescription ?? SpeechSetupError.advancedOverrideInvalid.localizedDescription)
             }
+        }
+        if !running,let permit=historyPermit,permit.intentID==identity{
+            history.retireCurrentSession();try? await history.finishSession(permit,paused:false)
+            if historyPermit === permit{historyPermit=nil}
         }
     }
     private func startFixture() throws {
@@ -896,15 +947,20 @@ private actor FixtureRecognizer: ActivityRecognizer {
     var currentSessionID:UUID?{authority.snapshot()?.captureSessionID ?? forwardedSessionID}
     var canStartSession:Bool {
         guard case .success=helperRuntime else{return false}
-        return !running && !starting && !stopping && !assistantClosing && !assistant.snapshot.isPreparing && teardown==nil && !speechSetup.snapshot.isBusy && !visual.isBusy && visual.status != .busy && profileStorage?.busy != true && !(hasContextUse && contextUse.isBusy) && (fixture || capture.phase == .idle)
+        return !running && !starting && !stopping && !assistantClosing && !assistant.snapshot.isPreparing && teardown==nil && !speechSetup.snapshot.isBusy && !visual.isBusy && visual.status != .busy && profileStorage?.busy != true && !(hasContextUse && contextUse.isBusy) && !(hasHistory && history.isBusy) && (fixture || capture.phase == .idle)
     }
     var canResume:Bool { paused && canStartSession }
-    func beginRetirement(end:Bool) {
+    var canEnableHistory:Bool{!running && !starting && !stopping && !paused && !assistantActive && !assistantClosing && !assistant.snapshot.isPreparing && !speechSetup.snapshot.isBusy && !visual.isBusy}
+    func beginRetirement(end:Bool,historyGap:HistoryGap?=nil) {
         endRequested = endRequested || end
         if end{paused=false}
         startIdentity=UUID();speechSetup.cancel();assistant.cancelPreparation()
         guard teardown==nil else{disableVisualInput();return}
         let oldOwner=currentOwner,oldHelper=helper,oldBinding=profileBinding
+        let oldHistory=hasHistory ? history:nil
+        let activity=assistant.transcript.snapshot
+        let unfinished=[activity.microphone,activity.selectedAudio].contains{value in switch value{case .speechDetected,.transcribing:true;default:false}}
+        let oldHistoryPermit=oldHistory?.retireCurrentSession(gap:historyGap ?? (unfinished ? .unfinishedSpeech:nil))
         let sessionID=oldOwner?.kind == .capture ? forwardedSessionID:nil
         let oldStart=startTask;oldStart?.cancel()
         // Source/assistant admission retires before cancellation can flush an
@@ -944,6 +1000,11 @@ private actor FixtureRecognizer: ActivityRecognizer {
                 self.endRequested=true;self.paused=false
                 self.error="The old helper did not acknowledge shutdown. Its profile was retired; reopen background to recover."
             }
+            if let oldHistory,let oldHistoryPermit{
+                do{try await oldHistory.finishSession(oldHistoryPermit,paused:!self.endRequested)}
+                catch{self.error="Local history could not finish saving. Open History to recover its saved prefix."}
+                if self.historyPermit === oldHistoryPermit{self.historyPermit=nil}
+            }
             if let oldOwner,self.currentOwner === oldOwner {
                 oldOwner.presentation.forwarder?.retire();oldOwner.presentation.composer?.retire();oldOwner.presentation.publication.retire()
                 self.owners.remove(oldOwner)
@@ -963,13 +1024,14 @@ private actor FixtureRecognizer: ActivityRecognizer {
         }
     }
     func stop() async { beginRetirement(end:true);await teardown?.value }
+    func shutdown()async{await stop();if hasHistory{await history.closeForOwnerRetirement()}}
     func failSession() {
         // Keep the same actual owner join/reap barrier as End. A failed source
         // or transport cannot be replaced merely because its output is hidden.
         helper?.stop() // Fence the child before any local image-retirement callback.
         visual.retireForHelperChange()
         helperIdentity=UUID();owners.activateHelper(helperIdentity)
-        beginRetirement(end:true)
+        beginRetirement(end:true,historyGap:.captureFailure)
         authority.stop();retireRequest(status:"Session unavailable")
         forwarder?.retire();forwarder=nil;running=false;paused=false
         error="The session ended. Restart after the previous session finishes."

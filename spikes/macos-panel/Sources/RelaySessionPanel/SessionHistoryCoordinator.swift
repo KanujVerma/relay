@@ -28,6 +28,7 @@ private final class HistoryAdmission:@unchecked Sendable {
     fileprivate var preparing=true,acceptsNew=false,paused=false,captureSeen=false,failed=false
     fileprivate var captureID:String?
     fileprivate var blocked:Set<TranscriptSource>=[]
+    fileprivate var finishGap:HistoryGap?
     fileprivate let resuming:Bool
     fileprivate init(recordID:UUID,intentID:UUID,resuming:Bool){self.recordID=recordID;self.intentID=intentID;self.resuming=resuming}
 }
@@ -112,7 +113,7 @@ private final class HistoryAdmission:@unchecked Sendable {
     public func enableSaving()async throws{
         try Task.checkCancellation()
         guard !isBusy,canEnable(),current==nil else{throw HistoryError.stale}
-        epoch=UUID();let original=epoch,gate=HistoryAdmission();state.phase = .opening;state.message="Opening local history…";publish()
+        epoch=UUID();let original=epoch,gate=HistoryAdmission();state.selected=nil;state.phase = .opening;state.message="Opening local history…";publish()
         do{
             let page=try await withTaskCancellationHandler(operation:{try await run(gate:gate){store in try store.open(create:true,admission:{gate.allowed});return try store.list()}},onCancel:{gate.retire()})
             guard epoch==original,gate.allowed,!isBusy,canEnable(),!Task.isCancelled else{throw HistoryError.stale}
@@ -126,7 +127,7 @@ private final class HistoryAdmission:@unchecked Sendable {
         try Task.checkCancellation()
         guard !isBusy else{throw HistoryError.stale}
         if current != nil{guard state.phase == .ready else{throw HistoryError.unavailable};return}
-        epoch=UUID();let original=epoch,gate=HistoryAdmission();state.phase = .opening;state.message="Opening saved history…";publish()
+        epoch=UUID();let original=epoch,gate=HistoryAdmission();state.selected=nil;state.phase = .opening;state.message="Opening saved history…";publish()
         do{
             let page=try await withTaskCancellationHandler(operation:{try await run(gate:gate){store in try store.open(create:false,admission:{gate.allowed});return try store.list()}},onCancel:{gate.retire()})
             guard original==epoch,gate.allowed,!isBusy,!Task.isCancelled else{throw HistoryError.stale}
@@ -222,8 +223,9 @@ private final class HistoryAdmission:@unchecked Sendable {
         }
         publish()
     }
-    @discardableResult public func retireCurrentSession()->HistorySessionPermit?{
+    @discardableResult public func retireCurrentSession(gap:HistoryGap?=nil)->HistorySessionPermit?{
         guard let permit=current else{return nil};permit.acceptsNew=false
+        if let gap{permit.finishGap=gap}
         if permit.preparing{permit.gate.retire()};publish();return permit
     }
     public func finishSession(_ permit:HistorySessionPermit,paused:Bool)async throws{
@@ -237,7 +239,8 @@ private final class HistoryAdmission:@unchecked Sendable {
         if permit.paused && paused{return}
         let gate=permit.gate,id=permit.recordID
         do{
-            let page=try await run(gate:gate){store in try store.finish(id,outcome:paused ? .paused:.completed,admission:{gate.allowed});return try store.list()}
+            let gap=permit.finishGap
+            let page=try await run(gate:gate){store in try store.finish(id,outcome:paused ? .paused:.completed,gap:gap,admission:{gate.allowed});return try store.list()}
             guard current === permit,gate.allowed else{return}
             permit.paused=paused;state.records=page.records;state.nextOffset=page.nextOffset
             if !paused{current=nil;gate.retire();state.recordingID=nil}
@@ -259,6 +262,9 @@ private final class HistoryAdmission:@unchecked Sendable {
     public func lock(){beginClose(lock:true,preservePreference:false)}
     private func beginClose(lock:Bool,preservePreference:Bool){
         if !preservePreference{preferences.savingEnabled=false}
+        // Snapshot observers may repeat either action while its original owner
+        // publishes. Only a new Lock escalation or preference change publishes.
+        if retirement != nil,(!lock || closeRequested),state.savingEnabled==preferences.savingEnabled{return}
         if lock{closeRequested=true;epoch=UUID();selectionEpoch=UUID();state.records=[];state.selected=nil;state.phase = .closing;state.message="Closing history…"}
         let permit=current;permit?.acceptsNew=false;permit?.gate.retire();flight?.gate.retire()
         pending=[];pendingBytes=0;terminalGap=nil;pauseWriter=true

@@ -23,7 +23,7 @@ public struct HistoryCounter:Sendable,Equatable,Codable,CustomStringConvertible 
 }
 public enum HistoryRecordState:String,Codable,Sendable{case recording,paused,completed,partial,interrupted}
 public enum HistoryGap:String,Codable,Sendable,CaseIterable{
-    case sourceUnavailable,sequenceGap,capacity,storageFailure,savingStopped,interrupted,captureFailure,sourceDeleted,invalidObservation
+    case sourceUnavailable,sequenceGap,capacity,storageFailure,savingStopped,interrupted,captureFailure,sourceDeleted,invalidObservation,unfinishedSpeech
     public var label:String{switch self{
     case .sourceUnavailable:"An audio source became unavailable"
     case .sequenceGap:"Some audio events were missing"
@@ -34,6 +34,7 @@ public enum HistoryGap:String,Codable,Sendable,CaseIterable{
     case .captureFailure:"Audio did not finish normally"
     case .sourceDeleted:"Source text was deleted"
     case .invalidObservation:"A transcript observation was rejected"
+    case .unfinishedSpeech:"Speech was still being processed when audio stopped"
     }}
 }
 public struct HistoryRecord:Sendable,Equatable,Codable,Identifiable {

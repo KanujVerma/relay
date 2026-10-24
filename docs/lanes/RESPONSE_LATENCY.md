@@ -182,6 +182,29 @@ preprocessing could reduce finalization work, but feeding ahead of the eventual
 VAD end index would break exact-span provenance. No speculative ASR, silence
 change, new model, download or architecture is included here.
 
+## Active next gate: safe-prefix ASR and actual Model observation
+
+The four prepared actual Model cases reached the expected API-first failure
+because `responseLatencySamples` is not yet supplied by the coordinated Model
+observation seam. The bounded command exited 1 in 59.903 s, with no passing-test
+claim; the heavy lease was released. Existing source checkpoints stay frozen.
+
+[The lagged-ASR proposal](../superpowers/specs/2026-10-24-lagged-asr-preprocessing-design.md)
+now defines the exact returned-state watermark, padding/cutoff proof, original
+activity key, one existing recognizer and bounded worker **per source**, and
+actual cancellation/quiescence and two-source gates. A fixed delay alone is
+rejected: a pending VAD end survives long middle-band sequences. Design-only
+metadata fixtures preserve that counterexample and six explicit original-cutoff
+cases. Four pure tests pass in 0.067 s, including 9,841 bounded class sequences.
+This is not execution of the future Swift path or an ASR performance claim.
+No preprocessing implementation has begun before root's concrete design review.
+
+[Current official effort research](../research/RESPONSE_EFFORT_OPTIONS.md)
+confirms generic Luna None/Low and Sol Low support, distinguishes omitted effort
+from the literal `none`, and records the actual local product omission policy.
+Current plan/account acceptance and quality/speed comparisons remain untested;
+no default, service-tier, account or inference change has been made.
+
 No real account, Keychain, private source, audio/screen capture, model inference,
 download or full-app latency result is claimed. Product goals from speech-end
 remain first visible text under 1 s median, useful advice by 2 s median, and a

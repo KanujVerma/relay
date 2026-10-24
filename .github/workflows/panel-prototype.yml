@@ -16,8 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Runtime and assertions are the exact failing source, unchanged.
-          ref: 666d104ffff82dd17112872be08e4ef76e01adfe
+          # Runtime and assertions are unchanged; only two test signatures differ.
+          ref: 799151c20671fd0e9ec70afcd9c7ede9d4c7d16a
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -27,7 +27,7 @@ jobs:
         run: |
           export RELAY_DIAGNOSTIC_SCRATCH="$RUNNER_TEMP/relay-presentation-build"
           swift --version
-          test "$(git rev-parse HEAD)" = 666d104ffff82dd17112872be08e4ef76e01adfe
+          test "$(git rev-parse HEAD)" = 799151c20671fd0e9ec70afcd9c7ede9d4c7d16a
           swift build --build-tests --scratch-path "$RELAY_DIAGNOSTIC_SCRATCH" --package-path spikes/macos-panel
       - name: Diagnose only the failing test and its presentation class
         shell: bash

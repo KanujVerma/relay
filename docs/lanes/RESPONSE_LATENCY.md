@@ -205,6 +205,19 @@ from the literal `none`, and records the actual local product omission policy.
 Current plan/account acceptance and quality/speed comparisons remain untested;
 no default, service-tier, account or inference change has been made.
 
+The approved implementation now has an **inert core checkpoint**: optional
+observation/key/recognizer interfaces and one bounded actor lane per source.
+The four fake-backend cases reached API red in 13.258 s, then all passed in
+0.024 s (37.776 s command including compilation), zero skips. They exercise
+exact prefix/tail partition, actual held-accept cancellation/join, next-original
+activity FIFO, and the mandated single local full-span fallback on speculative
+PCM queue pressure. No reset or fallback runs underneath the held accept, no
+final is duplicated, and close/cancel cannot be dropped by that queue. Source
+pipeline, Fluid adapters, production factory and defaults are unchanged at this
+checkpoint; no actual ASR performance/quality result is claimed. Fresh sampled
+budget was 23.180 GiB temporary allocation / 48.680 GiB free / 0.75 GiB reserve,
+with the same retained cache, two jobs and 180 s deadline; lease released.
+
 No real account, Keychain, private source, audio/screen capture, model inference,
 download or full-app latency result is claimed. Product goals from speech-end
 remain first visible text under 1 s median, useful advice by 2 s median, and a

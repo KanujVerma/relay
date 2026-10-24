@@ -1,0 +1,11 @@
+# Session History design lane
+
+Owner: `/root/compose_context_controls`, GPT-6.1 Sol xhigh. Isolated checkout `work/relay-session-history-design`, branch `design/local-session-history-2026-10-23`. Frozen starting base `5575b184a081450308b88b622ec5fcb5eb81318a`; PR target `build/history-foundation-2026-10-23`.
+
+Current result is design/research only. [Proposal](../superpowers/specs/2026-10-23-local-session-history-design.md), [exact-source reuse comparison](../research/SESSION_HISTORY_REUSE.md), and [synthetic storage probe](../evidence/2026-10-23-history-storage/README.md) are the complete own scope. No accepted runtime, Model, Personal Brain, Account/Keychain, workflow or existing test was changed. Résumé `34ed5aa` remains frozen and independently accepted/joined by the controller; no correction is pending there.
+
+Recommendation: exact-pinned MIT GRDB in-memory queues/backup plus a narrow owned native serializer bridge and separately scoped encrypted snapshot; optional saving off by default; real source-labelled history/manual notes/delete/export first; explicit derived notes after a separate inference lifetime/wire checkpoint. GRDB is a suitable mature reuse candidate, not rejected merely to avoid a dependency. No third-party code/assets or new dependency has been adopted by the docs branch.
+
+Verified research: local exact-release probe compiled and passed direct SQLite round-trip/cap/rollback, GRDB backup rollback/restore/size cap/actual held-writer close, and zero SQLite/WAL/journal/temp files in the owned containment directories. Output and source are committed. This is not a history implementation, encrypted History test, older-OS/Intel acceptance, visible UI, private capture or account result. Root's integrated baseline tests remain attributed to its existing frozen build; no broad suite/hosted run was repeated for docs.
+
+Next action: controller reviews the six explicit decisions at the top of the proposal, especially fixed key-purpose factoring, remembered enable/Lock behavior, 30-day/size/partial-session policy and validated-final/Model seams. Implementation is not authorized by publication of this design alone. Once agreed, freeze store/coordinator and app composition checkpoints separately, with actual encrypted fake-key restart/delete/late-Lock proof; notes protocol remains a distinct approval boundary.

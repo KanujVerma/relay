@@ -6,12 +6,13 @@ import RelayScreenContext
 import RelaySessionPanel
 import RelaySessionCapture
 
+enum RelaySettingsSection:String,CaseIterable{case general="General",screen="Screen context",ai="AI",responses="Responses",shortcuts="Shortcuts",advanced="Advanced";var symbol:String{switch self{case .general:"slider.horizontal.3";case .screen:"rectangle.dashed";case .ai:"sparkles";case .responses:"text.bubble";case .shortcuts:"keyboard";case .advanced:"wrench.and.screwdriver"}}}
+
 @MainActor struct SessionSettingsView:View {
-    enum Section:String,CaseIterable{case general="General",screen="Screen context",ai="AI",shortcuts="Shortcuts",advanced="Advanced";var symbol:String{switch self{case .general:"slider.horizontal.3";case .screen:"rectangle.dashed";case .ai:"sparkles";case .shortcuts:"keyboard";case .advanced:"wrench.and.screwdriver"}}}
+    typealias Section = RelaySettingsSection
     @ObservedObject var model:SessionApplicationModel
     @ObservedObject private var setup:SpeechSetupCoordinator
     @ObservedObject private var visual:VisualInputSetupState
-    @State private var section:Section = .general
     @State private var selectingASR=false
     @State private var selectingVAD=false
     @Environment(\.openWindow) private var openWindow
@@ -19,7 +20,7 @@ import RelaySessionCapture
     var body:some View {
         VStack(spacing:0){
             HStack{Text("Settings").font(.system(size:13,weight:.semibold));Spacer();Text("Relay").font(.system(size:12)).foregroundStyle(RelayTheme.muted)}.padding(.horizontal,20).frame(height:40).background(.white.opacity(0.035))
-            HStack(spacing:4){ForEach(Section.allCases,id:\.self){item in Button{section=item}label:{VStack(spacing:7){Image(systemName:item.symbol).font(.system(size:18));Text(item.rawValue).font(.system(size:11,weight:.medium))}.frame(width:106,height:64).background(section==item ? .white.opacity(0.08):.clear,in:RoundedRectangle(cornerRadius:10))}.buttonStyle(.plain).foregroundStyle(section==item ? .white:RelayTheme.muted)};Spacer()}.padding(.horizontal,20).padding(.vertical,12)
+            HStack(spacing:4){ForEach(Section.allCases,id:\.self){item in Button{model.settingsSection=item}label:{VStack(spacing:7){Image(systemName:item.symbol).font(.system(size:18));Text(item.rawValue).font(.system(size:11,weight:.medium))}.frame(width:106,height:64).background(model.settingsSection==item ? .white.opacity(0.08):.clear,in:RoundedRectangle(cornerRadius:10))}.buttonStyle(.plain).foregroundStyle(model.settingsSection==item ? .white:RelayTheme.muted)};Spacer()}.padding(.horizontal,20).padding(.vertical,12)
             Divider().overlay(RelayTheme.line)
             ScrollView{VStack(alignment:.leading,spacing:24){content}.padding(.horizontal,32).padding(.vertical,28).frame(maxWidth:760,alignment:.leading).frame(maxWidth:.infinity)}
         }.frame(width:920,height:670).background(RelayTheme.base).foregroundStyle(.white).preferredColorScheme(.dark).disabled(model.fixture)
@@ -27,7 +28,7 @@ import RelaySessionCapture
             .fileImporter(isPresented:$selectingVAD,allowedContentTypes:[.folder]){if case .success(let url)=$0{model.vadFolder=url.path}}
     }
     @ViewBuilder private var content:some View {
-        switch section {
+        switch model.settingsSection {
         case .general:
             settingsTitle("Conversation","Choose what Relay listens to. Audio starts only when you start a session.")
             RelaySourceControls(model:model)
@@ -48,6 +49,8 @@ import RelaySessionCapture
             Text("Account sign-in is not available in this window yet. Local reference cards remain available with AI off.").font(.system(size:12)).foregroundStyle(RelayTheme.muted)
             Divider().overlay(RelayTheme.line)
             VisualInputOptions(model:model)
+        case .responses:
+            ResponsePreferencesSettingsView(model:model)
         case .shortcuts:
             settingsTitle("Keyboard shortcuts","Control Relay's own window and current answer.")
             ControlsSettingsView(controller:model.controls).onAppear{model.restoreShortcuts()}.onChange(of:model.controls.shortcuts){_,_ in model.saveShortcuts()}.onDisappear{model.saveShortcuts()}

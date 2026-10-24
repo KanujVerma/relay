@@ -4,6 +4,7 @@ import RelayContextComposition
 
 public struct SessionPanelSnapshot: Sendable {
     public init() {}
+    public var responsePreferencesRevision:UUID?
     public var question:String?;public var card:SessionCard?;public var status="Ready";public var replacement:UInt64=0
 }
 
@@ -39,18 +40,30 @@ public struct SessionPanelSnapshot: Sendable {
             session=(request.lease.captureSessionID,request.lease.sessionEpoch)
             bound=request;identity=nil;terminal=false;pending=false
             deadline=DispatchTime.now().uptimeNanoseconds+15_000_000_000
-            snapshot.question=nil;snapshot.card=nil;snapshot.status="Thinking";snapshot.replacement &+= 1;onChange?()
+            snapshot.question=nil;snapshot.card=nil;snapshot.responsePreferencesRevision=nil;snapshot.status="Thinking";snapshot.replacement &+= 1;onChange?()
         }
         Task { [weak self] in
             try? await Task.sleep(for:.seconds(15));self?.expire(requestID:request.requestID)
         }
     }
     public func clear(status:String="Stopped") {
-        bound=nil;identity=nil;terminal=true;pending=false;snapshot.question=nil;snapshot.card=nil;snapshot.status=status;snapshot.replacement &+= 1;onChange?()
+        bound=nil;identity=nil;terminal=true;pending=false;snapshot.question=nil;snapshot.card=nil;snapshot.responsePreferencesRevision=nil;snapshot.status=status;snapshot.replacement &+= 1;onChange?()
+    }
+    /// Negative-content-only updates may be reentrant from onChange while the
+    /// positive commit holds authority. Keep the original binding/visible
+    /// question; never reacquire authority or permit an old answer here.
+    public func showPendingStatus(for request:PanelRequestBinding,status:String) {
+        guard bound==request,!terminal,snapshot.card==nil else{return}
+        snapshot.status=status;snapshot.replacement &+= 1;onChange?()
+    }
+    public func withholdGuideAnswer(for request:PanelRequestBinding,status:String) {
+        guard bound==request else{return}
+        terminal=true;pending=false;snapshot.card=nil;snapshot.responsePreferencesRevision=nil
+        snapshot.status=status;snapshot.replacement &+= 1;onChange?()
     }
     public func expire(requestID:UUID) {
         guard let bound,bound.requestID==requestID,!terminal else { return }
-        terminal=true;snapshot.card=nil;snapshot.status="Answer timed out";snapshot.replacement &+= 1;onChange?()
+        terminal=true;snapshot.card=nil;snapshot.responsePreferencesRevision=nil;snapshot.status="Answer timed out";snapshot.replacement &+= 1;onChange?()
     }
     @discardableResult public func accept(_ data:Data) throws -> Bool {
         let d=try SessionAnswerDecision(data:data)
@@ -61,7 +74,7 @@ public struct SessionPanelSnapshot: Sendable {
         return authority.withCurrentLease(b.lease) {
             if let token=d.token,let displayID=d.displayID { identity=(token,displayID) }
             if d.disposition=="pending" { pending=true } else { terminal=true }
-            snapshot.question=d.question.isEmpty ? nil:d.question;snapshot.card=d.card
+            snapshot.question=d.question.isEmpty ? nil:d.question;snapshot.card=d.card;snapshot.responsePreferencesRevision=d.responsePreferencesRevision
             switch d.disposition {
             case "answer":snapshot.status="Talking points"
             case "pending":snapshot.status="Thinking"
@@ -71,7 +84,7 @@ public struct SessionPanelSnapshot: Sendable {
                 case "task_context_overflow":snapshot.status="Summarize the current problem and requirements"
                 default:snapshot.status="Add confirmed background to answer this question"
                 }
-            case "abstain":snapshot.status=["no_question","blank_question"].contains(d.reason) ? "Listening":d.reason=="manual_context_unavailable" ? "Ask a question first" : d.reason=="inference_disabled" ? "AI requests are off" : "No reliable answer available"
+            case "abstain":snapshot.status=d.reason=="response_preferences_changed" ? "Response guide changed. Ask again.":["no_question","blank_question"].contains(d.reason) ? "Listening":d.reason=="manual_context_unavailable" ? "Ask a question first" : d.reason=="inference_disabled" ? "AI requests are off" : "No reliable answer available"
             default:snapshot.status="Answer unavailable"
             }
             snapshot.replacement &+= 1;onChange?()

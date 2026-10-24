@@ -43,7 +43,7 @@ XCTAssertEqual(stored.selected, "coding")
 
 For a held save, select General while the actual `save` call is blocked, require busy and disabled receipt until release, then reconstruct against those disk bytes and prove stale selection cannot activate.
 
-- [ ] Freeze/push native component with exact tests/handoff and send immutable head to root/history owner before integration.
+- [x] Freeze/push native component with exact tests/handoff and send immutable head to root/history owner before integration.
 
 ## Task2: strict helper claim and prompt use
 
@@ -70,7 +70,7 @@ assert not any(row['disposition'] == 'answer' for row in emitted)
 
 Use actual existing native question factory/framing test helpers and actual OAuthAnswerStream+HTTPX MockTransport for the token/POST schedule; never fabricate a token or infer account permission from guidance.
 
-- [ ] Freeze/push provider/parser checkpoint with exact source hashes/tests for independent review.
+- [x] Freeze/push provider/parser checkpoint with exact source hashes/tests for independent review.
 
 ## Task3: actual app and Settings join
 

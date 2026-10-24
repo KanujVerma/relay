@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 import RelayNativeSession
+import RelayContextComposition
 @testable import RelaySessionPanel
 
 extension SessionPanelTests {
@@ -76,5 +77,38 @@ extension SessionPanelTests {
         let closed=try await helper.registerAssistantScope(closing).value();XCTAssertEqual(closed.quiesced,true)
         try controller.completeClose(closing)
         await helper.shutdownAndWait()
+    }
+}
+
+extension SessionPanelTests {
+    @MainActor func test_response_guide_status_preserves_unused_reference_and_original_question_lease()async throws {
+        let authority=SessionPresentationAuthority();try authority.start()
+        let panel=SessionPanelController(authority:authority),native=try event(authority)
+        let binding=try XCTUnwrap(PanelRequestBinding(native));panel.observe(native)
+        XCTAssertTrue(try panel.accept(result(native,disposition:"pending",revision:1)))
+        let lease=authority.snapshot(),question=panel.snapshot.question
+        panel.showPendingStatus(for:binding,status:"Response guide changed. Ask again.")
+        XCTAssertEqual(panel.snapshot.question,question);XCTAssertEqual(authority.snapshot(),lease)
+        var reference=try XCTUnwrap(JSONSerialization.jsonObject(with:result(native)) as? [String:Any])
+        reference["answerKind"]="reviewed_reference";reference["provenance"]=["referenceID":"public-fixture","sourceRef":"public-fixture"]
+        XCTAssertTrue(try panel.accept(JSONSerialization.data(withJSONObject:reference)))
+        panel.showPendingStatus(for:binding,status:"Response guide changed. Ask again.")
+        XCTAssertEqual(panel.snapshot.status,"Talking points");XCTAssertNotNil(panel.snapshot.card)
+        XCTAssertNil(panel.snapshot.responsePreferencesRevision)
+        authority.invalidate();let fresh=try event(authority,sequence:8),revision=UUID()
+        panel.observe(fresh)
+        var guided=try XCTUnwrap(JSONSerialization.jsonObject(with:result(fresh)) as? [String:Any])
+        var provenance=try XCTUnwrap(guided["provenance"] as? [String:Any]);provenance["responsePreferencesRevision"]=revision.uuidString.lowercased();guided["provenance"]=provenance
+        XCTAssertTrue(try panel.accept(JSONSerialization.data(withJSONObject:guided)))
+        XCTAssertEqual(panel.snapshot.responsePreferencesRevision,revision)
+        let current=try XCTUnwrap(PanelRequestBinding(fresh)),originalLease=authority.snapshot()
+        panel.withholdGuideAnswer(for:current,status:"Response guide changed. Ask again.")
+        XCTAssertNil(panel.snapshot.card);XCTAssertNil(panel.snapshot.responsePreferencesRevision)
+        XCTAssertEqual(panel.snapshot.question,"Explain queues.");XCTAssertEqual(authority.snapshot(),originalLease)
+        XCTAssertFalse(try panel.accept(JSONSerialization.data(withJSONObject:guided)))
+        authority.invalidate();let replacement=try event(authority,sequence:11);panel.observe(replacement)
+        XCTAssertTrue(try panel.accept(result(replacement)))
+        panel.withholdGuideAnswer(for:current,status:"Old callback")
+        XCTAssertEqual(panel.snapshot.status,"Talking points");XCTAssertNotNil(panel.snapshot.card)
     }
 }

@@ -122,6 +122,15 @@ private actor FixtureRecognizer: ActivityRecognizer {
     private var display:ConversationPresentation{currentOwner?.presentation ?? idlePresentation}
     private var authority:SessionPresentationAuthority{display.authority}
     private let explicitAccountPreparation:(@MainActor (UUID,@escaping @MainActor ()->Bool)async throws->Void)?
+    @Published var settingsSection:RelaySettingsSection = .general
+    func showResponsePreferences(){settingsSection = .responses}
+    private let responsePreferencesStorage:any ProtectedSnapshotStorage
+    private let responsePreferencesReceipts:any ResponsePreferencesReceiptStore
+    private var hasResponsePreferences=false
+    lazy var responsePreferences:ResponsePreferencesCoordinator = {
+        hasResponsePreferences=true
+        return ResponsePreferencesCoordinator(storage:responsePreferencesStorage,receipts:responsePreferencesReceipts,onRetire:{[weak self] original in self?.retireResponsePreferences(original)})
+    }()
     private let contextCoordinatorOverride:ScreenContextCoordinator?
     private let contextWriteAcknowledged:(@MainActor (Data,PanelRequestBinding) async ->Void)?
     private let ingressEnqueued:(@MainActor (SessionIngress)->Void)?
@@ -312,10 +321,14 @@ private actor FixtureRecognizer: ActivityRecognizer {
          profileVaultFactory:(@MainActor ()->ProfileVault)?=nil,
          profileResponseObserved:(@MainActor (Data) async ->Void)?=nil,
          explicitAccountPreparation:(@MainActor (UUID,@escaping @MainActor ()->Bool)async throws->Void)?=nil,
+         responsePreferencesStorage:(any ProtectedSnapshotStorage)?=nil,
+         responsePreferencesReceipts:(any ResponsePreferencesReceiptStore)?=nil,
          bundleURL:URL=Bundle.main.bundleURL,
          workingDirectory:URL=URL(fileURLWithPath:FileManager.default.currentDirectoryPath)) {
         self.speechSetup=speechSetup ?? SpeechSetupCoordinator()
         self.explicitAccountPreparation=explicitAccountPreparation
+        self.responsePreferencesStorage=responsePreferencesStorage ?? DefaultResponsePreferencesStorage()
+        self.responsePreferencesReceipts=responsePreferencesReceipts ?? UserDefaultsResponsePreferencesReceipts()
         contextPreferencesOverride=contextPreferences;self.profileVaultFactory=profileVaultFactory
         self.profileResponseObserved=profileResponseObserved
         self.contextCoordinatorOverride=contextCoordinator
@@ -380,6 +393,11 @@ private actor FixtureRecognizer: ActivityRecognizer {
         owners.owns(owner) && helper === owner.helper && helperIdentity==owner.helperIdentity && (allowRetired || !owner.isRetired)
     }
     private func configure(_ owner:ConversationOwner){
+        owner.presentation.responsePreferences=ResponsePreferencesRequestBridge(capture:{[weak self] in
+            guard let self else{return nil};return self.responsePreferences.capture()
+        },owns:{[weak self] value in self?.responsePreferences.owns(value)==true},send:{[weak self,weak owner] data in
+            guard let self,let owner,self.owns(owner) else{throw PanelBridgeError.closed};try owner.helper.sendJSON(data)
+        },isCurrent:{[weak self,weak owner] in guard let self,let owner else{return false};return self.owns(owner)})
         contextStatus=""
         owner.presentation.panel.onChange={[weak self,weak owner] in
             // Failure changes the helper generation before clearing this still
@@ -404,12 +422,13 @@ private actor FixtureRecognizer: ActivityRecognizer {
         guard case .success=helperRuntime else{return false}
         return !running && !starting && !stopping && !assistantClosing && teardown==nil && currentOwner==nil
             && !speechSetup.snapshot.isBusy && !visual.isBusy && visual.status != .busy
-            && profileStorage?.busy != true && !(hasContextUse && contextUse.isBusy)
+            && profileStorage?.busy != true && !(hasContextUse && contextUse.isBusy) && !(hasResponsePreferences && responsePreferences.isBusy)
     }
     private func prepareAssistantSession(intent:UUID,isCurrent:@escaping @MainActor ()->Bool)async throws->PresentationLease {
         guard canPrepareAssistant,isCurrent() else{throw CancellationError()}
         error=nil
         if let explicitAccountPreparation{try await explicitAccountPreparation(intent,isCurrent)}
+        if !fixture{try await responsePreferences.prepareForExplicitAction(intentID:intent,isCurrent:isCurrent)}
         guard canPrepareAssistant,isCurrent(),!Task.isCancelled else{throw CancellationError()}
         let use=contextUse,intendedUse=contextUse.useInSessions
         let target=intendedUse ? profileTarget():nil
@@ -506,7 +525,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
                 }
             }
             await self.events.drain()
-            owner.presentation.forwarder?.retire();owner.presentation.composer?.retire();owner.presentation.publication.retire()
+            owner.presentation.forwarder?.retire();owner.presentation.composer?.retire();owner.presentation.publication.retire();owner.presentation.responsePreferences?.close()
             if self.currentOwner === owner{self.owners.remove(owner);self.assistantActive=false;self.assistantClosing=false;self.assistant.refresh()}
             owner.cleanupFinished=true
             owner.closeTask=nil
@@ -564,6 +583,8 @@ private actor FixtureRecognizer: ActivityRecognizer {
         case .typed(let request,let original):
             guard helper != nil,forwardedSessionID==request.lease.captureSessionID else{return}
             do {
+                let binding=PanelRequestBinding(lease:request.lease,requestID:request.requestID,eventSequence:request.anchorEventSequence)
+                if owner.authority.snapshot()==binding.lease{try owner.presentation.responsePreferences?.freeze(binding)}
                 if let original{try retireExplicitOriginal(original)}
                 try eventForwarder(for:owner).enqueueUserQuestion(request,retiring:original)
             }catch{failSession()}
@@ -580,6 +601,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     private func retireExplicitOriginal(_ original:PanelRequestBinding)throws {
         guard let helper else{throw PanelBridgeError.closed}
         try helper.sendJSON(original.retirementJSON())
+        currentOwner?.presentation.responsePreferences?.retireNative(original)
         guard enqueueContextRetirement(original) else{throw PanelBridgeError.closed}
         if currentBinding==original{retireRequest(status:currentOwner?.kind == .assistant ? "Ready · not listening":"Listening")}
     }
@@ -588,6 +610,8 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     private func receive(_ ingress:SessionIngress,owner:ConversationOwner) {
         guard owns(owner,allowRetired:true),owner.kind == .capture else{return}
+        do{if let binding=ingress.binding,owner.authority.snapshot()==binding.lease{try owner.presentation.responsePreferences?.freeze(binding)}}
+        catch{if owns(owner,allowRetired:true){failSession()};return}
         switch ingress {
         case .audio(let event):
             if event.kind == .sessionStarted {
@@ -653,8 +677,9 @@ private actor FixtureRecognizer: ActivityRecognizer {
         },sendQuestion:{[weak self,weak owner] request,frames in
             guard let self,let owner,self.owns(owner,allowRetired:true),let helper=self.helper else{throw PanelBridgeError.closed}
             let binding=PanelRequestBinding(lease:request.lease,requestID:request.requestID,eventSequence:request.anchorEventSequence)
-            if self.authority.snapshot() != binding.lease{try helper.sendJSON(binding.retirementJSON())}
+            if self.authority.snapshot() != binding.lease{try helper.sendJSON(binding.retirementJSON());owner.presentation.responsePreferences?.retireNative(binding)}
             self.bind(binding)
+            try owner.presentation.responsePreferences?.sendOffer(for:binding)
             for frame in frames{try helper.sendJSON(frame)}
             try helper.sendJSON(request.encodedJSON())
         },sendCancellation:{[weak self,weak owner] request in
@@ -692,8 +717,9 @@ private actor FixtureRecognizer: ActivityRecognizer {
     private func send(_ ingress:SessionIngress,context:[Data]) throws {
         guard let helper else { throw PanelBridgeError.closed }
         if let binding=ingress.binding {
-            if authority.snapshot() != binding.lease{try helper.sendJSON(binding.retirementJSON())}
+            if authority.snapshot() != binding.lease{try helper.sendJSON(binding.retirementJSON());currentOwner?.presentation.responsePreferences?.retireNative(binding)}
             bind(binding)
+            try currentOwner?.presentation.responsePreferences?.sendOffer(for:binding)
         }
         for frame in context { try helper.sendJSON(frame) }
         switch ingress {
@@ -704,6 +730,26 @@ private actor FixtureRecognizer: ActivityRecognizer {
         }
         ingressEnqueued?(ingress)
     }
+    private func retireResponsePreferences(_ original:ResponsePreferenceSnapshot){
+        guard let owner=currentOwner,owns(owner),let bridge=owner.presentation.responsePreferences else{return}
+        let binding=owner.presentation.currentBinding
+        let affected=binding.map{bridge.capturedRevision(for:$0)==original.revision} ?? false
+        do{try bridge.retire(original)}catch{if owns(owner){failSession()};return}
+        guard affected,let binding,owns(owner) else{return}
+        if owner.presentation.panel.snapshot.responsePreferencesRevision==original.revision{
+            owner.presentation.panel.withholdGuideAnswer(for:binding,status:"Response guide changed. Ask again.")
+        }else{
+            owner.presentation.panel.showPendingStatus(for:binding,status:"Response guide changed. Ask again.")
+        }
+    }
+    private func responsePreferencesAllow(_ decision:SessionAnswerDecision,for binding:PanelRequestBinding,owner:ConversationOwner)->Bool{
+        guard let revision=decision.responsePreferencesRevision else{return true}
+        return owner.presentation.responsePreferences?.permits(binding,revision:revision)==true
+    }
+    private func withholdResponsePreferences(_ binding:PanelRequestBinding,owner:ConversationOwner){
+        guard owns(owner),owner.presentation.currentBinding==binding else{return}
+        owner.presentation.panel.withholdGuideAnswer(for:binding,status:"Response guide changed. Ask again.")
+    }
     private func acceptFrame(_ data:Data,owner:ConversationOwner) throws {
         guard owns(owner) else{return}
         let decision=try SessionAnswerDecision(data:data)
@@ -712,6 +758,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
             decision.sessionID==binding.lease.captureSessionID,decision.epoch==binding.lease.sessionEpoch,
             decision.generation==binding.lease.presentationGeneration,decision.requestID==binding.requestID,
             decision.eventSequence==binding.eventSequence else { return }
+        guard responsePreferencesAllow(decision,for:binding,owner:owner) else{withholdResponsePreferences(binding,owner:owner);return}
         if decision.disposition=="pending",decision.reason=="generating_with_task_context" {
             guard hasContextComposer,contextComposer.ownsCurrent(binding) else { retireDependentRequest(binding);return }
             taskContextUsed=true
@@ -721,13 +768,17 @@ private actor FixtureRecognizer: ActivityRecognizer {
         if decision.disposition=="answer",let use=decision.taskContext {
             guard hasContextComposer,contextComposer.ownsContext(use,for:binding),use.imageDigest==nil || visual.mayOfferImages else { retireDependentRequest(binding);return }
             taskContextUsed=true;imageContextUsed=use.imageDigest != nil
-            publication.publish(binding,validate:{ [weak self,weak owner] in guard let self,let owner,self.owns(owner) else{return false};return await self.contextComposer.validateForPublication(binding,requiringImageIdentity:use.imageDigest != nil) },owns:{ [weak self,weak owner] in
-                guard let self,let owner,self.owns(owner) else{return false};return self.contextComposer.ownsContext(use,for:binding) && (use.imageDigest==nil || self.visual.mayOfferImages)
+            publication.publish(binding,validate:{ [weak self,weak owner] in guard let self,let owner,self.owns(owner),self.responsePreferencesAllow(decision,for:binding,owner:owner) else{return false};return await self.contextComposer.validateForPublication(binding,requiringImageIdentity:use.imageDigest != nil) },owns:{ [weak self,weak owner] in
+                guard let self,let owner,self.owns(owner) else{return false};return self.contextComposer.ownsContext(use,for:binding) && (use.imageDigest==nil || self.visual.mayOfferImages) && self.responsePreferencesAllow(decision,for:binding,owner:owner)
             },commit:{ [weak self,weak owner] in
                 guard let self,let owner,self.owns(owner) else{return}
+                guard self.responsePreferencesAllow(decision,for:binding,owner:owner) else{self.withholdResponsePreferences(binding,owner:owner);return}
                 do { if try self.panel.accept(data) { self.acceptedQuestion=decision.question;self.contextStatus="Used "+use.source+(use.imageDigest != nil ? " · image and local OCR":use.provenance=="local_ocr" ? " · local OCR":" · selected text");self.revealManualAnswer(decision.requestID) } }
                 catch { self.failSession() }
-            },rejected:{ [weak self,weak owner] in if let self,let owner,self.owns(owner){self.retireDependentRequest(binding)} })
+            },rejected:{ [weak self,weak owner] in if let self,let owner,self.owns(owner){
+                if self.responsePreferencesAllow(decision,for:binding,owner:owner){self.retireDependentRequest(binding)}
+                else{self.withholdResponsePreferences(binding,owner:owner)}
+            } })
         } else {
             if try panel.accept(data) { acceptedQuestion=decision.question.isEmpty ? nil:decision.question;if decision.disposition != "pending" { revealManualAnswer(decision.requestID) } }
             if decision.disposition != "pending" { taskContextUsed=false;contextStatus="";if hasContextComposer { contextComposer.retire() } }
@@ -746,6 +797,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     private func retireOptionalWork() {
         let notified = !hasContextComposer || contextComposer.binding.map(enqueueContextRetirement) != false
+        if let binding=currentBinding{currentOwner?.presentation.responsePreferences?.retireNative(binding)}
         currentBinding=nil;acceptedQuestion=nil;terminalObserved=true;taskContextUsed=false;imageContextUsed=false;manualRequestToShow=nil
         publication.retire();if hasContextComposer { contextComposer.retire() };if hasSelectedText { selectedText.invalidate() }
         if notified{forwarder?.cancelOptionalWork()}else{forwarder?.retire()}
@@ -849,6 +901,8 @@ private actor FixtureRecognizer: ActivityRecognizer {
                 error="Audio choices changed during preparation. Check them and start again.";return
             }
             try configuration.validateLocalModels()
+            try await responsePreferences.prepareForExplicitAction(intentID:identity,isCurrent:{[weak self] in self?.ownsStart(identity)==true})
+            guard ownsStart(identity),!responsePreferences.isBusy else{throw CancellationError()}
             guard await restoreContextForStart(identity,sourceIsCurrent:{[weak self] in
                 guard let self else{return false}
                 return self.authorizedConversation && self.microphoneEnabled==microphone && self.selectedBundleID==bundle
@@ -896,7 +950,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     var currentSessionID:UUID?{authority.snapshot()?.captureSessionID ?? forwardedSessionID}
     var canStartSession:Bool {
         guard case .success=helperRuntime else{return false}
-        return !running && !starting && !stopping && !assistantClosing && !assistant.snapshot.isPreparing && teardown==nil && !speechSetup.snapshot.isBusy && !visual.isBusy && visual.status != .busy && profileStorage?.busy != true && !(hasContextUse && contextUse.isBusy) && (fixture || capture.phase == .idle)
+        return !running && !starting && !stopping && !assistantClosing && !assistant.snapshot.isPreparing && teardown==nil && !speechSetup.snapshot.isBusy && !visual.isBusy && visual.status != .busy && profileStorage?.busy != true && !(hasContextUse && contextUse.isBusy) && !(hasResponsePreferences && responsePreferences.isBusy) && (fixture || capture.phase == .idle)
     }
     var canResume:Bool { paused && canStartSession }
     func beginRetirement(end:Bool) {
@@ -945,7 +999,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
                 self.error="The old helper did not acknowledge shutdown. Its profile was retired; reopen background to recover."
             }
             if let oldOwner,self.currentOwner === oldOwner {
-                oldOwner.presentation.forwarder?.retire();oldOwner.presentation.composer?.retire();oldOwner.presentation.publication.retire()
+                oldOwner.presentation.forwarder?.retire();oldOwner.presentation.composer?.retire();oldOwner.presentation.publication.retire();oldOwner.presentation.responsePreferences?.close()
                 self.owners.remove(oldOwner)
             }
             if self.endRequested {

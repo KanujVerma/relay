@@ -2,8 +2,10 @@
 
 Status: root approved this architecture on 2026-10-24 with the mandatory
 optimization-backpressure fallback below. Core, adapter and conditional source
-foundations are implemented with an explicit default-off capability; actual
-paced-model/RSS and normal activation are not accepted yet. Existing
+foundations are implemented. The matched paced-model/RSS gate passed, and root
+approved narrow normal-factory activation with a verified composition selection
+check. Generic injected components remain closed-span by default. Actual
+full-app/account and broader real-speech acceptance remain separate. Existing
 response instrumentation/compact foundation is frozen at `23bf594`; native
 Model observation and account acceptance remain separate ongoing gates.
 

@@ -48,3 +48,16 @@ correlated observations per mode on one fictional question, not a p95 or broad
 accuracy benchmark. This does not measure the helper, cloud model, actual app
 publication, window paint, usefulness or real interview performance. Those
 remaining [end-to-end gates](../lanes/RESPONSE_LATENCY.md) stay distinct.
+
+## Following narrow activation
+
+After the measured gate, root approved normal local-source assembly selecting
+safe prefixes. Only the normal `NativeCaptureSession` assembly helper changes;
+generic `SourceComponents` still defaults to `closedSpan`. Its original
+composition fixture reached API red in 33.035 s, then the full macos-session
+package passed 87 collected / 84 passed / three explicit model/download/benchmark
+skips (8.154 s command). The no-model selection case drives the exact production
+assembly helper, native controller and real adapter with a fake backend, proving
+prefix input before closure and one exact final. The measured JSON remains
+unchanged: it records the earlier exact-667 comparison, not an activation rerun.
+Broader actual speech and full-app/account gates remain pending.

@@ -16,15 +16,30 @@ private struct AppAccountKey: ProfileKeyProvider {
 }
 private final class HeldAppAccountKey: ProfileKeyProvider, @unchecked Sendable {
     private let condition = NSCondition()
-    private var hold = false, entered = false
+    private var hold = false, entered = false, reject = false
     var waiting: Bool { condition.lock(); defer { condition.unlock() }; return entered }
     func beginHold() { condition.lock(); hold = true; entered = false; condition.unlock() }
+    func rejectNextRead() { condition.lock(); reject = true; condition.unlock() }
     func release() { condition.lock(); hold = false; condition.broadcast(); condition.unlock() }
     func key(createIfMissing: Bool) throws -> Data {
         condition.lock(); defer { condition.unlock() }
         while hold { entered = true; condition.wait() }
+        if reject { reject = false; throw AccountError.locked }
         return Data(repeating: 43, count: 32)
     }
+}
+@MainActor private final class AccountHistoryPreferences:HistorySavingPreferences{var savingEnabled=false}
+private final class AccountHistoryStorage:HistoryOwnedSnapshotStorage,@unchecked Sendable{
+    private let real:any HistoryOwnedSnapshotStorage,lock=NSLock()
+    private var count=0
+    var calls:Int{lock.withLock{count}}
+    init(directory:URL){real=HistoryVaultStorage(directory:directory.appendingPathComponent("Relay/History"),keys:AppAccountKey(value:109))}
+    private func observed(){lock.withLock{count+=1}}
+    func beginAccess(create:Bool)throws{observed();try real.beginAccess(create:create)}
+    func endAccess()throws{observed();try real.endAccess()}
+    func exists()throws->Bool{observed();return try real.exists()}
+    func load()throws->Data{observed();return try real.load()}
+    func save(_ data:Data,createKey:Bool)throws{observed();try real.save(data,createKey:createKey)}
 }
 @MainActor private final class HeldAppProfileResponse {
     private var pending: CheckedContinuation<Void, Never>?
@@ -56,7 +71,9 @@ private final class HeldAppAccountKey: ProfileKeyProvider, @unchecked Sendable {
                        context: AppProfilePreferences = AppProfilePreferences(), holdRefresh: URL? = nil,
                        key: any ProfileKeyProvider = AppAccountKey(value: 43), response: HeldAppProfileResponse? = nil,
                        holdAuthorization: URL? = nil, screen: ScreenContextCoordinator? = nil,
-                       acknowledgment: IdleImageAcknowledgment? = nil) throws -> SessionApplicationModel {
+                       acknowledgment: IdleImageAcknowledgment? = nil,
+                       historyPreferences:AccountHistoryPreferences?=nil,
+                       historyStorage:(any ProtectedSnapshotStorage)?=nil) throws -> SessionApplicationModel {
         let interpreter = try XCTUnwrap(ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"]), repository = root
         let relay = directory.appendingPathComponent("Relay")
         let ports = AccountApplicationPorts(storage: AccountStorage(sharedDirectory: relay, keys: key), preferences: preferences,
@@ -73,10 +90,14 @@ private final class HeldAppAccountKey: ProfileKeyProvider, @unchecked Sendable {
                 var prefix = [repository.appendingPathComponent("tests/support/account_product_helper.py").path, "--synthetic-product-account-test", "--log", log.path]
                 if let holdRefresh { prefix += ["--hold-refresh", holdRefresh.path] }; return prefix
             })
+        let historyFactory:(@Sendable ()throws->any ProtectedSnapshotStorage)?
+        if let historyStorage{historyFactory={@Sendable in historyStorage}}
+        else{historyFactory=nil}
         let model = SessionApplicationModel(arguments: ["Relay", "--fixture-suite", "reviewed", "--repository", repository.path, "--python", interpreter],
             contextCoordinator: screen, contextWriteAcknowledged: { data, binding in await acknowledgment?.wrote(data, binding) },
             contextPreferences: context, profileVaultFactory: { ProfileVault(directory: relay, keys: AppAccountKey(value: 81)) },
-            profileResponseObserved: { data in await response?.observe(data) }, accountPorts: ports)
+            profileResponseObserved: { data in await response?.observe(data) }, historyPreferences:historyPreferences,
+            historyStorageFactory:historyFactory,accountPorts: ports)
         addTeardownBlock { await model.shutdown() }
         return model
     }
@@ -90,6 +111,82 @@ private final class HeldAppAccountKey: ProfileKeyProvider, @unchecked Sendable {
         model.assistant.draft = text; model.assistant.sendDraftAsNewQuestion()
         do { try await waitUntil { model.snapshot.question == text && model.snapshot.card != nil && model.snapshot.replacement > previous } }
         catch { XCTFail("Synthetic typed result: status=\(model.snapshot.status), modelError=\(model.error ?? "none"), card=\(model.snapshot.card != nil), questionMatches=\(model.snapshot.question == text)"); throw error }
+    }
+    func testProtectedAccountReadinessOnResumeKeepsLogicalHistoryAndMintsFreshCapture()async throws{
+        let directory=try directory(),preferences=AppPlanPreferences(),state=AccountRigState(),key=HeldAppAccountKey()
+        let retention=AccountHistoryPreferences(),storage=AccountHistoryStorage(directory:directory)
+        let model=try model(directory:directory,preferences:preferences,state:state,key:key,historyPreferences:retention,historyStorage:storage)
+        try await model.history.enableSaving();await model.account.connect();await model.start()
+        try await waitUntil{!model.assistant.transcript.snapshot.rows.isEmpty}
+        let record=try XCTUnwrap(model.history.snapshot.recordingID),first=try XCTUnwrap(model.currentSessionID),old=try model.ensureHelper()
+        try model.perform(.pause);try await waitUntil{model.canResume}
+        // A failed actual protected refresh leaves no current selection. Resume
+        // must restore it under its own Start intent, preserving only retention.
+        key.rejectNextRead();await model.account.refreshModels()
+        XCTAssertNil(model.account.inferenceSelection);XCTAssertTrue(old.hasExited)
+        XCTAssertTrue(model.paused);XCTAssertTrue(model.history.hasPausedSession);XCTAssertTrue(model.canResume)
+        guard model.canResume else{return}
+        key.beginHold();defer{key.release()}
+        let resume=Task{await model.start()};try await waitUntil{key.waiting}
+        XCTAssertFalse(model.running);XCTAssertTrue(model.accountPreparationActive)
+        XCTAssertEqual(model.history.snapshot.recordingID,record);XCTAssertTrue(model.history.hasPausedSession)
+        key.release();await resume.value;try await waitUntil{!model.assistant.transcript.snapshot.rows.isEmpty}
+        XCTAssertTrue(model.running);XCTAssertNotEqual(model.currentSessionID,first)
+        XCTAssertEqual(model.history.snapshot.recordingID,record);XCTAssertTrue(retention.savingEnabled)
+        XCTAssertEqual(state.browsers,1);XCTAssertFalse(try model.ensureHelper() === old)
+        await model.stop();try await model.history.openRecord(record)
+        let saved=try XCTUnwrap(model.history.snapshot.selected)
+        XCTAssertEqual(model.history.snapshot.records.count,1);XCTAssertEqual(saved.captures.count,2)
+        XCTAssertEqual(Set(saved.captures.map(\.captureSessionID)).count,2)
+        XCTAssertTrue(saved.captures.allSatisfy{$0.stop?.quiesced==true});XCTAssertEqual(saved.record.state,.completed)
+    }
+    func testEndDuringProtectedResumeReadinessJoinsAndDoesNotReopenPausedHistory()async throws{
+        let directory=try directory(),preferences=AppPlanPreferences(),state=AccountRigState(),key=HeldAppAccountKey()
+        let retention=AccountHistoryPreferences(),storage=AccountHistoryStorage(directory:directory)
+        let model=try model(directory:directory,preferences:preferences,state:state,key:key,historyPreferences:retention,historyStorage:storage)
+        await model.account.connect();try await model.history.enableSaving();await model.start()
+        try await waitUntil{!model.assistant.transcript.snapshot.rows.isEmpty}
+        let record=try XCTUnwrap(model.history.snapshot.recordingID)
+        try model.perform(.pause);try await waitUntil{model.canResume}
+        key.rejectNextRead();await model.account.refreshModels();XCTAssertTrue(model.canResume)
+        guard model.canResume else{return}
+        let sessions=state.sessionLogs.count;key.beginHold();defer{key.release()}
+        let resume=Task{await model.start()};try await waitUntil{key.waiting}
+        var ended=false;let end=Task{await model.stop();ended=true}
+        for _ in 0..<20{await Task.yield()}
+        XCTAssertFalse(ended);XCTAssertFalse(model.history.hasPausedSession)
+        XCTAssertFalse(model.canStartSession);XCTAssertEqual(state.sessionLogs.count,sessions)
+        key.release();await resume.value;await end.value
+        XCTAssertFalse(model.running);XCTAssertFalse(model.paused);XCTAssertFalse(model.canResume)
+        XCTAssertNil(model.currentSessionID);XCTAssertEqual(state.sessionLogs.count,sessions)
+        XCTAssertTrue(retention.savingEnabled);try await model.history.openRecord(record)
+        XCTAssertEqual(model.history.snapshot.records.count,1)
+        XCTAssertNotEqual(model.history.snapshot.selected?.record.state,.paused)
+        XCTAssertEqual(model.history.snapshot.selected?.captures.count,1)
+    }
+    func testCompletedUnlockedHistoryHasNoIOOrNewRecordDuringIdleAccountMutation()async throws{
+        let directory=try directory(),preferences=AppPlanPreferences(),state=AccountRigState()
+        let retention=AccountHistoryPreferences(),storage=AccountHistoryStorage(directory:directory)
+        let model=try model(directory:directory,preferences:preferences,state:state,historyPreferences:retention,historyStorage:storage)
+        try await model.history.enableSaving();await model.start()
+        try await waitUntil{!model.assistant.transcript.snapshot.rows.isEmpty};await model.stop()
+        let records=model.history.snapshot.records,calls=storage.calls
+        let path=directory.appendingPathComponent("Relay/History/history.relayvault"),bytes=try Data(contentsOf:path)
+        await model.account.connect();await model.setAIEnabled(false)
+        XCTAssertEqual(storage.calls,calls);XCTAssertEqual(model.history.snapshot.records,records)
+        XCTAssertEqual(try Data(contentsOf:path),bytes);XCTAssertTrue(retention.savingEnabled)
+        XCTAssertEqual(model.history.snapshot.phase,.ready);XCTAssertFalse(model.history.hasPausedSession)
+    }
+    func testDefaultSavingOffStaysZeroIOAcrossProtectedPauseRefreshResume()async throws{
+        let directory=try directory(),preferences=AppPlanPreferences(),state=AccountRigState()
+        let retention=AccountHistoryPreferences(),storage=AccountHistoryStorage(directory:directory)
+        let model=try model(directory:directory,preferences:preferences,state:state,historyPreferences:retention,historyStorage:storage)
+        await model.account.connect();await model.start();try await waitUntil{!model.assistant.transcript.snapshot.rows.isEmpty}
+        try model.perform(.pause);try await waitUntil{!model.stopping}
+        await model.account.refreshModels();await model.start();await model.stop()
+        XCTAssertEqual(storage.calls,0);XCTAssertFalse(retention.savingEnabled)
+        XCTAssertTrue(model.history.snapshot.records.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath:directory.appendingPathComponent("Relay/History").path))
     }
     func testActualStartRestoresSavedAccountWithoutBrowserAndRealModelStreamRotatesProtectedBearer() async throws {
         let directory = try directory(), preferences = AppPlanPreferences(), state = AccountRigState()

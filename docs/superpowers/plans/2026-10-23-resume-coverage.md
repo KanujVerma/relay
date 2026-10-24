@@ -59,7 +59,7 @@ existing `_personal` branch; new `tests/test_resume_personal_answers.py`.
   honest team labels, whole-unit budget handling and original bundle validation.
 - [x] Prove unreviewed/revoked/copied contexts cannot publish, no inference is
   called for personal answers, and unrelated technical routes stay unchanged.
-- [ ] Freeze backend checkpoint for independent review before UI exposure.
+- [x] Freeze backend checkpoint for independent review before UI exposure.
 
 ## Task 3: native visible review and real commands
 
@@ -71,7 +71,7 @@ Files: new strict review-context DTO; narrow `ProfileController`,
 - [x] Display all proposed associations before existing actor/Save; route exact
   displayed v2 digest through `decide_v2`, without a second acknowledgement.
 - [x] Show truthful partial extraction and keep source/Lock/busy lifecycle.
-- [ ] Run affected profile package tests and actual app build; freeze native
+- [x] Run affected profile package tests and actual app build; freeze native
   checkpoint for root review, without editing outer app/Model.
 
 ## Task 4: real document acceptance and lane handoff
@@ -79,10 +79,10 @@ Files: new strict review-context DTO; narrow `ProfileController`,
 Files: fictional new TXT/selectable PDF/simple DOCX fixtures and generation
 recipe, focused integration tests and `docs/lanes/RESUME_COVERAGE.md`.
 
-- [ ] Generate source-identifiable fictional formats with no private material.
-- [ ] Run actual pinned converters offline with zero dependency skips for the
+- [x] Generate source-identifiable fictional formats with no private material.
+- [x] Run actual pinned converters offline with zero dependency skips for the
   promised formats, then stage/review/restore/provider/Host and native API proof.
-- [ ] Prove qualifier retention, old-v1 re-import authority preservation,
+- [x] Prove qualifier retention, old-v1 re-import authority preservation,
   conflicting replacement/redaction, unsupported layouts and long-unit gaps.
-- [ ] Run scoped joined checks, inspect own diff, publish exact candidate/PR
+- [x] Run scoped joined checks, inspect own diff, publish exact candidate/PR
   against frozen db768 base and report tests plus remaining layout/detail limits.

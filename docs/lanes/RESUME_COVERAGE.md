@@ -80,9 +80,10 @@ long-answer detail are claimed. Complex layouts and larger personal detail
 remain separate increments. No real résumé/profile/Keychain/account/capture,
 private upload or network model was used.
 
-Next: freeze/review backend; implement strict Unicode-scalar native DTOs and
-visible context/Save routing; then run new actual offline TXT/PDF/DOCX and
-native API→helper→restore→personal-answer acceptance before final review.
+Current next step: independent final fixture/API review and root-owned join.
+Backend c043 and native bd594 have separate controller-reported scoped
+acceptance. The final real-format/app evidence is below; actual visible window
+and packaged-release acceptance remain separate.
 
 ## Scoped review correction: named entries
 
@@ -129,3 +130,59 @@ skips/failures (13.717 s). Actual `relay-panel-session` app compiles with existi
 pinned public Swift dependencies in an isolated scratch directory (58.74 s).
 This is a compiler/test gate, not notarization or actual visible UI acceptance.
 The locked Mac has not been captured, unlocked or used for private input.
+
+## Real document and actual app acceptance
+
+The opt-in generator produces fictional TXT, one-column selectable PDF and
+plain-paragraph DOCX plus immutable byte hashes. All three formats contain
+multiple employers/projects, completed/Expected education, literal GPA,
+self/team/teammate work, listed Python/SQL/C++/R and actual use, and issuer/status
+qualifications. Byte-for-byte regeneration matches the manifest. The current
+PDF was rendered offscreen and inspected: every line is legible and unclipped.
+This is a generated fixture render, not an OS screenshot or a UI acceptance.
+
+The real pinned Docling/python-docx path runs offline with socket/DNS calls
+blocked and fresh model/cache environment. Five real-document cases pass,
+zero skips/failures (3.284 s): exact original/derived/source-located fields,
+explicit v2 review, SQLite snapshot restore, provider/Host personal cards,
+actor/qualifier/skill negatives, and unsupported DOCX table rollback before
+source publication. Format acceptance is not inferred from optional skips.
+
+Four `ResumeApplicationTests` pass, zero skips/failures (9.557 s), using the
+actual app Model and shared stdio helper. Entered text and real selected TXT,
+PDF and DOCX each flow through native review/Save, a fake-key encrypted temp
+vault, End/fresh-helper restore, an actual native-issued synthetic question and
+the real personal panel. It displays exactly the self contribution plus
+Fictional Northstar/Expected 2027; explicit Lock removes its support. No Model
+or runtime source was edited. LaunchServices schedule/unschedule diagnostics
+appear in the locked/headless test log; XCTest passes, and no assertion or
+timeout was weakened to hide them.
+
+The old-v1 re-import case now starts from a genuine legacy-reviewed schema-2
+snapshot, migrates/restores it, and reselects the exact same source bytes.
+Existing v1 authority remains unchanged; the new v2 context is pending until
+review. Reusing the canonical key without explicit replacement fails; the
+explicit exact replacement then succeeds.
+
+Final default Python gate: 630 collected, 604 pass, 26 explicit optional skips,
+no failures (5.144 s), with localhost-only existing tests authorized. The new
+document file's two PDF/DOCX skips in that default gate are covered by the
+zero-skip real-format run above. Existing legacy SQLite ResourceWarnings are
+still reported. Environment: Python3.14.5 for default tests; pinned production
+document Python3.14.9, Docling Slim2.142.0, python-docx1.2.0, pypdfium2 5.14.0;
+Swift6.4/arm64 local native tests. Hosted Intel, visible UI, newly packaged
+runtime/signature/relocation and hardware/private-account acceptance were not
+run in this lane.
+
+Reproduce with an explicit local interpreter (no account credentials required):
+
+```sh
+PYTHONPATH=tests "$RELAY_TEST_PYTHON" -m unittest discover -s tests -q
+RELAY_RESUME_DOCUMENT_INTEGRATION=1 PYTHONPATH=tests "$RELAY_TEST_PYTHON" \
+  -m unittest tests.test_resume_documents -v
+RELAY_RESUME_DOCUMENT_INTEGRATION=1 swift test --disable-sandbox --skip-update \
+  --package-path spikes/macos-panel --filter ResumeApplicationTests
+```
+
+The opt-in commands require the existing pinned document dependencies in that
+selected interpreter; they never install models or infer account capability.

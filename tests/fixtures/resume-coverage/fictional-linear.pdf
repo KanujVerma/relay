@@ -1,0 +1,81 @@
+%PDF-1.4
+% Fictional Relay resume fixture
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 1109 >>
+stream
+BT
+/F1 11 Tf
+45 755 Td
+(Education) Tj
+0 -18 Td
+(Cedar University | BSc Computing | Expected 2027 | GPA: 3.8/4.0) Tj
+0 -18 Td
+(Pine College | Diploma Statistics | Completed 2023 | GPA: 3.6/4.0) Tj
+0 -18 Td
+(Experience) Tj
+0 -18 Td
+(Harbor Labs | Engineering Intern | June-August 2024) Tj
+0 -18 Td
+(- I implemented a queue using Python.) Tj
+0 -18 Td
+(- Our team reduced handoff errors.) Tj
+0 -18 Td
+(Summit Clinic | Analyst Intern | May-August 2023) Tj
+0 -18 Td
+(- I wrote SQL validation checks.) Tj
+0 -18 Td
+(Projects) Tj
+0 -18 Td
+(Nurse Handoff | 2024) Tj
+0 -18 Td
+(- I designed the review workflow in R.) Tj
+0 -18 Td
+(Atlas Monitor | 2023) Tj
+0 -18 Td
+(- My teammate built the metrics dashboard.) Tj
+0 -18 Td
+(Fictional Northstar | Expected 2027) Tj
+0 -18 Td
+(- I implemented validation tests using R.) Tj
+0 -18 Td
+(Skills) Tj
+0 -18 Td
+(Languages: Python, SQL, C++, R) Tj
+0 -18 Td
+(Certifications) Tj
+0 -18 Td
+(Data Foundations | Cedar Institute | In progress) Tj
+0 -18 Td
+(Applied Statistics | Pine Institute | Awarded 2024) Tj
+0 -18 Td
+(Summary) Tj
+0 -18 Td
+(Student interested in reliable systems.) Tj
+ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000042 00000 n 
+0000000091 00000 n 
+0000000148 00000 n 
+0000000274 00000 n 
+0000000344 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1504
+%%EOF

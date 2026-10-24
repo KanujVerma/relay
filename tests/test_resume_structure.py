@@ -124,16 +124,39 @@ class ResumeStructureTests(unittest.TestCase):
 
     def test_reimport_adds_v2_without_mutating_confirmed_v1_claim(self):
         text = 'Projects\nHarbor Monitor | 2024\nI wrote Python tests.\n'
-        source = self.prep.gateway.select_source(text, observed_at=STAMP, capability=self.cap)
+        source = self.prep.gateway.select_source(text, observed_at=STAMP, capability=self.cap,
+            raw_document_sha256=sha256(text.encode()).hexdigest())
         old, = self.prep.gateway.stage(source, text, observed_at=STAMP)
         self.prep.gateway.decide(old, decision='approve', capability=self.cap,
             approved_actor='self', claim_key='old.tests')
-        selected = self.select(text); cards = self.structured(selected)
-        self.assertNotEqual(selected.source_id, source)
-        self.assertTrue(any(c.snippet == old.snippet for c in cards))
-        self.assertEqual(self.store.verified_claims()[0].fact_id, old.fact_id)
-        self.assertEqual(self.store.verified_claims()[0].claim_text, old.snippet)
-        self.assertIsNone(self.store.db.execute('SELECT 1 FROM candidate_resume_context WHERE fact_id=?', (old.fact_id,)).fetchone())
+        # Serialize an actual old schema-2/v1-card ledger, after genuine legacy
+        # review above. Removing only the new empty DDL never creates approval.
+        self.store.db.execute('DROP TRIGGER resume_context_redact')
+        self.store.db.execute('DROP TABLE candidate_resume_context')
+        self.store.db.execute('DROP TRIGGER profile_resume_coverage_redact')
+        self.store.db.execute('DROP TABLE profile_resume_coverage')
+        self.store.db.execute('PRAGMA user_version=2')
+        with restore_memory_snapshot(export_memory_snapshot(self.store)) as restored:
+            cap = object(); prep = ProfilePreparation(restored, host_capability=cap)
+            selected = prep.select_bytes(text.encode(), file_type='txt', purpose='resume',
+                label='Fictional re-import', role='developer', observed_at=STAMP, capability=cap)
+            cards = self.structured(selected)
+            self.assertNotEqual(selected.source_id, source)
+            self.assertTrue(any(c.snippet == old.snippet for c in cards))
+            self.assertEqual(restored.verified_claims()[0].fact_id, old.fact_id)
+            self.assertEqual(restored.verified_claims()[0].claim_text, old.snippet)
+            self.assertIsNone(restored.db.execute('SELECT 1 FROM candidate_resume_context WHERE fact_id=?', (old.fact_id,)).fetchone())
+            self.assertEqual([f.fact_id for f in prep.provider.retrieve('Python tests?', 'developer').facts], [old.fact_id])
+            new = next(c for c in cards if c.snippet == old.snippet)
+            with self.assertRaises(BrainError):
+                prep.decide_v2(new.fact_id, new.card_fingerprint, decision='approve', actor='self',
+                    claim_key='old.tests', replaces_fact_id=None, card_version=2,
+                    context_sha256=new.context_sha256, capability=cap)
+            self.assertEqual(restored.verified_claims()[0].fact_id, old.fact_id)
+            prep.decide_v2(new.fact_id, new.card_fingerprint, decision='approve', actor='self',
+                claim_key='old.tests', replaces_fact_id=old.fact_id, card_version=2,
+                context_sha256=new.context_sha256, capability=cap)
+            self.assertEqual([f.fact_id for f in restored.verified_claims()], [new.fact_id])
 
     def test_produced_cross_source_field_rolls_back_the_whole_import(self):
         from relay_spike.resume_structure import extract_resume_structure

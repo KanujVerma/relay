@@ -1,0 +1,23 @@
+Education
+Cedar University | BSc Computing | Expected 2027 | GPA: 3.8/4.0
+Pine College | Diploma Statistics | Completed 2023 | GPA: 3.6/4.0
+Experience
+Harbor Labs | Engineering Intern | June-August 2024
+- I implemented a queue using Python.
+- Our team reduced handoff errors.
+Summit Clinic | Analyst Intern | May-August 2023
+- I wrote SQL validation checks.
+Projects
+Nurse Handoff | 2024
+- I designed the review workflow in R.
+Atlas Monitor | 2023
+- My teammate built the metrics dashboard.
+Fictional Northstar | Expected 2027
+- I implemented validation tests using R.
+Skills
+Languages: Python, SQL, C++, R
+Certifications
+Data Foundations | Cedar Institute | In progress
+Applied Statistics | Pine Institute | Awarded 2024
+Summary
+Student interested in reliable systems.

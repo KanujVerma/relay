@@ -39,7 +39,9 @@ import RelayScreenContext
         state.stopping=false
         XCTAssertFalse(state.allows(.showSession))
     }
-    func testPresentationAcceptsAnExplicitMicrophoneOnlySourceWithoutStartingIt() {
+    // Swift 6.2's isolated-deinit backdeploy path aborts from synchronous XCTest
+    // invocation (swiftlang/swift#85663). Keep the real owner inside a test task.
+    func testPresentationAcceptsAnExplicitMicrophoneOnlySourceWithoutStartingIt() async {
         let model=SessionApplicationModel(arguments:["relay"])
         model.selectedBundleID="";model.microphoneEnabled=true;model.authorizedConversation=true
         XCTAssertTrue(model.relayPresentation.hasSelectedSource)
@@ -53,7 +55,7 @@ import RelayScreenContext
         XCTAssertTrue(model.relayPresentation.hasSelectedSource)
         XCTAssertFalse(model.running);XCTAssertNil(model.currentSessionID)
     }
-    func testScreenLabelRequiresAnActualCurrentSelectionWithoutOpeningThePicker() {
+    func testScreenLabelRequiresAnActualCurrentSelectionWithoutOpeningThePicker() async {
         let model=SessionApplicationModel(arguments:["relay"])
         let screen=model.screen
         XCTAssertEqual(model.relayContextLabel,"Screen off")

@@ -2,6 +2,9 @@
 
 These are controller-published copies of the immutable local review reports. Workspace paths are normalized to `<workspace>` for portability; temporary harnesses/logs are supporting local evidence, not repository artifacts. Reviews are independent local agent work, not submitted GitHub approvals. Synthetic examples are fictional and contain no user biography or private material.
 
+- [Complete response preferencesb270](review-preferences-b270297.md): component and full app/source accepted, both original Manual Help/publication findings closed unchanged;734Python and227panel/app/state collected with only39explicit optional skips. New packaged artifact remains separate.
+- [History original timing evidence](history-timing-269/README.md): original269 failure is closed by independent unchanged replay at772;24focused cases pass without skips. Complete History app integration remains separate.
+
 - [Conversation](conversation.md): a26181e accepted for scoped integration; external hardware/model acceptance remains open.
 - [Personal round 1](personal-round1.md): d8bb0dc changes required. [Builder correction report](personal-fix-report.md): eb98e41, independent delta re-review [accepted](review-personal-eb98e41-rereview.md). A later full integration run found a [shutdown stall](profile-integration-stall.md); [shutdown re-review](review-personal-7ace412-shutdown.md) accepted correction7ace412 and the complete controller profile suite now passes.
 - [Answers round 1](answers-round1.md): cd5286a changes required; [correction report](fix-answers-round1-report.md) at2e06c6d. [Scoped re-review](review-answers-2e06c6d-rereview.md) closed microphone/display/eviction reproductions and accepted the shared-helper seam, but found named-person attribution and correction-state follow-ups; [final correction report](fix-answers-round2-report.md) and [final scoped re-review](review-answers-b33292f-rereview.md) close both atb33292f.

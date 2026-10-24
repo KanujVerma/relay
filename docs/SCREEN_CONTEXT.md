@@ -30,7 +30,7 @@ Raw images exist transiently in memory for preview/capture/optional transfer. Di
 
 ## Reuse and verification
 
-Exact upstream source/license, rejected alternatives and actual reuse are in the package's [third-party record](https://github.com/KanujVerma/relay/blob/e846c00012c73762fa4a599729a5c70b87e532be/spikes/macos-context/THIRD_PARTY_NOTICES.md). Apple's public capture/OCR frameworks are invoked directly. No competitor code, prompts, assets or service implementation is copied. Sanitized Cluely 2.1.24 research motivated request-bound capture/preview but did not establish backend vision behavior.
+Exact upstream source/license, rejected alternatives and actual reuse are in the package's [third-party record](https://github.com/KanujVerma/relay/blob/0c87bae4c1d9c23662b262bf93608dc35901c8c4/spikes/macos-context/THIRD_PARTY_NOTICES.md). Apple's public capture/OCR frameworks are invoked directly. No competitor code, prompts, assets or service implementation is copied. Sanitized Cluely 2.1.24 research motivated request-bound capture/preview but did not establish backend vision behavior.
 
 The lane handoff records current commit/check status. Synthetic tests compile the actual adapter but never call its picker. Vision uses generated in-memory code/problem and diagram-label images. Real user selection/denial/revocation, app packaging and account-model image acceptance are separate unperformed gates. A first native Vision initialization took about 50 seconds; warm synthetic OCR took roughly 0.1-0.3 seconds per image on this Mac. Neither figure measures live interview latency. Sandbox Vision calls returned `nilError`; approved synthetic-only tests outside the filesystem sandbox passed.
 

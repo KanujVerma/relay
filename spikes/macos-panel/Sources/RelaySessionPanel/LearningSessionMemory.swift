@@ -8,14 +8,34 @@ import RelayContextComposition
     public private(set) var episodes:[LearningEpisode]=[]
     public private(set) var evidenceGap=false
     public var onEpisode:(@MainActor (LearningEpisode)->Void)?
+    var onObservation:(@MainActor (ValidatedTranscriptObservation)->Void)?
     private var scope:(UUID,UInt64)?,sealed=true
     private var finals:[HistoryFinal]=[],quotes:[LearningQuote]=[]
     private struct Pending {let available:LearningAvailableSuggestion,question:HistoryFinal;var reply:HistoryFinal?;var flags:[String]}
     private var pending:Pending?
     private var issued:Set<UUID>=[]
     public init(){}
-    public func pause(){sealed=true;pending=nil;finals=[]}
+    public func pause(){sealed=true;pending=nil;evidenceGap=true}
     public func end(){scope=nil;sealed=true;pending=nil;finals=[];quotes=[];episodes=[];issued=[];evidenceGap=false}
+    var retainedFinalIDs:Set<String>{
+        var ids=Set(finals.map(\.id));ids.formUnion(quotes.map(\.sourceID))
+        for episode in episodes{ids.formUnion([episode.question.id,episode.reply.id,episode.continuation.id])}
+        if let pending{ids.insert(pending.question.id);if let reply=pending.reply{ids.insert(reply.id)}}
+        return ids
+    }
+    var currentCaptureID:String?{scope.map{HistoryCapture.identity($0.0,$0.1)}}
+    func clearPendingAttribution(captureIDs:Set<String>?=nil){
+        guard let pending else{return}
+        if let captureIDs,!captureIDs.contains(pending.question.captureID){return}
+        self.pending=nil
+    }
+    func removeFinals(_ ids:Set<String>){
+        guard !ids.isEmpty else{return}
+        finals.removeAll{ids.contains($0.id)};quotes.removeAll{ids.contains($0.sourceID)}
+        episodes.removeAll{ids.contains($0.question.id) || ids.contains($0.reply.id) || ids.contains($0.continuation.id)}
+        if let pending,ids.contains(pending.question.id) || pending.reply.map({ids.contains($0.id)})==true{self.pending=nil}
+        evidenceGap=true
+    }
     public func removeSource(captureID:String,source:TranscriptSource){
         pending=nil;finals.removeAll{$0.captureID==captureID && $0.source==source}
         quotes.removeAll{$0.captureID==captureID && $0.source==source}
@@ -27,7 +47,8 @@ import RelayContextComposition
         if event.kind == .sessionStarted{
             guard event.eventSequence==1,event.sessionEpoch>0 else{return}
             // A resumed capture keeps inert meeting quotes, never old admission.
-            scope=(event.captureSessionID,event.sessionEpoch);sealed=false;pending=nil;finals=[];issued=[];return
+            scope=(event.captureSessionID,event.sessionEpoch);sealed=false;pending=nil;issued=[]
+            onObservation?(observation);return
         }
         guard let scope,scope.0==event.captureSessionID,scope.1==event.sessionEpoch else{return}
         if observation.sequenceGap{pending=nil;sealed=true;evidenceGap=true;return}
@@ -39,7 +60,7 @@ import RelayContextComposition
         if [.stopping,.stopped].contains(event.kind){pause();return}
         guard !sealed,let final=observation.final else{return}
         guard !finals.contains(where:{$0.id==final.id}) else{return}
-        let late=finals.contains{$0.endUptimeNanoseconds.value>final.endUptimeNanoseconds.value}
+        let late=finals.contains{$0.captureID==final.captureID && $0.endUptimeNanoseconds.value>final.endUptimeNanoseconds.value}
         finals.append(final)
         while finals.count>64 || finals.reduce(0,{$0+$1.text.utf8.count})>32*1024{finals.removeFirst();evidenceGap=true}
         let lower=final.text.lowercased()
@@ -49,6 +70,7 @@ import RelayContextComposition
             quotes.append(LearningQuote(final,kind:unresolved ? .unresolvedFollowup:.spokenConstraint))
             while quotes.count>LearningBounds.quotes || quotes.reduce(0,{$0+$1.text.utf8.count})>LearningBounds.quoteBytes{quotes.removeFirst();evidenceGap=true}
         }
+        onObservation?(observation)
         guard var original=pending else{return}
         if late{original.flags.append("late_final")}
         if final.id==original.question.id{return}
@@ -78,7 +100,7 @@ import RelayContextComposition
     public func available(binding:PanelRequestBinding,replacement:UInt64,lead:String,points:[String],detail:String?=nil,guideRevision:UUID?,visible:Bool,at:UInt64){
         guard !sealed,let scope,scope.0==binding.lease.captureSessionID,scope.1==binding.lease.sessionEpoch,
               !issued.contains(binding.requestID),issued.count<512,
-              let question=finals.last(where:{$0.source == .selectedAppAudio && $0.eventSequence.value==binding.eventSequence}),
+              let question=finals.last(where:{$0.source == .selectedAppAudio && $0.captureSessionID==binding.lease.captureSessionID && $0.sessionEpoch.value==binding.lease.sessionEpoch && $0.eventSequence.value==binding.eventSequence}),
               question.endUptimeNanoseconds.value<=at,
               let original=try? JSONSerialization.jsonObject(with:question.originalEventJSON) as? [String:Any],
               let emitted=original["emittedUptimeNanoseconds"] as? NSNumber,emitted.uint64Value<=at else{return}

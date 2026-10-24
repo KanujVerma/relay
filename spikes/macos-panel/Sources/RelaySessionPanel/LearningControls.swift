@@ -64,10 +64,14 @@ public struct LearningArchiveReceipt:Sendable {
 }
 @MainActor public struct LearningPersistencePorts {
     let scope:@MainActor ()->LearningPersistenceScope?
+    let affiliation:@MainActor (ValidatedTranscriptObservation)->LearningPersistenceScope?
     let load:@MainActor ()async throws->LearningArchiveReceipt
     let mutate:@MainActor (LearningMutation)async throws->LearningArchiveReceipt
     public init(scope:@escaping @MainActor ()->LearningPersistenceScope?,load:@escaping @MainActor ()async throws->LearningArchiveReceipt,
-                mutate:@escaping @MainActor (LearningMutation)async throws->LearningArchiveReceipt){self.scope=scope;self.load=load;self.mutate=mutate}
+                mutate:@escaping @MainActor (LearningMutation)async throws->LearningArchiveReceipt,
+                affiliation:(@MainActor (ValidatedTranscriptObservation)->LearningPersistenceScope?)?=nil){
+        self.scope=scope;self.load=load;self.mutate=mutate;self.affiliation=affiliation ?? {_ in scope()}
+    }
 }
 public enum LearningSourceRetirement:Sendable {
     case workspace(workspaceEpoch:UUID)

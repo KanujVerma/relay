@@ -32,6 +32,8 @@ public final class LearningProjectionSnapshot:Sendable {
     private var lastControl:LearningControlRecord?,lastReceipt:LearningControlReceipt?
     private var sourceEpoch:UUID?,projectionEpoch=UUID(),retentionEpoch=UUID()
     private var ready=false
+    private struct Affiliation {let workspace:UUID,record:UUID,capture:String,source:TranscriptSource?,expiresAt:TimeInterval?;var sources:Set<TranscriptSource>=[]}
+    private var finalAffiliations:[String:Affiliation]=[:],captureAffiliations:[String:Affiliation]=[:]
     private final class Flight {
         let id=UUID(),generation:UUID
         var task:Task<Void,Error>?
@@ -48,6 +50,7 @@ public final class LearningProjectionSnapshot:Sendable {
                 clock:@escaping @Sendable ()->Date={Date()}){
         self.preferences=preferences;self.persistence=persistence;self.canEnable=canEnable;self.clock=clock
         session.onEpisode={[weak self] in self?.enqueue($0)}
+        session.onObservation={[weak self] in self?.rememberAffiliation($0)}
     }
     private var retentionAvailable:Bool{
         guard ready,let scope=persistence.scope(),scope.workspaceEpoch==sourceEpoch,
@@ -113,6 +116,7 @@ public final class LearningProjectionSnapshot:Sendable {
         return begin(.suppress(ruleID))
     }
     private func begin(_ action:Action)->Task<Void,Error>{
+        session.clearPendingAttribution()
         let old=control,oldWriter=writer?.task
         old?.task?.cancel()
         let generation=retireRetention()
@@ -127,6 +131,7 @@ public final class LearningProjectionSnapshot:Sendable {
     }
     private func perform(_ action:Action)async throws{
         try Task.checkCancellation();guard control==nil else{throw HistoryError.inUse}
+        switch action{case .enable:session.clearPendingAttribution();case .restore(let receipt):if receipt.pending != nil{session.clearPendingAttribution()};default:break}
         let oldWriter=writer?.task,generation=retireRetention()
         guard retentionEpoch==generation else{throw HistoryError.stale}
         let flight=Flight(generation);control=flight
@@ -191,20 +196,49 @@ public final class LearningProjectionSnapshot:Sendable {
         }
     }
     public func retire(_ notice:LearningSourceRetirement){
-        guard sourceEpoch==notice.workspaceEpoch else{return}
+        let affected:Set<String>,captures:Set<String>
         switch notice{
-        case .workspace:break
+        case .workspace:affected=[];captures=[]
         case .record(_,let id):
-            if persistence.scope()?.recordID==id{session.end()}
+            affected=Set(finalAffiliations.filter{$0.value.workspace==notice.workspaceEpoch && $0.value.record==id}.map(\.key))
+            captures=Set(captureAffiliations.filter{$0.value.workspace==notice.workspaceEpoch && $0.value.record==id}.map(\.key))
         case .source(_,let id,let capture,let source):
-            _=id
-            session.removeSource(captureID:capture,source:source)
+            affected=Set(finalAffiliations.filter{$0.value.workspace==notice.workspaceEpoch && $0.value.record==id && $0.value.capture==capture && $0.value.source==source}.map(\.key))
+            captures=Set(captureAffiliations.filter{$0.value.workspace==notice.workspaceEpoch && $0.value.record==id && $0.key==capture && $0.value.sources.contains(source)}.map(\.key))
         }
-        control?.task?.cancel();_=retireRetention();sourceEpoch=nil
-        state.phase = .unavailable;state.message="Learning sources are unavailable. Reopen History before using retained adjustments.";publish()
+        if !affected.isEmpty || !captures.isEmpty{
+            session.removeFinals(affected);session.clearPendingAttribution(captureIDs:captures)
+            finalAffiliations=finalAffiliations.filter{!affected.contains($0.key)}
+            if case .record=notice{captureAffiliations=captureAffiliations.filter{!captures.contains($0.key)}}
+            if case .source(_,_,_,let source)=notice{for capture in captures{captureAffiliations[capture]?.sources.remove(source)}}
+        }
+        if sourceEpoch==notice.workspaceEpoch{
+            control?.task?.cancel();_=retireRetention();sourceEpoch=nil
+            state.phase = .unavailable;state.message="Learning sources are unavailable. Reopen History before using retained adjustments.";publish()
+        }else if !affected.isEmpty || !captures.isEmpty{_=retireProjection()}
     }
     public func pauseSession(){session.pause();_=retireProjection()}
-    public func endSession(){session.end();_=retireProjection()}
+    public func endSession(){session.end();finalAffiliations=[:];captureAffiliations=[:];_=retireProjection()}
+    private func rememberAffiliation(_ observation:ValidatedTranscriptObservation){
+        let retained=session.retainedFinalIDs
+        finalAffiliations=finalAffiliations.filter{retained.contains($0.key)}
+        let retainedCaptures=Set(finalAffiliations.values.map(\.capture))
+        captureAffiliations=captureAffiliations.filter{retainedCaptures.contains($0.key) || $0.key==session.currentCaptureID}
+        guard let scope=persistence.affiliation(observation),let record=scope.recordID else{return}
+        if observation.event.kind == .sessionStarted{
+            let capture=HistoryCapture.identity(observation.event.captureSessionID,observation.event.sessionEpoch)
+            var sources:Set<TranscriptSource>=[]
+            if observation.event.payload["microphoneEnabled"] == .bool(true){sources.insert(.microphone)}
+            if case .string=observation.event.payload["selectedBundleID"]{sources.insert(.selectedAppAudio)}
+            captureAffiliations[capture]=Affiliation(workspace:scope.workspaceEpoch,record:record,capture:capture,source:nil,expiresAt:scope.expiresAt,sources:sources)
+        }else if let final=observation.final{
+            let value=Affiliation(workspace:scope.workspaceEpoch,record:record,capture:final.captureID,source:final.source,expiresAt:scope.expiresAt)
+            finalAffiliations[final.id]=value
+            if var captured=captureAffiliations[final.captureID],captured.workspace==scope.workspaceEpoch,captured.record==record{
+                captured.sources.insert(final.source);captureAffiliations[final.captureID]=captured
+            }else{var captured=value;captured.sources=[final.source];captureAffiliations[final.captureID]=captured}
+        }
+    }
     public func capture(question:String)->LearningProjectionSnapshot?{
         let now=clock().timeIntervalSince1970
         var value=retentionAvailable ? LearningDerivation.project(archive,question:question,now:now):LearningRequestProjection(scope:LearningScope.matching(question))

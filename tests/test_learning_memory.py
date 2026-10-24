@@ -5,6 +5,11 @@ import json
 import unittest
 import uuid
 import time
+import subprocess
+import sys
+import tempfile
+import threading
+from pathlib import Path
 
 from relay_spike.learning_memory import decode_learning, decode_learning_retirement
 from relay_spike.panel_wire import WireError
@@ -104,6 +109,22 @@ class LearningHostTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('Explain bounded queues',str(self.prompts[0]['conversation']['task']['user_attempt']))
         self.assertEqual(h.model_requests,1)
 
+    async def test_later_scope_changes_actual_fixture_card_structure_without_extra_calls_or_code_regression(self):
+        from tests.support.learning_memory_helper import SyntheticLearningCompletion
+        completion=SyntheticLearningCompletion();text='Write a Python function that returns the first item or None for an empty list.'
+        first=await self.host(completion);native=question(first,text)
+        await first.handle_user_question(native);await first.drain();baseline=copy.deepcopy(self.out[-1]['card'])
+        first.close();await first.drain()
+        later=await self.host(completion);fresh=question(later,text)
+        later.handle_learning_memory(offer(fresh,supportIDs=[str(uuid.uuid4()) for _ in range(3)]))
+        await later.handle_user_question(fresh);await later.drain();adapted=self.out[-1]['card']
+        self.assertNotEqual(adapted['lead'],baseline['lead'])
+        self.assertLess(len((adapted['lead']+' '.join(adapted['points'])).split()),len((baseline['lead']+' '.join(baseline['points'])).split()))
+        self.assertEqual(adapted['detail'],baseline['detail'])
+        namespace={};exec(adapted['detail']['text'],namespace)
+        self.assertIsNone(namespace['first_or_none']([]));self.assertEqual(namespace['first_or_none']([9,3]),9)
+        self.assertEqual(first.model_requests,1);self.assertEqual(later.model_requests,1);self.assertEqual(completion.calls,2)
+
     async def test_explicit_guide_overrides_inferred_style_but_retains_original_spoken_constraint(self):
         h=await self.host();n=question(h,'Explain event loops.');value=offer(n)
         h.handle_learning_memory(value);h.handle_response_preferences(guide_offer(n,guidance='Use a detailed explanation.'))
@@ -174,6 +195,33 @@ class LearningChildTests(unittest.TestCase):
         self.assertEqual(code,0,errors);self.assertEqual(errors,b'')
         answer=next(row for row in rows if row.get('disposition')=='answer')
         self.assertEqual(answer['requestID'],native['requestID']);self.assertEqual(answer['provenance']['learningMemoryRevision'],value['memoryRevision'])
+
+    def test_explicit_synthetic_learning_helper_uses_actual_framed_loop_and_logs_no_source_text(self):
+        opened=control();native=dict(schemaVersion=1,kind='user_question_request',captureSessionID=opened['assistantSessionID'],
+            sessionEpoch=1,presentationGeneration=2,requestID=str(uuid.uuid4()),anchorEventSequence=1,
+            emittedUptimeNanoseconds=time.monotonic_ns(),intent='ask',question='Explain bounded queues and overload.',baseRequestID=None)
+        value=offer(native,supportIDs=[str(uuid.uuid4()) for _ in range(3)])
+        with tempfile.TemporaryDirectory(prefix='relay-learning-helper-') as directory:
+            log=Path(directory)/'calls.jsonl';helper=Path(__file__).parent/'support'/'learning_memory_helper.py'
+            child=subprocess.Popen([sys.executable,str(helper),'--synthetic-learning-test','--log',str(log),'-m','relay_spike.session_host','--fixture-model'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            watchdog=threading.Timer(5,child.kill);watchdog.start()
+            try:
+                child.stdin.write(encode_frame(opened)+encode_frame(value)+encode_frame(native));child.stdin.flush();rows=[]
+                for _ in range(3):
+                    header=child.stdout.read(4);self.assertEqual(len(header),4)
+                    rows.append(json.loads(child.stdout.read(int.from_bytes(header,'big'))))
+                child.stdin.close();child.stdin=None;remaining,errors=child.communicate(timeout=5)
+                self.assertEqual(child.returncode,0,errors);self.assertEqual(errors,b'');self.assertEqual(remaining,b'')
+                answer=next(row for row in rows if row.get('disposition')=='answer')
+                self.assertEqual(answer['card']['lead'],'Use a bounded queue and reject overload explicitly.')
+                self.assertEqual(answer['provenance']['learningMemoryRevision'],value['memoryRevision'])
+                entries=log.read_text().splitlines();self.assertEqual(len(entries),1);self.assertEqual(json.loads(entries[0])['call'],1)
+                self.assertNotIn(native['question'],log.read_text());self.assertNotIn('original-final',log.read_text())
+            finally:
+                watchdog.cancel()
+                if child.poll() is None:child.kill();child.wait(timeout=5)
+                for stream in (child.stdin,child.stdout,child.stderr):
+                    if stream is not None:stream.close()
 
 
 class LearningPersonalHostTests(unittest.IsolatedAsyncioTestCase):

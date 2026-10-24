@@ -42,6 +42,18 @@ The coordinator tests prove default-off no History calls, denied enable when con
 
 Accepted root3b3 was imported in mergebb1aa; Store/Notes/codec/HistoryCoordinator/Model/editor/timing were verified byte-identical to that root before any schema3 edits. Eighty-five focused merged Python/latency/transport cases pass0.947s. Shared SourceCoordinator updates remain controller-reviewed before adapter wiring.
 
+## c7 ownership review corrections
+
+Accepted corrected SourceCoordinator797/root9cef was imported without shared-source edits. Root review found that c7 reread an already denied current scope when deleting live semantic text, and ignored semantic deletion entirely when retained Learning was off. It also left old pending suggestion attribution alive across reset/disable/enable, and lost ordinary unmarked finals across Pause. Original validated-source regressions reproduced10assertion failures across5cases in0.568s before fixes.
+
+The coordinator now captures inert affiliation from the original admitted observation, even with retention off, before episode/publication callbacks. Exact matching finals/quotes/interactions are removed without reading tombstoned readiness; future currently consented live observations stay distinct. This is an attempted-save affiliation, not proof that a final was durably saved: the Store must still validate every original row. Explicit controls clear pending attribution while keeping ordinary conversation and issued-binding dedupe. Pause retains bounded original finals read-only; availability requires the actual current capture/epoch/sequence, so retained context cannot issue a new native receipt.
+
+All26 focused native cases pass,0failures/0skips,0.289s test time (command62.679s) after the original10red assertions. An initial compile-only []/[:] error was corrected before that runtime gate. The two pending CF/ledger API fixture files were parked/restored byte-exact; their unimplemented protocols were independently observed red. Aggregate Relay temp was23.355GiB with1GiB reserve and about46.98GiB free; existing cache/jobs2/external180-second deadline.
+
+Sixty-six focused Python cases pass0.795s. An explicitly opted-in offline helper now proves a later actual Host scope changes the fixture card's structure, keeps executable empty/nonempty-list behavior intact, and makes exactly one completion per scope. It logs only content-free fixture counters. This is wiring/regression evidence, not a real model/account improvement or latency measurement.
+
+Actual CF preference persistence/fresh-process outcomes, encrypted schema3 mutations and actual History/Model/UI source-deletion/currentness/visibility/12-Help/End-to-later-session gates remain unfinished. The current source does not claim these delivery milestones from simulated ports or fixed tags.
+
 ## Next exact action
 
 Obtain accepted Notesv2 storage ref, then complete pure deterministic derivation and schema3 with exact source support validation/deletion/expiry/undo/restart tests. Wire one after-drain actual Model availability seam shared with descriptive latency, request bridge/currentness, and inspectable opt-in/why/undo controls. No store/schema/current Model integration or later-session end-to-end claim is made at this checkpoint.

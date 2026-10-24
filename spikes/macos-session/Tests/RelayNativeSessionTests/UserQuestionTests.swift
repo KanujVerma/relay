@@ -63,4 +63,16 @@ private final class UserIngressProbe:@unchecked Sendable {
         XCTAssertEqual(controller.authority.snapshot(),issued.lease)
         controller.beginStop();await controller.waitForQuiescence();controller.finishStop(quiesced:true)
     }
+    func testLastSourceLossCannotIssueFreshTypedAuthority()async throws {
+        let controller=NativeSessionController(onEvent:{_ in})
+        try controller.start(selectedBundleID:"com.example.fixture",microphoneEnabled:false,
+            components:[2:SourceComponents(vad:ScriptVad([:]),recognizer:RecordingRecognizer())])
+        let first=try controller.issueUserQuestion(expectedLease:try XCTUnwrap(controller.authority.snapshot()),intent:.ask,
+            question:"Explain queues.",baseRequestID:nil,enqueue:{_ in})
+        controller.sourceUnavailable(source:.remoteAudio,generation:1,reason:.selectedAppUnavailable)
+        let lease=try XCTUnwrap(controller.authority.snapshot())
+        XCTAssertThrowsError(try controller.issueUserQuestion(expectedLease:lease,intent:.ask,question:"Explain caches.",baseRequestID:nil,enqueue:{_ in XCTFail()}))
+        XCTAssertThrowsError(try controller.issueUserQuestion(expectedLease:lease,intent:.helpCurrent,question:nil,baseRequestID:first.requestID,enqueue:{_ in XCTFail()}))
+        controller.beginStop();await controller.waitForQuiescence();controller.finishStop(quiesced:true)
+    }
 }

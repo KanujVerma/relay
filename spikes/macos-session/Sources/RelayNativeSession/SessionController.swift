@@ -88,7 +88,7 @@ public final class NativeSessionController: @unchecked Sendable {
                                   question:String?,baseRequestID:UUID?,
                                   enqueue:@Sendable(NativeUserQuestionRequest)throws->Void)throws->NativeUserQuestionRequest {
         try lock.withLock {
-            guard sessionID==expectedLease.captureSessionID,sequence>0,authority.snapshot()==expectedLease else{throw NativeSessionError.notAuthorized}
+            guard sessionID==expectedLease.captureSessionID,!sources.isEmpty,sequence>0,authority.snapshot()==expectedLease else{throw NativeSessionError.notAuthorized}
             switch intent {
             case .ask:
                 guard let question,!question.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,
@@ -234,6 +234,7 @@ public final class NativeSessionController: @unchecked Sendable {
         lock.withLock {
             guard sessionID == session, let pipeline = sources.removeValue(forKey: source) else { return }
             pipeline.stop(); retiredSources.append(pipeline)
+            if source==2{currentRequestID=nil}
             guard let lease = source == 2 ? authority.invalidate() : authority.snapshot() else { return }
             let kind: SessionEventKind = [.deviceChanged, .sequenceGap, .queueOverflow, .clockInvalid].contains(reason) ? .discontinuity : .sourceUnavailable
             emit(kind: kind, lease: lease, source: source, generation: generation,

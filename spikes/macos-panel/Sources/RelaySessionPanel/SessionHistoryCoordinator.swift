@@ -505,6 +505,12 @@ final class HistoryAdmission:@unchecked Sendable {
         guard epoch==original,selectionEpoch==selected,gate.allowed,!Task.isCancelled,page.record.revision==before.record.revision,!tombstones.contains(id) else{throw HistoryError.stale}
         state.selected=HistoryDetail(record:page.record,captures:page.captures,rows:before.rows+page.rows,nextOffset:page.nextOffset,totalRows:page.totalRows);publish()
     }
+    /// Synchronous denial/read view for an app-owned unsaved editor. This does
+    /// no IO and issues no save authority; saveNotes still owns its actual CAS.
+    public func allowsManualNoteDraft(_ id:UUID,revision:Int64,epoch original:UUID)->Bool{
+        epoch==original && state.phase == .ready && opened && store != nil && !tombstones.contains(id)
+            && state.selected?.record.id==id && state.selected?.record.revision==revision
+    }
     @discardableResult public func saveNotes(_ id:UUID,expectedRevision:Int64,title:String,note:String)async throws->HistoryNoteSaveReceipt{
         try Task.checkCancellation()
         guard state.phase == .ready,!tombstones.contains(id),state.selected?.record.id==id else{throw HistoryError.stale}

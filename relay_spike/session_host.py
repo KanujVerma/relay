@@ -21,6 +21,7 @@ from .panel_wire import decode_event, encode_frame, FrameDecoder, WireError, hos
 from .question_turns import QuestionTurnMachine
 from .reference_host import ReferencePermission, publish_reference, render_queued_card
 from .publication_policy import PolicyInput
+from .answer_timing import HelperRequestTiming
 
 
 class CompositeEligibility:
@@ -55,6 +56,7 @@ class Request:
     accepted_at: float
     origin: str = "remote_final"
     projection: object = None
+    timing: object = None
 
 
 class SessionHost:
@@ -80,9 +82,12 @@ class SessionHost:
         self.assistant=AssistantScopeCoordinator(self)
         from .response_preferences import HostResponsePreferences
         self.response_preferences=HostResponsePreferences(self)
+        from .learning_memory import HostLearningMemory
+        self.learning_memory=HostLearningMemory(self)
 
     def _invalidate(self):
         self.response_preferences.retire_request()
+        self.learning_memory.retire_request()
         self.user.invalidate_retired_help()
         self.visual.retire_request()
         if self.active is not None:
@@ -99,6 +104,7 @@ class SessionHost:
 
     def close(self,*,preserve_visual=False):
         self.response_preferences.close()
+        self.learning_memory.close()
         if not preserve_visual:self.visual.disable(cancel_work=False)
         self.user.close()
         self._clear_context_provider()
@@ -140,7 +146,7 @@ class SessionHost:
             return False
 
     def _current(self,request):
-        return self._current_base(request) and self.response_preferences.current_for(request)
+        return self._current_base(request) and self.response_preferences.current_for(request) and self.learning_memory.current_for(request)
 
     def _result(self,request,disposition,reason,card=None,*,kind=None,provenance=None,pending=False):
         if not self._current(request): return False
@@ -152,6 +158,8 @@ class SessionHost:
         value.update(schemaVersion=1,resultRevision=1 if pending else 2,disposition=disposition,reasonCode=reason,
             pythonToken={'turnID':request.token.turn_id,'version':request.token.version,'generation':request.token.generation},
             displayID=request.display_id,question=request.display_question,answerID=uuid.uuid4().hex if disposition=='answer' else None,answerKind=kind,card=card,provenance=provenance)
+        if request.timing is not None:
+            value['timing']=request.timing.snapshot(time.monotonic_ns())
         # Encode before sealing: overflow fails closed; no truncation of facts/code.
         encode_frame(value)
         if not pending: self.terminal.add(n['requestID'])
@@ -159,15 +167,17 @@ class SessionHost:
         self.emit(value)
         return True
 
-    def _withhold_native(self,n,reason):
+    def _withhold_native(self,n,reason,*,timing=None):
         # A classifier/blank terminal does not invent a semantic turn token.
         if not self.live or n['presentationGeneration']!=self.presentation or n['requestID'] in self.terminal: return
         value={key:n[key] for key in ('captureSessionID','sessionEpoch','presentationGeneration','requestID','eventSequence')}
         value.update(schemaVersion=1,resultRevision=2,disposition='abstain',reasonCode=reason,
                      pythonToken=None,displayID=None,question='',answerID=None,answerKind=None,card=None,provenance=None)
+        if timing is not None:value['timing']=timing.snapshot(time.monotonic_ns())
         encode_frame(value);self.terminal.add(n['requestID']);self.user.note_result(value);self.emit(value)
 
-    async def handle(self,raw):
+    async def handle(self,raw,*,received_ns=None):
+        timing=HelperRequestTiming(time.monotonic_ns() if received_ns is None else received_ns)
         try: n,inner=decode_event(raw)
         except Exception:
             self.close();raise WireError('invalid_session_event') from None
@@ -240,7 +250,7 @@ class SessionHost:
         if not complete:
             if source==2 and n['presentationGeneration']<self.presentation: return
             if source==2:
-                self._invalidate();self.machine.cancel();self._withhold_native(n,'question_unavailable')
+                self._invalidate();self.machine.cancel();self._withhold_native(n,'question_unavailable',timing=timing)
             return
         activity['used']=True
         if source==2 and n['presentationGeneration']<self.presentation:
@@ -260,18 +270,18 @@ class SessionHost:
         observation=FinalizedASRObservation('remote',inner.stream_generation,logical,inner.revision,inner.start_ms,inner.end_ms,inner.received_ms,'final',inner.text or '',inner.finalized_ms,inner.confidence)
         result=self.bridge.ingest(observation,context=CaptureContext('authorized',True))
         if result.disposition!='ready' or result.token is None:
-            if result.disposition!='ignored': self._withhold_native(n,'blank_question' if not inner.text else 'no_question')
+            if result.disposition!='ignored': self._withhold_native(n,'blank_question' if not inner.text else 'no_question',timing=timing)
             return
         snap=result.question.snapshot
         question=snap.prompt if snap.current_utterance!=snap.root_question else snap.current_utterance
         # UI question has its own strict bound; never rewrite semantic content.
         display_question=inner.text
         if len(display_question.encode())>500:
-            self._withhold_native(n,'question_overflow');return
+            self._withhold_native(n,'question_overflow',timing=timing);return
         try: bundle=self.provider.retrieve(question,self.role) if self.provider else None
         except ValueError: bundle=None
         projection=self.context.fork()
-        req=Request(dict(n),result.token,uuid.uuid4().hex,question,display_question,bundle,time.monotonic(),projection=projection);self.active=req
+        req=Request(dict(n),result.token,uuid.uuid4().hex,question,display_question,bundle,time.monotonic(),projection=projection,timing=timing);self.active=req
         self.user.note_request(req,projection)
         self._route(req)
 
@@ -347,6 +357,7 @@ class SessionHost:
             self.response_preferences.discard(req.native)
             self._result(req,'abstain','inference_disabled');return
         self.response_preferences.claim(req.native)
+        self.learning_memory.claim(req.native)
         self._result(req,'pending','generating_with_task_context' if supplemental is not None else 'generating',pending=True)
         self._queue_work(req,dialogue)
 
@@ -368,8 +379,23 @@ class SessionHost:
         if self._pending_work is not None and self._pending_work[0] is request:self._pending_work=None
         if self._worker_request is request and self._worker is not None and not self._worker.done():self._worker.cancel()
 
-    async def handle_user_question(self,raw):
-        return await self.user.question(raw)
+    def handle_learning_memory(self,value):
+        try:return self.learning_memory.stage(value)
+        except Exception:self.close();raise WireError('invalid_learning_memory') from None
+
+    def handle_learning_memory_retirement(self,value):
+        try:return self.learning_memory.retire(value)
+        except Exception:self.close();raise WireError('invalid_learning_retirement') from None
+
+    def learning_memory_changed(self,native):
+        request=self.active
+        if request is None or request.native is not native:return
+        if self._current_base(request):self._emit_result(request,'abstain','learning_memory_changed')
+        if self._pending_work is not None and self._pending_work[0] is request:self._pending_work=None
+        if self._worker_request is request and self._worker is not None and not self._worker.done():self._worker.cancel()
+
+    async def handle_user_question(self,raw,*,received_ns=None):
+        return await self.user.question(raw,received_ns=received_ns)
 
     def handle_answer_retirement(self,raw):
         self.user.retire(raw)
@@ -377,7 +403,8 @@ class SessionHost:
     def handle_answer_cancel(self,raw):
         return self.user.cancel(raw)
 
-    async def handle_manual_help(self,raw):
+    async def handle_manual_help(self,raw,*,received_ns=None):
+        timing=HelperRequestTiming(time.monotonic_ns() if received_ns is None else received_ns)
         from .manual_help import decode_manual_help
         try:n=decode_manual_help(raw)
         except Exception:
@@ -394,11 +421,11 @@ class SessionHost:
             and self.permission.authorized())
         self.presentation=n['presentationGeneration'];self.used_requests.add(request_id);self._invalidate()
         if not eligible:
-            self._withhold_native(n,'manual_context_unavailable');return False
+            self._withhold_native(n,'manual_context_unavailable',timing=timing);return False
         try:bundle=self.provider.retrieve(previous.question,self.role) if self.provider else None
         except ValueError:bundle=None
         projection=self.context.fork()
-        req=Request(n,previous.token,uuid.uuid4().hex,previous.question,previous.display_question,bundle,time.monotonic(),projection=projection)
+        req=Request(n,previous.token,uuid.uuid4().hex,previous.question,previous.display_question,bundle,time.monotonic(),projection=projection,timing=timing)
         self.active=req;self.user.note_request(req,projection);self._route(req);return True
 
     def _queue_work(self,req,dialogue):
@@ -441,7 +468,11 @@ class SessionHost:
         except (CardError,WireError): self._result(req,'abstain','personal_detail_budget')
 
     async def _generate(self,req,dialogue):
+        timing=req.timing
+        stream=getattr(self.complete,'__self__',None)
+        previous_transport=getattr(stream,'last_timing',None)
         try:
+            if timing is not None:timing.mark('generationStartedUptimeNanoseconds',time.monotonic_ns())
             self.model_requests+=1
             async with asyncio.timeout(max(0,self.deadline-(time.monotonic()-req.accepted_at))):
                 # A just-started session may have cancelled an idle probe. The
@@ -451,16 +482,25 @@ class SessionHost:
                 supplemental=self._supplemental.get(req.native['requestID'])
                 permit=self.visual.prepare(req,supplemental)
                 preferences=self.response_preferences.prompt_for(req)
-                prompt=make_prompt(req.question,dialogue,req.bundle,supplemental=supplemental,current_utterance=req.display_question,response_preferences=preferences)
-                candidate=await self.complete(prompt,INSTRUCTIONS,visual_attachment=permit) if permit is not None else await self.complete(prompt,INSTRUCTIONS)
+                learning=self.learning_memory.prompt_for(req,has_explicit_guide=preferences is not None)
+                prompt=make_prompt(req.question,dialogue,req.bundle,supplemental=supplemental,current_utterance=req.display_question,response_preferences=preferences,learning_memory=learning)
+                if learning is not None and 'learning_memory' not in json.loads(prompt):self.learning_memory.omitted(req)
+                if timing is not None:timing.mark('transportStartedUptimeNanoseconds',time.monotonic_ns())
+                try:
+                    candidate=await self.complete(prompt,INSTRUCTIONS,visual_attachment=permit) if permit is not None else await self.complete(prompt,INSTRUCTIONS)
+                finally:
+                    if timing is not None:timing.note_transport(previous_transport,getattr(stream,'last_timing',None))
                 if not await self.visual.validate_publication(req,permit=permit):
                     self.visual.failed_request(req);self._result(req,'abstain','answer_unavailable');return
             if not self._current(req): return
             code_required=bool(re.search(r'\b(?:write|show|provide)\b.{0,30}\b(?:code|function|query|sql)\b',req.display_question,re.I))
             card=parse_generated_card(candidate,code_required=code_required)
+            if timing is not None:timing.mark('validationFinishedUptimeNanoseconds',time.monotonic_ns())
             provenance={'model':getattr(getattr(self.complete,'__self__',None),'model','injected_fixture_transport'),'checks':list(card.checks),'independentlyReviewed':False}
             preference_revision=self.response_preferences.used_revision(req)
             if preference_revision is not None:provenance['responsePreferencesRevision']=preference_revision
+            learning_revision=self.learning_memory.used_revision(req)
+            if learning_revision is not None:provenance['learningMemoryRevision']=learning_revision
             if supplemental is not None:
                 provenance['taskContext']={'provenance':supplemental.provenance,'source':supplemental.source,'capturedUptimeNanoseconds':supplemental.captured_uptime_ns}
                 digest=self.visual.used_image_digest(req)
@@ -530,10 +570,15 @@ async def run_stdio(args,*,oauth_stream=None):
         while True:
             # A partial header/body has a deadline; idle readiness has no timeout.
             chunk=await (asyncio.wait_for(reader.read(4096),3) if decoder.buffer or decoder.length else reader.read(4096))
+            received_ns=time.monotonic_ns()
             if not chunk: decoder.finish();host.close();break
             for value in decoder.feed(chunk):
                 if isinstance(value,dict) and value.get('kind')=='assistant_scope_request':
                     host.handle_assistant_scope(value)
+                elif isinstance(value,dict) and value.get('kind')=='learning_memory':
+                    host.handle_learning_memory(value)
+                elif isinstance(value,dict) and value.get('kind')=='learning_memory_retired':
+                    host.handle_learning_memory_retirement(value)
                 elif isinstance(value,dict) and value.get('kind')=='response_preferences':
                     host.handle_response_preferences(value)
                 elif isinstance(value,dict) and value.get('kind')=='response_preferences_retired':
@@ -575,16 +620,16 @@ async def run_stdio(args,*,oauth_stream=None):
                     emit({'schemaVersion':1,'kind':'session_quiescence_response','requestID':value['requestID'],
                         'captureSessionID':value['captureSessionID'],'sessionEpoch':value['sessionEpoch'],'quiesced':True})
                 elif isinstance(value,dict) and value.get('kind')=='user_question_request':
-                    await host.handle_user_question(value)
+                    await host.handle_user_question(value,received_ns=received_ns)
                 elif isinstance(value,dict) and value.get('kind')=='answer_request_retired':
                     host.handle_answer_retirement(value)
                 elif isinstance(value,dict) and value.get('kind')=='answer_cancel_request':
                     host.handle_answer_cancel(value)
                 elif isinstance(value,dict) and value.get('kind')=='manual_help_request':
-                    await host.handle_manual_help(value)
+                    await host.handle_manual_help(value,received_ns=received_ns)
                 elif isinstance(value,dict) and value.get('kind')=='supplemental_context_retired':
                     host.handle_supplemental_retirement(value)
-                else: await host.handle(value)
+                else: await host.handle(value,received_ns=received_ns)
             if output_task.done(): await output_task
         await host.drain()
         await host.assistant.drain()
@@ -593,8 +638,16 @@ async def run_stdio(args,*,oauth_stream=None):
         return 2
     finally:
         host.close();profile.close();output_task.cancel()
-        await asyncio.gather(output_task,return_exceptions=True)
-        writer.close()
+        try:
+            # Keep the actual answer/probe owner until cancellation finishes;
+            # a retained HTTP client may not outlive this helper/account owner.
+            await host.drain()
+            await host.assistant.drain()
+            if visual_transport is not None:
+                await visual_transport.aclose()
+        finally:
+            await asyncio.gather(output_task,return_exceptions=True)
+            writer.close()
     return 0
 
 

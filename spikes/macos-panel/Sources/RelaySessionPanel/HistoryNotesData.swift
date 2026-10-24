@@ -182,9 +182,9 @@ public enum HistoryNotesData {
 
 /// Narrow local adaptation of reviewed StrictJSON at History8ea. Shared wire
 /// limits stay unchanged. Notes alone admits 2MiB/1024 rows, depth8/8192 values.
-private enum HistoryNotesJSON {
+enum HistoryNotesJSON {
     static func decode(_ data:Data,limit:Int)throws->JSONNode{
-        guard !data.isEmpty,data.count<=limit,String(data:data,encoding:.utf8) != nil else{throw HistoryError.invalid}
+        guard (1...HistoryNotesData.sourceBytes).contains(limit),!data.isEmpty,data.count<=limit,String(data:data,encoding:.utf8) != nil else{throw HistoryError.invalid}
         var parser=Parser(bytes:Array(data));let value=try parser.value(1);parser.space()
         guard parser.index==parser.bytes.count else{throw HistoryError.invalid};return value
     }

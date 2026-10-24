@@ -15,8 +15,6 @@ public struct AccountSettingsView: View {
             HStack(spacing: 12) {
                 Button("Continue with ChatGPT") { Task { await controller.connect() } }
                     .buttonStyle(.borderedProminent).disabled(!controller.canMutate)
-                Button("Restore saved connection") { Task { await controller.restore() } }
-                    .disabled(!controller.canMutate)
                 if controller.canCancel { Button("Cancel") { Task { await controller.cancel() } } }
                 if controller.busy { ProgressView().controlSize(.small) }
             }
@@ -29,7 +27,6 @@ public struct AccountSettingsView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(registration.label).fontWeight(.medium)
                             if let email = registration.email { Text(email).font(.callout).foregroundStyle(.secondary) }
-                            Text("Identity checked at sign-in. This label identifies a saved registration.").font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
                         if registration.id != snapshot.activeRegistrationID {
@@ -50,12 +47,18 @@ public struct AccountSettingsView: View {
                     HStack {
                         if let selection = controller.inferenceSelection {
                             Text("Automatic model: \(snapshot.models.first(where: { $0.slug == selection.model })?.displayName ?? selection.model)").font(.callout)
-                        } else { Text("A current model check is required before AI can run.").font(.callout).foregroundStyle(.secondary) }
+                        } else { Text("Your saved connection is checked when you start.").font(.callout).foregroundStyle(.secondary) }
                         Spacer()
-                        Button("Refresh models") { Task { await controller.refreshModels() } }.disabled(!controller.canMutate)
                         Button("Sign out") { Task { await controller.signOut(registration.id) } }.disabled(!controller.canMutate)
                     }
                 }
+            }
+            DisclosureGroup("Connection recovery") {
+                HStack {
+                    Button("Restore saved connection") { Task { await controller.restore() } }.disabled(!controller.canMutate)
+                    Button("Refresh models") { Task { await controller.refreshModels() } }
+                        .disabled(!controller.canMutate || controller.snapshot?.activeRegistrationID == nil)
+                }.padding(.top, 8)
             }
             Link("Manage usage", destination: URL(string: "https://chatgpt.com/settings/usage")!)
             Text("Your Personal Brain and its approval settings remain separate. Connecting does not import your ChatGPT conversations.")

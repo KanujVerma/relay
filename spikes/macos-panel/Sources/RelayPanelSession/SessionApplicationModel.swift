@@ -10,6 +10,7 @@ import RelayProfile
 import RelayScreenContext
 import RelayControls
 import RelayContextComposition
+import RelayAccount
 
 private enum ApplicationIngress:Sendable {
     case session(SessionIngress)
@@ -66,9 +67,18 @@ private actor FixtureRecognizer: ActivityRecognizer {
     let id=UUID()
     var retired=false
     var helper:HelperTransport?
+    private var requests=0
+    private var requestWaiters:[CheckedContinuation<Void,Never>]=[]
+    func beginRequest()throws{guard !retired,requests<32 else{throw PanelBridgeError.closed};requests+=1}
+    func finishRequest(){requests-=1;if requests==0{let ready=requestWaiters;requestWaiters=[];ready.forEach{$0.resume()}}}
+    func waitForRequests()async{
+        guard requests>0 else{return}
+        await withCheckedContinuation{requestWaiters.append($0)}
+    }
     func shutdown() async {
         retired=true
         await helper?.shutdownAndWait()
+        await waitForRequests()
     }
 }
 @MainActor private final class FixtureContextPreferences:SessionContextUsePreferences {
@@ -107,6 +117,86 @@ private actor FixtureRecognizer: ActivityRecognizer {
     private let contextPreferencesOverride:(any SessionContextUsePreferences)?
     private let profileVaultFactory:(@MainActor ()->ProfileVault)?
     private let profileResponseObserved:(@MainActor (Data) async ->Void)?
+    private let accountPortsOverride:AccountApplicationPorts?
+    private let accountPreferences:any ChatGPTPlanPreferences
+    private var accountStorageController:AccountController?
+    private var accountObservation:AnyCancellable?
+    private var accountPreparationStorage:AccountPreparationController?
+    private var accountPreparationObservation:AnyCancellable?
+    private var accountStartIntent:UUID?
+    private var accountStartCancellation:Task<Void,Never>?
+    private var accountHelperRetiring=false
+    var accountPreparationActive:Bool{accountPreparationStorage?.isPreparing == true}
+    var accountPreparationCancelling:Bool{accountPreparationStorage?.isCancelling == true || accountStartCancellation != nil}
+    private var accountMutationOwned:Bool{accountHelperRetiring || accountStorageController?.busy == true || accountPreparationActive || accountPreparationCancelling}
+    var account:AccountController {
+        if let accountStorageController{return accountStorageController}
+        let directory=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("Relay",isDirectory:true)
+        let storage=accountPortsOverride?.storage ?? AccountStorage(sharedDirectory:directory)
+        let value=AccountController(storage:storage,portFactory:{[weak self] bootstrap in
+            guard let self else{throw PanelBridgeError.closed}
+            let runtime=try self.helperRuntime.get()
+            if let ports=self.accountPortsOverride{return try ports.control(runtime,bootstrap)}
+            return PipeAccountPort(python:runtime.executable,repository:runtime.resourceRoot,bootstrap:bootstrap,pythonArguments:runtime.arguments)
+        },retireInference:{[weak self] in
+            guard let self else{throw PanelBridgeError.closed}
+            try await self.retireSessionHelperForAccountChange()
+        },openBrowser:{[weak self] url in
+            guard let self else{return false}
+            return self.accountPortsOverride?.openBrowser(url) ?? NSWorkspace.shared.open(url)
+        },aiEnabled:oauth,persistAIEnabled:{[weak self] enabled in
+            self?.accountPreferences.enabled=enabled;self?.oauth=enabled
+        },isIdle:{[weak self] in self?.accountMutationIdle == true})
+        accountStorageController=value
+        accountObservation=value.objectWillChange.sink{[weak self] _ in self?.objectWillChange.send()}
+        return value
+    }
+    private var accountPreparation:AccountPreparationController {
+        if let accountPreparationStorage{return accountPreparationStorage}
+        let value=AccountPreparationController(account:account);accountPreparationStorage=value
+        accountPreparationObservation=value.objectWillChange.sink{[weak self] _ in self?.objectWillChange.send()}
+        return value
+    }
+    private var accountMutationIdle:Bool {
+        guard !fixture || accountPortsOverride != nil,case .success=helperRuntime else{return false}
+        return !running && !stopping && !accountHelperRetiring && teardown==nil
+            && (!starting || accountPreparationActive) && !speechSetup.snapshot.isBusy && !visual.isBusy
+            && profileStorage?.busy != true && !(hasContextUse && contextUse.isBusy)
+            && (fixture || capture.phase == .idle) && (accountPreparationStorage?.hasCurrentCaller ?? true)
+    }
+    func prepareAccountForExplicitAction(intentID:UUID,isCurrent:@escaping @MainActor ()->Bool)async throws {
+        try Task.checkCancellation();guard isCurrent() else{throw CancellationError()}
+        guard oauth else{return}
+        try await accountPreparation.prepare(intentID:intentID,isCurrent:isCurrent)
+        try Task.checkCancellation();guard isCurrent(),let selection=account.inferenceSelection,account.owns(selection) else{throw CancellationError()}
+    }
+    func cancelAccountPreparation(intentID:UUID)async{await accountPreparationStorage?.cancel(intentID:intentID)}
+    private func denyAccountStart(){
+        accountStartIntent=nil
+        guard let preparation=accountPreparationStorage,let intent=preparation.intentID,accountStartCancellation==nil else{return}
+        accountStartCancellation=Task{[weak self] in
+            await preparation.cancel(intentID:intent)
+            self?.accountStartCancellation=nil;self?.objectWillChange.send()
+        }
+    }
+    /// Only OLD helper/provider ownership is retired. The explicit Start/Send
+    /// preparer has not issued its new native scope and must not await itself.
+    func retireSessionHelperForAccountChange()async throws {
+        guard !running,!stopping,teardown==nil,(fixture || capture.phase == .idle) else{throw PanelBridgeError.closed}
+        accountHelperRetiring=true;defer{accountHelperRetiring=false}
+        let old=helper,oldProfile=profileStorage,oldBinding=profileBinding
+        old?.stop() // Admission fence precedes callbacks/held EOU release.
+        helper=nil;helperIdentity=UUID();helperFailures.activate(helperIdentity)
+        oldBinding?.retired=true;profileBinding=nil;profileStorage=nil
+        authority.stop();forwarder?.retire();forwarder=nil
+        retireOptionalWork(notifyHelper:false);forwardedSessionID=nil
+        visual.retireForHelperChange();assistant.transcript.end();assistant.refresh()
+        if hasContextUse{contextUse.retireForHelperChange()}
+        if let oldProfile,oldProfile.opened || oldProfile.busy{await oldProfile.close()}
+        if hasContextUse{await contextUse.waitForQuiescence()}
+        await old?.shutdownAndWait();await oldBinding?.shutdown()
+        panel.clear(status:"ChatGPT connection updated")
+    }
     private var hasContextUse=false
     private var contextUseObservation:AnyCancellable?
     lazy var contextUse:SessionContextUseCoordinator = {
@@ -218,18 +308,19 @@ private actor FixtureRecognizer: ActivityRecognizer {
         })
     }
     func openMyContext(){
-        guard !stopping,(!fixture || (contextPreferencesOverride != nil && profileVaultFactory != nil)),let target=profileTarget() else{return}
+        guard !stopping,!accountMutationOwned,(!fixture || (contextPreferencesOverride != nil && profileVaultFactory != nil)),let target=profileTarget() else{return}
         contextUse.openFromUserAction(target:target)
     }
     func lockMyContext(){
-        guard let target=profileTarget() else{return}
+        guard !accountMutationOwned,let target=profileTarget() else{return}
         contextUse.lockFromUserAction(target:target)
     }
     private func profileRequest(_ data:Data,binding:SharedProfileBinding) async throws -> Data {
         guard !binding.retired,profileBinding === binding else { throw PanelBridgeError.closed }
+        try binding.beginRequest();defer{binding.finishRequest()}
         let transport:HelperTransport
         if let bound=binding.helper { transport=bound }
-        else { transport=try ensureHelper();binding.helper=transport }
+        else { transport=try ensureHelper(referenceOnly:true);binding.helper=transport }
         let response=try await transport.requestProfile(data)
         if let profileResponseObserved{await profileResponseObserved(data)}
         guard !binding.retired,profileBinding === binding,binding.helper === transport,helper === transport else{throw PanelBridgeError.closed}
@@ -261,17 +352,24 @@ private actor FixtureRecognizer: ActivityRecognizer {
          contextPreferences:(any SessionContextUsePreferences)?=nil,
          profileVaultFactory:(@MainActor ()->ProfileVault)?=nil,
          profileResponseObserved:(@MainActor (Data) async ->Void)?=nil,
+         accountPorts:AccountApplicationPorts?=nil,
          bundleURL:URL=Bundle.main.bundleURL,
          workingDirectory:URL=URL(fileURLWithPath:FileManager.default.currentDirectoryPath)) {
         self.speechSetup=speechSetup ?? SpeechSetupCoordinator()
         contextPreferencesOverride=contextPreferences;self.profileVaultFactory=profileVaultFactory
         self.profileResponseObserved=profileResponseObserved
+        accountPortsOverride=accountPorts
         self.contextCoordinatorOverride=contextCoordinator
         self.contextWriteAcknowledged=contextWriteAcknowledged;self.ingressEnqueued=ingressEnqueued
         fixture=arguments.contains("--fixture-suite")
         fixtureSuite=Self.argument("--fixture-suite",arguments) ?? "reviewed"
         role=Self.argument("--role",arguments) ?? (fixture ? "analytics":"developer")
-        oauth=arguments.contains("--oauth") && !fixture
+        let preferences:any ChatGPTPlanPreferences
+        if let accountPorts{preferences=accountPorts.preferences}
+        else if fixture{preferences=FixtureChatGPTPlanPreferences()}
+        else{preferences=UserDefaultsChatGPTPlanPreferences()}
+        accountPreferences=preferences
+        oauth=(!fixture || accountPorts != nil) && (arguments.contains("--oauth") || preferences.enabled)
         do {
             let location=try HelperRuntimeResolver.resolve(bundleURL:bundleURL,arguments:arguments,workingDirectory:workingDirectory)
             helperRuntime = .success(location);root=location.resourceRoot
@@ -303,15 +401,24 @@ private actor FixtureRecognizer: ActivityRecognizer {
         if let helper { helper.stop();Task.detached { await helper.shutdownAndWait() } }
     }
     private static func argument(_ key:String,_ args:[String]) -> String? { guard let i=args.firstIndex(of:key),args.indices.contains(i+1) else { return nil };return args[i+1] }
-    func ensureHelper() throws -> HelperTransport {
-        guard !stopping,profileBinding?.retired != true else { throw PanelBridgeError.closed }
+    func ensureHelper(referenceOnly:Bool=false) throws -> HelperTransport {
+        guard !stopping,!accountHelperRetiring,accountStorageController?.busy != true,profileBinding?.retired != true else { throw PanelBridgeError.closed }
         if let helper { return helper }
         let runtime=try helperRuntime.get()
         visual.retireForHelperChange()
         let identity=UUID();helperIdentity=identity;helperFailures.activate(identity)
         let nativeAuthority=authority;let failures=helperFailures;let delivery=answers
         let sourceController=fixture ? native:capture.controller
-        let helper=HelperTransport(root:runtime.resourceRoot,python:runtime.executable,pythonArguments:runtime.arguments,mode:fixture ? .fixture:oauth ? .oauth:.noInference,role:role,onFrame:{ [weak self] data in
+        let mode:HelperMode;let bootstrap:AccountSecretBootstrap?;let model:String?
+        if oauth,let selected=accountStorageController?.inferenceSelection,accountStorageController?.owns(selected)==true,
+           let packet=try accountStorageController?.sessionBootstrap(){mode = .protectedOAuth;bootstrap=packet;model=selected.model}
+        else{
+            guard !oauth || referenceOnly else{throw AccountError.unavailable}
+            mode = fixture ? .fixture:.noInference;bootstrap=nil;model=nil
+        }
+        let arguments=accountPortsOverride?.sessionArguments(runtime,mode) ?? runtime.arguments
+        let helper=HelperTransport(root:runtime.resourceRoot,python:runtime.executable,pythonArguments:arguments,mode:mode,
+            accountBootstrap:bootstrap,model:model,role:role,onFrame:{ [weak self] data in
             try delivery.enqueue(data,byteCount:data.count) { [weak self] data in
                 guard let self,self.helperIdentity==identity else { return }
                 do { try self.acceptFrame(data) } catch { self.failSession() }
@@ -527,15 +634,16 @@ private actor FixtureRecognizer: ActivityRecognizer {
         if authority.snapshot()==binding.lease { authority.invalidate() }
         retireRequest(status:"Context changed. Ask again.")
     }
-    private func retireOptionalWork() {
-        let notified = !hasContextComposer || contextComposer.binding.map(enqueueContextRetirement) != false
+    private func retireOptionalWork(notifyHelper:Bool=true) {
+        let notified = !notifyHelper || !hasContextComposer || contextComposer.binding.map(enqueueContextRetirement) != false
         currentBinding=nil;acceptedQuestion=nil;terminalObserved=true;taskContextUsed=false;imageContextUsed=false;manualRequestToShow=nil
         publication.retire();if hasContextComposer { contextComposer.retire() };if hasSelectedText { selectedText.invalidate() }
-        if notified{forwarder?.cancelOptionalWork()}else{forwarder?.retire()}
+        if notifyHelper && notified{forwarder?.cancelOptionalWork()}else{forwarder?.retire()}
         assistant.refresh()
     }
     private func retireRequest(status:String) { retireOptionalWork();panel.clear(status:status) }
     func contextSourceChanged() {
+        guard !accountHelperRetiring else{return}
         guard hasContextComposer,let old=contextComposer.binding else { return }
         let used=taskContextUsed && currentBinding==old
         let notified=enqueueContextRetirement(old)
@@ -547,6 +655,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     /// The original staged identity must reach the same bounded writer before
     /// a cancellation callback can release its held EOU. No native restamping.
     @discardableResult private func enqueueContextRetirement(_ old:PanelRequestBinding)->Bool {
+        guard !accountHelperRetiring else{return false} // Old helper is already fenced, and will be reaped before any mutation.
         if let previous=lastContextRetirement,previous.0==old{return previous.1}
         let frame:WireValue = .object(["schemaVersion":.uint(1),"kind":.string("supplemental_context_retired"),"captureSessionID":.string(old.lease.captureSessionID.uuidString.lowercased()),"sessionEpoch":.uint(old.lease.sessionEpoch),"presentationGeneration":.uint(old.lease.presentationGeneration),"requestID":.string(old.requestID.uuidString.lowercased()),"reasonCode":.string("context_changed")])
         do {
@@ -563,13 +672,35 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     func start() async {
         guard canStartSession else { return }
+        if oauth {
+            if !fixture {
+                guard authorizedConversation else{error="Confirm this is a permitted conversation before starting.";return}
+                guard microphoneEnabled || !selectedBundleID.isEmpty else{error="Choose microphone audio or a meeting app before starting.";return}
+            }
+            let intent=UUID(),microphone=microphoneEnabled,bundle=selectedBundleID,authorized=authorizedConversation
+            accountStartIntent=intent
+            do{
+                try await prepareAccountForExplicitAction(intentID:intent,isCurrent:{[weak self] in
+                    guard let self else{return false}
+                    return self.accountStartIntent==intent && self.microphoneEnabled==microphone && self.selectedBundleID==bundle
+                        && self.authorizedConversation==authorized && !self.running
+                })
+                try Task.checkCancellation()
+                guard accountStartIntent==intent else{throw CancellationError()}
+            }catch{
+                if accountStartIntent==intent{accountStartIntent=nil;if !(error is CancellationError){self.error=account.message}}
+                return
+            }
+            accountStartIntent=nil
+            guard canStartSession else{return}
+        }
         starting=true;let identity=UUID();startIdentity=identity
         let task=Task { await self.startOwned(identity:identity) };startTask=task
         await task.value
         if startIdentity==identity { startTask=nil }
     }
     func cancelPreparation(){
-        guard starting || speechSetup.snapshot.isBusy else{return}
+        guard starting || speechSetup.snapshot.isBusy || accountPreparationActive else{return}
         beginRetirement(end:false)
         paused=false;panel.clear(status:"Preparation cancelled")
     }
@@ -669,10 +800,11 @@ private actor FixtureRecognizer: ActivityRecognizer {
     var currentSessionID:UUID? { authority.snapshot()?.captureSessionID ?? forwardedSessionID }
     var canStartSession:Bool {
         guard case .success=helperRuntime else{return false}
-        return !running && !starting && !stopping && teardown==nil && !speechSetup.snapshot.isBusy && !visual.isBusy && visual.status != .busy && profileStorage?.busy != true && !(hasContextUse && contextUse.isBusy) && (fixture || capture.phase == .idle)
+        return !running && !starting && !stopping && !accountMutationOwned && teardown==nil && !speechSetup.snapshot.isBusy && !visual.isBusy && visual.status != .busy && profileStorage?.busy != true && !(hasContextUse && contextUse.isBusy) && (fixture || capture.phase == .idle)
     }
     var canResume:Bool { paused && canStartSession }
     func beginRetirement(end:Bool) {
+        denyAccountStart()
         endRequested = endRequested || end
         if end { paused=false }
         startIdentity=UUID();speechSetup.cancel()
@@ -721,7 +853,8 @@ private actor FixtureRecognizer: ActivityRecognizer {
             self.startTask=nil;self.starting=false;self.stopping=false;self.teardown=nil
         }
     }
-    func stop() async { beginRetirement(end:true);await teardown?.value }
+    func stop() async { beginRetirement(end:true);await teardown?.value;await accountStartCancellation?.value }
+    func shutdown()async{await stop();await accountStorageController?.close()}
     func failSession() {
         // Keep the same actual owner join/reap barrier as End. A failed source
         // or transport cannot be replaced merely because its output is hidden.
@@ -788,20 +921,11 @@ private actor FixtureRecognizer: ActivityRecognizer {
         if imageContextUsed,let binding=currentBinding{retireDependentRequest(binding)}
         else{forwarder?.cancelOptionalWork()}
     }
-    var canChangeAIMode:Bool { !fixture && canStartSession && profileStorage?.busy != true }
+    var canChangeAIMode:Bool { (!fixture || accountPortsOverride != nil) && canStartSession && profileStorage?.busy != true }
     func setAIEnabled(_ enabled:Bool) async {
         guard canChangeAIMode,enabled != oauth else { return }
-        error=nil
-        let oldProfile=profileStorage
-        let neededProfileLock=oldProfile?.opened==true || oldProfile?.busy==true
-        await stop()
-        guard !stopping,helper==nil else { return }
-        if let oldProfile,neededProfileLock,oldProfile.closeOutcome != .locked {
-            error="Background could not be locked. Its helper was stopped; reopen saved background before trying again."
-            return
-        }
-        oauth=enabled
-        contextStatus="AI mode changed."
+        error=nil;await account.setAIEnabled(enabled)
+        contextStatus=oauth ? "Using ChatGPT plan":"AI is off. Local reference cards remain available."
     }
     func performWindowAction(_ action:ControlAction) {
         do { try windowActions.perform(action) } catch { self.error=error.localizedDescription }

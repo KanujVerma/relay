@@ -152,4 +152,82 @@ private actor SyntheticAccountPort: AccountPort {
         XCTAssertNil(controller.inferenceSelection); XCTAssertEqual(controller.status, .error)
         await controller.close()
     }
+
+    func testExplicitReadinessIsInertWithAIOffAndCoalescesOnlyTheOriginalCurrentCaller() async throws {
+        let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
+        let keys = ControllerKeys(), gate = Gate(); var factories = 0, current = true
+        var readiness: AccountPreparationController?
+        let controller = AccountController(storage: AccountStorage(sharedDirectory: directory.appendingPathComponent("Relay"), keys: keys),
+            portFactory: { _ in factories += 1; return SyntheticAccountPort() }, retireInference: { await gate.wait() }, openBrowser: { _ in false },
+            aiEnabled: true, isIdle: { readiness?.hasCurrentCaller ?? true })
+        let prepared = AccountPreparationController(account: controller); readiness = prepared
+        XCTAssertFalse(prepared.isPreparing); XCTAssertEqual(keys.count, 0)
+        let identity = UUID()
+        let first = Task { try await prepared.prepare(intentID: identity, isCurrent: { current }) }
+        try await entered(gate)
+        let duplicate = Task { try await prepared.prepare(intentID: identity, isCurrent: { true }) }
+        await Task.yield(); current = false; await gate.release()
+        for task in [first, duplicate] {
+            do { try await task.value; XCTFail("A different duplicate callback replaced the original caller") } catch { }
+        }
+        XCTAssertEqual(keys.count, 0); XCTAssertEqual(factories, 0); XCTAssertFalse(prepared.isPreparing)
+        let off = AccountController(storage: AccountStorage(sharedDirectory: directory.appendingPathComponent("OtherRelay"), keys: keys),
+            portFactory: { _ in factories += 1; return SyntheticAccountPort() }, retireInference: { XCTFail("AI-off action retired a helper") }, openBrowser: { _ in false })
+        try await AccountPreparationController(account: off).prepare(intentID: UUID(), isCurrent: { true })
+        XCTAssertEqual(keys.count, 0); XCTAssertEqual(factories, 0)
+    }
+
+    func testExplicitReadinessCancelJoinsItsActualAccountTaskAndWrongIntentCannotRetireIt() async throws {
+        let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
+        let gate = Gate(), keys = ControllerKeys(); var finished = false, factories = 0
+        let controller = AccountController(storage: AccountStorage(sharedDirectory: directory.appendingPathComponent("Relay"), keys: keys),
+            portFactory: { _ in factories += 1; return SyntheticAccountPort() }, retireInference: { await gate.wait() }, openBrowser: { _ in false }, aiEnabled: true)
+        let preparation = AccountPreparationController(account: controller), identity = UUID()
+        let owner = Task { try await preparation.prepare(intentID: identity, isCurrent: { true }) }; try await entered(gate)
+        await preparation.cancel(intentID: UUID()); XCTAssertTrue(preparation.isPreparing); XCTAssertFalse(preparation.isCancelling)
+        let cancellation = Task { await preparation.cancel(intentID: identity); finished = true }
+        try await Task.sleep(for: .milliseconds(10)); XCTAssertFalse(finished); XCTAssertTrue(preparation.isCancelling)
+        await gate.release(); await cancellation.value
+        do { try await owner.value; XCTFail("Cancelled explicit action was marked ready") } catch { }
+        XCTAssertEqual(factories, 0); XCTAssertEqual(keys.count, 0); XCTAssertFalse(preparation.isPreparing)
+    }
+    func testExplicitReadinessSuccessfulCoalescedWaitersObserveOneActualRestore() async throws {
+        let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
+        let gate = Gate(), port = SyntheticAccountPort(); var factories = 0
+        let controller = AccountController(storage: AccountStorage(sharedDirectory: directory.appendingPathComponent("Relay"), keys: ControllerKeys()),
+            portFactory: { _ in factories += 1; return port }, retireInference: { await gate.wait() }, openBrowser: { _ in false }, aiEnabled: true)
+        let preparation = AccountPreparationController(account: controller), identity = UUID()
+        let first = Task { try await preparation.prepare(intentID: identity, isCurrent: { true }) }; try await entered(gate)
+        let duplicate = Task { try await preparation.prepare(intentID: identity, isCurrent: { true }) }
+        await Task.yield()
+        do { try await preparation.prepare(intentID: UUID(), isCurrent: { true }); XCTFail("Competing action bypassed the owned preparation") } catch { }
+        await gate.release(); try await first.value; try await duplicate.value
+        XCTAssertEqual(factories, 1); XCTAssertFalse(preparation.isPreparing)
+        let actions = await port.actions; XCTAssertEqual(actions, [.status, .select])
+        await controller.close()
+    }
+    func testSwiftCallerCancellationWaitsOwnedReadinessAndCannotReturnReady() async throws {
+        let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
+        let gate = Gate(), keys = ControllerKeys(); var factories = 0, callerFinished = false
+        let controller = AccountController(storage: AccountStorage(sharedDirectory: directory.appendingPathComponent("Relay"), keys: keys),
+            portFactory: { _ in factories += 1; return SyntheticAccountPort() }, retireInference: { await gate.wait() }, openBrowser: { _ in false }, aiEnabled: true)
+        let preparation = AccountPreparationController(account: controller)
+        let caller = Task { try await preparation.prepare(intentID: UUID(), isCurrent: { true }) }
+        try await entered(gate); caller.cancel()
+        let waiter = Task { _ = await caller.result; callerFinished = true }
+        try await Task.sleep(for: .milliseconds(10)); XCTAssertFalse(callerFinished); XCTAssertTrue(preparation.isPreparing)
+        await gate.release(); await waiter.value
+        do { try await caller.value; XCTFail("Cancelled Swift caller returned readiness") } catch { }
+        XCTAssertFalse(preparation.isPreparing); XCTAssertEqual(keys.count, 0); XCTAssertEqual(factories, 0)
+    }
+    func testAlreadyCancelledExplicitCallerCannotPassEvenTheInertAIOffPath() async throws {
+        let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
+        let keys = ControllerKeys(); var factories = 0
+        let account = AccountController(storage: AccountStorage(sharedDirectory: directory.appendingPathComponent("Relay"), keys: keys),
+            portFactory: { _ in factories += 1; return SyntheticAccountPort() }, retireInference: { XCTFail("Inert action retired a helper") }, openBrowser: { _ in false })
+        let preparation = AccountPreparationController(account: account)
+        let caller = Task { try await preparation.prepare(intentID: UUID(), isCurrent: { true }) }; caller.cancel()
+        do { try await caller.value; XCTFail("Already-cancelled caller passed readiness") } catch { }
+        XCTAssertEqual(keys.count, 0); XCTAssertEqual(factories, 0)
+    }
 }

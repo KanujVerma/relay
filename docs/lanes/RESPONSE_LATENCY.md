@@ -255,8 +255,8 @@ offers. Post-await checks prevent history access after cancellation. A stored
 strong source predicate would form a source/processor/lane cycle; a weak capture
 and the release invariant prevent that ownership leak. Accepted-input counts
 do not claim completed encoder computation: the backend can still buffer a
-window. Actual paced-model text/cutoff/RSS and full app/account results remain
-separate pending gates. Fresh budget was 23.332 GiB temporary / 47.685 GiB free /
+window. Actual paced-model text/cutoff/RSS and full app/account results were still
+separate pending gates at that checkpoint. Fresh budget was 23.332 GiB temporary / 47.685 GiB free /
 0.75 GiB reserve; same bounded cache/jobs/deadline, lease released.
 
 The controlled paced comparison harness now **compiles and safely opts out**:
@@ -272,13 +272,34 @@ native warm-up and two paced trials. It discloses 8,000 leading / 32,000 trailin
 zeros plus last-packet padding and actual paced count, identical across modes.
 Full recognized text/cutoffs and treatment identities must match; baseline has
 one legacy call and zero prefix acknowledgements. Counts are input acceptance,
-not completed encoder work. Timing and RSS results are still unknown; normal
+not completed encoder work. At the opt-out checkpoint timing/RSS were unknown; normal
 activation requires the real gate (>10% median native-end→final reduction,
 no normal-rate local fallback, <=256 MiB peak-RSS increase) and root review.
 Fresh opt-out budget: 23.360 GiB temporary / 46.879 GiB free / 0.75 GiB reserve;
 same cache/jobs/180 s deadline, lease released. No actual account/window claim.
 
-No real account, Keychain, private source, audio/screen capture, model inference,
+## Measured paced local ASR result
+
+The one reviewed exact-667 actual model run passed: **one case / zero skips /
+41.097 s**, driver exit 0 / 75.360 s, with both owned sequential children joined.
+[Canonical sanitized data and full limits](../evidence/2026-10-24-asr-prefix-benchmark.md)
+preserve all four source observations per mode. Native VAD-closure→ASR-final
+median is **135.629→40.602 ms**, a **95.027 ms (70.1%)** reduction. Exact words
+and [6,592,46,656) source cutoffs match in both sources/trials. Prefix input
+acknowledged before closure is 35,840/40,064 samples, leaving 4,224. No local
+fallback or source loss. Process max RSS is 723,107,840→701,988,864 bytes.
+
+The unchanged approved WAVE decoded to 38,912 samples (2.432 s); both modes
+provided 79,360 paced samples/source including the disclosed identical silence
+and 448 final-packet zeros. All 21 existing cache hashes remained valid. Fresh
+budget: 23.356 GiB temporary / 46.860 GiB free / 0.75 GiB reserve. No download,
+account, real driver/capture, app/window or usefulness measurement occurred.
+The factory is still closedSpan. Root independently read the measured receipt
+and approved only a next narrow actual-factory selection change/test; no real
+gate rerun or automatic activation occurred. Cloud-model latency remains the
+dominant separate end-to-end gate and 95 ms is not whole-app latency.
+
+No real account, Keychain, private source, audio/screen capture, cloud inference,
 download or full-app latency result is claimed. Product goals from speech-end
 remain first visible text under 1 s median, useful advice by 2 s median, and a
 compact complete answer around 3–4 s median; these are unachieved targets.

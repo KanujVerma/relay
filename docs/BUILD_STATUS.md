@@ -1,12 +1,12 @@
 # Relay build status
 
-Current production **15d6f6d**, protected account + standalone idle Ask + terminalUI correction, byte-identical runtime/tests/packaging/workflows to accepted300c9d3. Draft [PR71](https://github.com/KanujVerma/relay/pull/71), main unmergedeb28d15. [HANDOFF](../HANDOFF.md) owns exact continuation.
+Current production **e3f3d3**, first-launch Connect→AI Settings navigation160 on accepted protected account/idle15d6f6d. Core15d runtime/tests/packaging/workflows match accepted300c; new source/navigation root19focused cases pass1.201s. Draft [PR71](https://github.com/KanujVerma/relay/pull/71), main unmergedeb28d15. [HANDOFF](../HANDOFF.md) owns exact continuation.
 
 Joined Home/live/Settings/My Context, automatic local speech, typed questions/follow-ups/Help/Stop, screen/text/optional-image context, confirmed résumé/personal memory and remembered protected ChatGPT-plan account restore. No normal ASR/VAD picker or API-key fallback. Root independent715Python collected/683pass/32optional skips;188panel/app/state collected/181pass/7opt-in skips pass. Eleven actual synthetic account/mixed/image cases exercise original owner/provider/native-flight cleanup and protected one-call use. [Combined review](evidence/reviews-2026-10-23/review-account-idle-300c9d3.md).
 
 Clean300c self-contained release app/full relocation172,209,857bytes passes independent100native audits/strict signatures,6protocol+7native bundled cases. Source matchescanonical15d6f6d. Earlier3e83 actual normal window shows correct terminal copy and End/Home. [UI evidence](evidence/2026-10-23-idle-ui/README.md). Screenshots predate account join. Earlier5575 résumé retains22distinct packaged cases. Hostedfc062 all3workflows and separateaccount2047 bothworkflows GREEN; current combined head results are separate.
 
-History/manual notes are building end to end, primitive194 independently accepted; ledger269 under review. Response preferences5e095 approved for full implementation, General automatic. Full Cluely parity is unfinished. Real account/Keychain/capture, usefulness/latency, generated notes and distribution remain separate. No private material or paid inference was used.
+History/manual notes appfcd+warm-validationbc66 is under review; root269 timing mismatch correction772 needs unchanged replay, cross-process file-owner lease approved/in progress. Primitive194 is independently accepted. Native preferences350/helper526 under review, actual app composition continues; General automatic. Full Cluely parity is unfinished. Real account/Keychain/capture, usefulness/latency, generated notes and distribution remain separate. No private material or paid inference was used.
 
 ## Historical and preceding checkpoints
 

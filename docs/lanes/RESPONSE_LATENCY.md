@@ -299,6 +299,26 @@ and approved only a next narrow actual-factory selection change/test; no real
 gate rerun or automatic activation occurred. Cloud-model latency remains the
 dominant separate end-to-end gate and 95 ms is not whole-app latency.
 
+## Normal local-source selection
+
+Root independently accepted the measured source/receipt and approved narrow
+normal-factory activation. `NativeCaptureSession` now uses one small shared
+assembly helper selecting `safePrefixes` after its existing actual local VAD/ASR
+preparation. Generic/injected `SourceComponents` still defaults to `closedSpan`;
+there is no new user-facing model/detector setting, permission, download or
+provider policy. The original composition test reached API red in 33.035 s,
+then passed by driving the exact production assembly, native controller and real
+ASR adapter/fake backend before closure, with one final afterward.
+
+Full activation verification: **87 collected, 84 passed, three explicit skips**
+for download, actual model smoke and controlled benchmark. Native has 47 passes
+in 1.185 s; capture 37/40 passes in 0.435 s. Driver exit 0 / 8.154 s, all model
+opt-ins zero. Fresh budget 23.377 GiB temporary / 45.561 GiB free / 0.75 GiB
+reserve; reused bounded cache/jobs/deadline, lease released. This verifies the
+composition selection and original controls, not another real model run or
+hardware/account/window acceptance. Broader actual speech and the unchanged
+actual Model/account fixtures remain active final gates.
+
 No real account, Keychain, private source, audio/screen capture, cloud inference,
 download or full-app latency result is claimed. Product goals from speech-end
 remain first visible text under 1 s median, useful advice by 2 s median, and a

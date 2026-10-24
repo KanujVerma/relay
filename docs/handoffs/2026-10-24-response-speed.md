@@ -1,8 +1,9 @@
 # Response speed continuation
 
 2026-10-24, Relay, branch `feature/response-latency-2026-10-24`.
-Verified measured source: `667298504d2dbb78e0ed3033b43ed61bf3c916f0`.
-Verify live Git before continuation; this record accompanies its evidence commit.
+Verified published base: `0e9d440ae3863b168e30032216e752885f6c1005`;
+measured source is exact `6672985`. This record accompanies the verified narrow
+factory activation checkpoint following that base; verify live Git.
 
 ## GOAL
 
@@ -57,6 +58,10 @@ answer denial and actual cleanup. Product timing targets remain unachieved.
   match both sources/trials, no local fallback. Peak RSS 723107840→701988864 bytes.
   Receipt: `asr-prefix-benchmark-actual-667.log`. Root independently read it and
   source-reviewed the pipeline before approving narrow factory activation next.
+- Actual normal assembly selection reached API-red 33.035 s, then full package
+  green 87 collected / 84 passed / three explicit model/download/benchmark skips;
+  native 47 passes / 1.185 s, capture 37/40 passes / 0.435 s, 8.154 s command.
+  Receipt: `asr-prefix-production-activation-green.log`. No actual-model rerun.
 
 ## IN PROGRESS
 
@@ -65,10 +70,10 @@ Approved [design](../superpowers/specs/2026-10-24-lagged-asr-preprocessing-desig
 Tasks 1–3 are verified foundations. SourcePipeline has a conditional path;
 SourceComponents defaults to closedSpan and normal factory remains unchanged.
 Task 4 real paced public-WAVE comparison/RSS is prepared and root source-reviewed.
-The benchmark has passed once on unchanged actual local public inputs. Root
-approved next narrow actual normal-factory selection, preserving injected
-SourceComponents.closedSpan defaults, with an actual composition-selection
-check and broader/actual speech regression at final acceptance. Not activated yet.
+The benchmark passed once on unchanged actual local public inputs. The approved
+narrow normal assembly now selects safePrefixes, preserving injected generic
+closedSpan defaults, and its real composition behavior check passes without model
+load/download. Broader actual speech and actual Model/account gates remain.
 
 ## AT RISK
 
@@ -76,8 +81,8 @@ The actual Model four-case fixture remains uncommitted in
 `spikes/macos-panel/Tests/RelaySessionApplicationTests/ResponseLatencyApplicationTests.swift`
 and intentionally cannot compile until the shared observation seam joins.
 The actual ASR result is recorded in the sanitized evidence files; it is not
-cloud, full-app, visible-window or usefulness acceptance. Normal factory remains
-closedSpan until the approved narrow change and its native verification.
+cloud, full-app, visible-window or usefulness acceptance. The normal assembly
+selection is now changed and verified, with broader actual regression pending.
 
 ## DECISIONS
 
@@ -125,9 +130,11 @@ the single Model observation hook outside the native publication lock.
 
 ## NEXT STEP
 
-Add the approved narrow actual normal-factory selection and no-download
-composition behavior fixture, then obtain its queued native verification lease.
-Keep generic injected fixtures on closedSpan. Run unchanged Model fixtures when the accepted shared
+Obtain the accepted shared Model observation seam and run the unchanged four
+actual Model cases plus original publication/held-image/watchdog controls under
+root's lease. Include broader actual normal-assembly speech in final acceptance.
+Keep generic injected fixtures on closedSpan. Run the protected account gate only
+after root coordinates current setup/authorization. The separately accepted shared
 observation seam arrives. Keep normal factory closedSpan until measured approval.
 
 ## OPEN QUESTIONS

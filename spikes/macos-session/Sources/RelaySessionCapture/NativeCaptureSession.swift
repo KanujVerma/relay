@@ -39,7 +39,7 @@ protocol SessionCaptureDriver: Sendable {
                 try Task.checkCancellation()
                 let vad = try await FluidSpeechActivityDetector.local(compiledModel: config.vadCompiledModel)
                 let recognizer = try await FluidClosedActivityRecognizer.local(root: config.asrModelRoot)
-                components[source] = SourceComponents(vad: vad, recognizer: recognizer)
+                components[source] = NativeCaptureSession.productionSpeechComponents(vad:vad,recognizer:recognizer)
             }
             return components
         }, makeDrivers: { config in
@@ -48,6 +48,12 @@ protocol SessionCaptureDriver: Sendable {
             if let bundle = config.selectedBundleID { drivers.append(try SelectedAppSessionDriver(bundleID: bundle)) }
             return drivers
         }, stopTimeoutMilliseconds: 2000)
+    }
+    /// Normal locally prepared sources use the measured safe-prefix path.
+    /// Generic injected SourceComponents retain their closed-span default.
+    nonisolated static func productionSpeechComponents(vad:any SpeechActivityDetector,
+                                                       recognizer:any ActivityRecognizer)->SourceComponents{
+        SourceComponents(vad:vad,recognizer:recognizer,recognitionMode:.safePrefixes)
     }
     init(authority: SessionPresentationAuthority,
          onEvent: @escaping @Sendable (NativeSessionEvent) throws -> Void,

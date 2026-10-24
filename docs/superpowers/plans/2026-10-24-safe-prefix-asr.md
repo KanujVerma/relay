@@ -112,10 +112,15 @@ component factory only after the observed gate and root approval.
   Failures stay in the report. No p95 or full-app/account speed claim.
 - [x] Run under one root heavy lease with reserved staging/resource budget and
   reused inputs. Stop on unexpected allocation/error; no download/rebuild loop.
-- [ ] Root independently reviews source and measured evidence. The one exact-667
+- [x] Root independently reviews source and measured evidence. The one exact-667
   gate passed (135.629→40.602 ms closure→final median, exact words/cuts, no
   fallback/RSS increase). Root read the receipt and approved narrow actual-factory
-  selection next; composition selection/activation verification remains pending.
+  selection. The exact normal assembly helper now selects safePrefixes; generic
+  components retain closedSpan. Full activation package passes 84/87 cases with
+  three explicit model/download/benchmark skips, including actual selection
+  behavior without model download.
+- [ ] Include a broader actual speech regression of the normal assembly in final
+  acceptance; do not relabel the component benchmark as full app latency.
 
 ## Task 5: Actual Model and protected-account response gate
 

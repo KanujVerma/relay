@@ -1,10 +1,12 @@
 import Foundation
 import XCTest
 import RelayProfile
+import RelayAccount
+import RelaySessionPanel
 import RelaySessionPanel
 @testable import RelayPanelSession
 
-private final class ApplicationPreferenceStorage:ProtectedSnapshotStorage,@unchecked Sendable {
+final class ApplicationPreferenceStorage:ProtectedSnapshotStorage,@unchecked Sendable {
     private let condition=NSCondition();private var bytes:Data?,calls=[0,0,0],held=false,waiting=false
     init(_ bytes:Data?=nil){self.bytes=bytes}
     var counts:[Int]{condition.lock();defer{condition.unlock()};return calls}
@@ -19,7 +21,7 @@ private final class ApplicationPreferenceStorage:ProtectedSnapshotStorage,@unche
     }
     func save(_ payload:Data,createKey:Bool)throws{condition.lock();defer{condition.unlock()};calls[2]+=1;bytes=payload}
 }
-@MainActor private final class ApplicationPreferenceReceipts:ResponsePreferencesReceiptStore {
+@MainActor final class ApplicationPreferenceReceipts:ResponsePreferencesReceiptStore {
     var value:ResponsePreferencesReceipt;var reads=0
     init(_ value:ResponsePreferencesReceipt = .init(enabled:false,revision:nil)){self.value=value}
     func read()->ResponsePreferencesReceipt{reads+=1;return value}
@@ -27,6 +29,9 @@ private final class ApplicationPreferenceStorage:ProtectedSnapshotStorage,@unche
     func disable(){value = .init(enabled:false,revision:nil)}
 }
 @MainActor private final class ApplicationContextPreferences:SessionContextUsePreferences{var useInSessions=false}
+private struct PreferenceAppKey:ProfileKeyProvider {
+    func key(createIfMissing:Bool)throws->Data{Data(repeating:91,count:32)}
+}
 @MainActor final class ResponsePreferencesApplicationTests:XCTestCase {
     private var root:URL{URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()}
     private func args(_ role:String="developer")throws->[String]{["Relay","--repository",root.path,"--python",try XCTUnwrap(ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"]),"--role",role]}
@@ -34,25 +39,33 @@ private final class ApplicationPreferenceStorage:ProtectedSnapshotStorage,@unche
         for _ in 0..<2500{if predicate(){return};try await Task.sleep(for:.milliseconds(2))}
         throw NSError(domain:"actual preference app boundary not reached",code:1)
     }
-    private func quoted(_ value:String)->String{"'"+value.replacingOccurrences(of:"'",with:"'\\''")+"'"}
-    private func generatedRig()throws->(SessionApplicationModel,URL){
+    private func directory()throws->URL{
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("relay-response-app-"+UUID().uuidString)
         try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:false,attributes:[.posixPermissions:0o700])
-        let launcher=directory.appendingPathComponent("helper"),log=directory.appendingPathComponent("requests.jsonl"),release=directory.appendingPathComponent("release")
-        let python=try XCTUnwrap(ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"])
-        let script="#!/bin/sh\nexec \(quoted(python)) \(quoted(root.appendingPathComponent("tests/support/idle_backend_helper.py").path)) --synthetic-idle-test --hold none --log \(quoted(log.path)) --release \(quoted(release.path)) \"$@\"\n"
-        try Data(script.utf8).write(to:launcher);try FileManager.default.setAttributes([.posixPermissions:0o700],ofItemAtPath:launcher.path)
-        let model=SessionApplicationModel(arguments:["Relay","--repository",root.path,"--python",launcher.path,"--role","developer","--oauth"],contextPreferences:ApplicationContextPreferences(),responsePreferencesStorage:ApplicationPreferenceStorage(),responsePreferencesReceipts:ApplicationPreferenceReceipts())
-        addTeardownBlock{try? Data().write(to:release);await model.stop();try? FileManager.default.removeItem(at:directory)}
+        addTeardownBlock{try? FileManager.default.removeItem(at:directory)};return directory
+    }
+    private func ports(_ directory:URL)throws->AccountApplicationPorts{
+        let repository=root
+        return AccountApplicationPorts(storage:AccountStorage(sharedDirectory:directory.appendingPathComponent("Relay"),keys:PreferenceAppKey()),preferences:FixtureChatGPTPlanPreferences(),control:{ runtime,bootstrap in
+            PipeAccountPort(python:runtime.executable,repository:runtime.resourceRoot,bootstrap:bootstrap,pythonArguments:[repository.appendingPathComponent("tests/support/account_backend_helper.py").path,"--synthetic-account-test","--log",directory.appendingPathComponent("control-"+UUID().uuidString+".jsonl").path])
+        },openBrowser:{_ in true},sessionArguments:{runtime,mode in
+            mode == .protectedOAuth ? [repository.appendingPathComponent("tests/support/account_product_helper.py").path,"--synthetic-product-account-test","--log",directory.appendingPathComponent("requests.jsonl").path]:runtime.arguments
+        })
+    }
+    private func generatedRig()async throws->(SessionApplicationModel,URL){
+        let directory=try directory(),log=directory.appendingPathComponent("requests.jsonl")
+        let model=SessionApplicationModel(arguments:try args(),contextPreferences:ApplicationContextPreferences(),responsePreferencesStorage:ApplicationPreferenceStorage(),responsePreferencesReceipts:ApplicationPreferenceReceipts(),accountPorts:try ports(directory))
+        addTeardownBlock{await model.shutdown()}
+        await model.account.connect();XCTAssertNotNil(model.account.inferenceSelection)
         return(model,log)
     }
     private func posts(_ log:URL)->Int{
         ((try? String(contentsOf:log,encoding:.utf8)) ?? "").split(separator:"\n").filter{line in
-            (try? JSONSerialization.jsonObject(with:Data(line.utf8)) as? [String:String])?["kind"]=="text_post"
+            (try? JSONSerialization.jsonObject(with:Data(line.utf8)) as? [String:String])?["kind"]=="model"
         }.count
     }
     func testActualGeneratedGuideChangeWithholdsOldCardAndHelpUsesFreshGuideWithoutLosingDraft()async throws {
-        let (model,log)=try generatedRig()
+        let (model,log)=try await generatedRig()
         try await model.responsePreferences.useBuiltin(.coding)
         let old=try XCTUnwrap(model.responsePreferences.capture())
         model.assistant.draft="Explain event loops.";model.assistant.submitDraft()
@@ -76,7 +89,7 @@ private final class ApplicationPreferenceStorage:ProtectedSnapshotStorage,@unche
     }
     func testDefaultModelTypingAndPresentationNeverReadOrCreatePreferenceStorage()async throws {
         let store=ApplicationPreferenceStorage(),receipts=ApplicationPreferenceReceipts()
-        let model=SessionApplicationModel(arguments:try args(),contextPreferences:ApplicationContextPreferences(),responsePreferencesStorage:store,responsePreferencesReceipts:receipts)
+        let model=SessionApplicationModel(arguments:try args(),contextPreferences:ApplicationContextPreferences(),responsePreferencesStorage:store,responsePreferencesReceipts:receipts,accountPorts:try ports(directory()))
         model.assistant.draft="Unsent public question."
         _=model.relayPresentation;_=model.responsePreferences.snapshot
         XCTAssertEqual(store.counts,[0,0,0]);XCTAssertEqual(receipts.reads,0)
@@ -86,7 +99,7 @@ private final class ApplicationPreferenceStorage:ProtectedSnapshotStorage,@unche
     func testActualIdleReferenceSurvivesGuideChangeWithSameHelperAndNoRecording()async throws {
         let store=ApplicationPreferenceStorage(),receipts=ApplicationPreferenceReceipts()
         var audio=0
-        let model=SessionApplicationModel(arguments:try args("analytics"),ingressEnqueued:{_ in audio+=1},contextPreferences:ApplicationContextPreferences(),responsePreferencesStorage:store,responsePreferencesReceipts:receipts)
+        let model=SessionApplicationModel(arguments:try args("analytics"),ingressEnqueued:{_ in audio+=1},contextPreferences:ApplicationContextPreferences(),responsePreferencesStorage:store,responsePreferencesReceipts:receipts,accountPorts:try ports(directory()))
         try await model.responsePreferences.useBuiltin(.coding)
         model.assistant.draft="What is the difference between WHERE and HAVING?";model.assistant.submitDraft()
         do{
@@ -105,7 +118,7 @@ private final class ApplicationPreferenceStorage:ProtectedSnapshotStorage,@unche
     func testHeldRememberedGuidePreparationJoinsBeforeStopAndKeepsNewDraftWithoutScope()async throws {
         let catalog=try ResponsePreferencesCatalog(selected:"coding"),store=ApplicationPreferenceStorage(try catalog.encoded())
         let receipts=ApplicationPreferenceReceipts(.init(enabled:true,revision:catalog.revision))
-        let model=SessionApplicationModel(arguments:try args(),contextPreferences:ApplicationContextPreferences(),responsePreferencesStorage:store,responsePreferencesReceipts:receipts)
+        let model=SessionApplicationModel(arguments:try args(),contextPreferences:ApplicationContextPreferences(),responsePreferencesStorage:store,responsePreferencesReceipts:receipts,accountPorts:try ports(directory()))
         store.holdLoad();defer{store.release()}
         model.assistant.draft="Original public question.";model.assistant.sendDraftAsNewQuestion()
         try await waitUntil{store.entered}
@@ -120,4 +133,24 @@ private final class ApplicationPreferenceStorage:ProtectedSnapshotStorage,@unche
         XCTAssertFalse(model.assistantActive);XCTAssertNil(model.currentSessionID)
         XCTAssertEqual(model.assistant.draft,"Newer draft while the real preference call is held.")
     }
+    func testActualSavedAccountReadinessPrecedesHeldPreferencesAndNativeScope()async throws {
+        let directory=try directory(),accountPorts=try ports(directory)
+        let first=SessionApplicationModel(arguments:try args(),contextPreferences:ApplicationContextPreferences(),accountPorts:accountPorts)
+        await first.account.connect();XCTAssertNotNil(first.account.inferenceSelection);await first.shutdown()
+        let catalog=try ResponsePreferencesCatalog(selected:"coding"),store=ApplicationPreferenceStorage(try catalog.encoded())
+        let receipts=ApplicationPreferenceReceipts(.init(enabled:true,revision:catalog.revision))
+        let restored=SessionApplicationModel(arguments:try args(),contextPreferences:ApplicationContextPreferences(),responsePreferencesStorage:store,responsePreferencesReceipts:receipts,accountPorts:accountPorts)
+        store.holdLoad();defer{store.release()};addTeardownBlock{await restored.shutdown()}
+        restored.assistant.draft="Explain event loops.";restored.assistant.submitDraft()
+        try await waitUntil{store.entered}
+        XCTAssertNotNil(restored.account.inferenceSelection);XCTAssertFalse(restored.accountPreparationActive)
+        XCTAssertNil(restored.currentSessionID);XCTAssertFalse(restored.assistantActive);XCTAssertFalse(restored.running)
+        XCTAssertFalse(FileManager.default.fileExists(atPath:directory.appendingPathComponent("requests.jsonl").path))
+        restored.assistant.draft="Newer text while restored guidance is held."
+        var finished=false;let stop=Task{await restored.stop();finished=true}
+        for _ in 0..<10{await Task.yield()};XCTAssertFalse(finished)
+        store.release();await stop.value
+        XCTAssertNil(restored.currentSessionID);XCTAssertEqual(restored.assistant.draft,"Newer text while restored guidance is held.")
+    }
+
 }

@@ -17,9 +17,11 @@ import RelayContextComposition
         XCTAssertFalse(model.screen.isEnabled);XCTAssertFalse(model.selectedText.isEnabled)
         XCTAssertFalse(model.controls.isEnabled);XCTAssertTrue(model.controls.shortcuts.isEmpty)
         XCTAssertNil(model.snapshot.card)
-        // Mode selection itself performs no sign-in, capture or inference.
+        // A public preference cannot authorize AI without a real connection.
         await model.setAIEnabled(true)
-        XCTAssertTrue(model.oauth);XCTAssertFalse(model.running)
+        XCTAssertFalse(model.oauth);XCTAssertFalse(model.running)
+        XCTAssertNil(model.account.inferenceSelection)
+        XCTAssertEqual(model.account.message,"Connect ChatGPT to use your plan in Relay.")
         await model.setAIEnabled(false)
         XCTAssertFalse(model.oauth)
     }

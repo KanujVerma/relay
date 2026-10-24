@@ -99,7 +99,7 @@ import RelaySessionPanel
                     ForEach(detail.captures){capture in
                         VStack(alignment:.leading,spacing:6){
                             Text("Audio segment · "+Date(timeIntervalSince1970:capture.observedWallTime).formatted(date:.abbreviated,time:.shortened)).font(.system(size:12)).foregroundStyle(RelayTheme.muted)
-                            Text(capture.observedEndUptimeNanoseconds == nil ? "Capture cleanup end not recorded":"Capture cleanup observed · original native receipt").font(.system(size:11)).foregroundStyle(RelayTheme.muted)
+                            Text(capture.observedEndUptimeNanoseconds == nil ? "End time unavailable":"Audio stopped").font(.system(size:11)).foregroundStyle(RelayTheme.muted)
                             HStack{ForEach([TranscriptSource.microphone,.selectedAppAudio],id:\.rawValue){source in if detail.rows.contains(where:{$0.captureSessionID==capture.captureSessionID && $0.source==source}){Button("Delete "+source.label){perform{try await history.deleteSource(detail.record.id,expectedRevision:detail.record.revision,captureID:capture.id,source:source).value;loadEditor()}}.font(.system(size:11)).buttonStyle(.plain).foregroundStyle(.orange)}}}
                         }
                     }

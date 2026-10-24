@@ -170,3 +170,6 @@ Frozen bfa85b2 is preserved. Two actual regressions reproduce false credential-t
 ## Native Notes wire and anchored display checkpoint
 
 Strict notes response/result DATA and anchored read-only snapshot types now pass20focused native cases/zero skips5.583s after five missing-API reds. Snapshot actions carry the original epoch/record revision/operation and document identity; save-edit UI awaits its actual matching save. No parsed frame or presentation Boolean grants completion or persistence. Actual helper/controller/private completion, protected save bridge, app UI wiring and bundled Notes gate remain next; Store/Coordinator frontiers are unchanged. Heavy slot is released.
+
+
+Synthetic Notes backend test launcher is now available for actual held-writer native proofs. Explicit test-only flag/temp paths and fixture tail are required; actual Host/permit/SSE are reused with synthetic token+MockTransport, never account/network fallback. Six Python cases pass/zero skips1.135s. Native controller API-red fixtures remain the next queued heavy gate; no controller runtime implementation is claimed by this launcher.

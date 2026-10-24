@@ -20,13 +20,22 @@ import tests.test_resume_personal_answers as resume_fixture
 def offer(native, **changes):
     value={key:native[key] for key in ('captureSessionID','sessionEpoch','presentationGeneration','requestID')}
     value.update(schemaVersion=1,kind='learning_memory',eventSequence=native.get('eventSequence',native.get('anchorEventSequence')),
-                 memoryRevision=str(uuid.uuid4()),scope='technical',continuity=[{'sourceID':'original-final-4','kind':'spoken_constraint','text':'The agreed timestamps use UTC.'}],
-                 evidenceGap=False,adjustments=['concise_lead'],preparation=[],examples=[{'sourceID':'original-mic-7','text':'First keep the queue bounded, then make overload explicit.'}],supportIDs=[str(uuid.uuid4())])
+                 memoryRevision=str(uuid.uuid4()),scope='technical',continuity=[{'sourceID':'original-final-4','kind':'spoken_constraint','text':'The agreed timestamps use UTC.','excerpt':False}],
+                 evidenceGap=False,interactions=[],adjustments=['concise_lead'],preparation=[],examples=[{'sourceID':'original-mic-7','text':'First keep the queue bounded, then make overload explicit.','excerpt':False}],supportIDs=[str(uuid.uuid4())])
     value.update(changes);return value
 
 
 def retire(value):
     return {**{key:value[key] for key in ('captureSessionID','sessionEpoch','memoryRevision')},'schemaVersion':1,'kind':'learning_memory_retired'}
+
+
+def interaction():
+    request=str(uuid.uuid4())
+    return {'episodeID':request,'question':{'sourceID':'original-remote-4','text':'How should queues handle overload?','excerpt':False},
+            'suggestion':{'requestID':request,'text':'Explain bounded queues and reject overload.','availableAt':250_000_000,'windowVisible':True,'guideRevision':None,'excerpt':False},
+            'reply':{'sourceID':'original-mic-7','text':'First use bounded queues, then reject overload.','excerpt':False},
+            'continuation':{'sourceID':'original-remote-10','text':'What about null items?','excerpt':False},
+            'temporallyEligible':True,'possibleUptake':True,'distinctiveOverlap':4,'ambiguity':['asr_confidence_unknown']}
 
 
 class LearningDecoderTests(unittest.TestCase):
@@ -42,6 +51,24 @@ class LearningDecoderTests(unittest.TestCase):
         self.assertEqual(decode_learning_retirement(retire(good)),retire(good))
         altered=decode_learning(good);altered['continuity'][0]['text']='caller mutation'
         self.assertEqual(good['continuity'][0]['text'],'The agreed timestamps use UTC.')
+
+    def test_structured_interaction_keeps_each_original_source_and_excerpt_distinct(self):
+        n=dict(captureSessionID=str(uuid.uuid4()),sessionEpoch=1,presentationGeneration=2,requestID=str(uuid.uuid4()),eventSequence=1)
+        value=offer(n,continuity=[],examples=[],interactions=[interaction()]);self.assertEqual(decode_learning(value),value)
+        for field in ('question','reply','continuation'):
+            changed=copy.deepcopy(value);changed['interactions'][0][field]['excerpt']='unknown'
+            with self.subTest(field=field),self.assertRaises(WireError):decode_learning(changed)
+        for update in ({'episodeID':'bad'},{'possibleUptake':'read'},{'temporallyEligible':1},{'distinctiveOverlap':-1},
+                       {'ambiguity':['interviewer_approved']},{'success':True}):
+            changed=copy.deepcopy(value);changed['interactions'][0].update(update)
+            with self.subTest(update=update),self.assertRaises(WireError):decode_learning(changed)
+
+    def test_native_compact_payload_budget_does_not_change_when_python_inserts_spaces(self):
+        n=dict(captureSessionID=str(uuid.uuid4()),sessionEpoch=1,presentationGeneration=2,requestID=str(uuid.uuid4()),eventSequence=1)
+        value=offer(n,interactions=[interaction()])
+        value['continuity'][0]['text']='x'*500
+        value['examples'][0].update(text='y'*350,sourceID='z'*180)
+        self.assertEqual(decode_learning(value),value)
 
 
 class LearningHostTests(unittest.IsolatedAsyncioTestCase):
@@ -64,6 +91,15 @@ class LearningHostTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(used['examples'][0]['text'],'First keep the queue bounded, then make overload explicit.')
         self.assertEqual(self.out[-1]['provenance']['learningMemoryRevision'],value['memoryRevision'])
         self.assertEqual(self.out[-1]['requestID'],n['requestID'])
+
+    async def test_original_interaction_chain_reaches_one_answer_without_suggestion_becoming_user_speech(self):
+        h=await self.host();n=question(h,'How should queues handle null items?');chain=interaction()
+        value=offer(n,continuity=[],examples=[],interactions=[chain]);h.handle_learning_memory(value)
+        await h.handle_user_question(n);await h.drain()
+        observed=self.prompts[0]['learning_memory']['interactions'][0]
+        self.assertEqual(observed,chain);self.assertNotEqual(observed['suggestion']['requestID'],observed['reply']['sourceID'])
+        self.assertNotIn('Explain bounded queues',str(self.prompts[0]['conversation']['task']['user_attempt']))
+        self.assertEqual(h.model_requests,1)
 
     async def test_explicit_guide_overrides_inferred_style_but_retains_original_spoken_constraint(self):
         h=await self.host();n=question(h,'Explain event loops.');value=offer(n)
@@ -142,7 +178,7 @@ class LearningPersonalHostTests(unittest.IsolatedAsyncioTestCase):
         host,out,_,_=await resume_fixture.ResumePersonalAnswers.prepared(self)
         first=question(host,'Tell me about yourself.');await host.handle_user_question(first);await host.drain()
         baseline=copy.deepcopy(out[-1]);native=question(host,'Tell me about yourself.')
-        value=offer(native,scope='recruiter',continuity=[],examples=[{'sourceID':'original-mic-7','text':'I invented a credential that is not approved.'}])
+        value=offer(native,scope='recruiter',continuity=[],examples=[{'sourceID':'original-mic-7','text':'I invented a credential that is not approved.','excerpt':False}])
         host.handle_learning_memory(value);await host.handle_user_question(native);await host.drain();adapted=out[-1]
         self.assertEqual(adapted['card']['lead'],baseline['card']['points'][0])
         self.assertEqual(adapted['card']['points'],baseline['card']['points'][1:])

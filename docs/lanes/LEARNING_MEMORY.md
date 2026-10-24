@@ -30,6 +30,12 @@ The controller approved a deterministic personal-route adaptation. The initial42
 
 The actual approved-résumé baseline/adapted fixture first failed on the unchanged lead. Revised whole-unit/stepwise fixtures failed against428 before implementation, then61 focused learning/preferences/résumé/personal/query cases passed in0.671s. The paired native learningMemoryRevision decoder/currentness join remains required before enabling this path in the app; this Python component alone is not product acceptance.
 
+## Structured interaction component in progress
+
+The strict helper now accepts one bounded structured interaction with separate original question/suggestion/microphone/remote references, availability/guide identity, tentative overlap and explicit ambiguity/excerpt flags. It remains inside the same compact2KiB optional projection. The original strict decoder failed before this shape existed;64 focused Python cases now pass in0.670s. A real Host fixture proves the separately labelled chain reaches the existing single answer call without becoming user_attempt text. A compact-budget boundary also failed before aligning Python measurement with native compact JSON.
+
+Native DTO/full-detail identity/source attribution and9-support cohort regressions are written before implementation and queued for the controller's serial red lease. The native39a source remains frozen. Root additionally requires selecting a real bounded cohort that includes the representative example, proves3clean/2sessions per active rule and computes source dependencies/expiry from actually needed support. The current39a arbitrary support-prefix behavior remains pending correction; no persisted/application completeness claim is made.
+
 ## Next exact action
 
 Obtain accepted Notesv2 storage ref, then complete pure deterministic derivation and schema3 with exact source support validation/deletion/expiry/undo/restart tests. Wire one after-drain actual Model availability seam shared with descriptive latency, request bridge/currentness, and inspectable opt-in/why/undo controls. No store/schema/current Model integration or later-session end-to-end claim is made at this checkpoint.

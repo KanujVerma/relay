@@ -5,6 +5,10 @@ import RelayProfile
 import GRDB
 @testable import RelaySessionPanel
 
+private struct PatchedCaptureStop:Encodable{
+    let observedWallTime:TimeInterval
+    let originalEventJSON:Data
+}
 private struct CaptureEndKey:ProfileKeyProvider{
     func key(createIfMissing:Bool)throws->Data{Data(repeating:107,count:32)}
 }
@@ -97,9 +101,11 @@ private struct CaptureEndKey:ProfileKeyProvider{
         let queue=try HistorySnapshotCodec.decode(vault.load())
         try await queue.write{db in
             let raw=try XCTUnwrap(try Data.fetchOne(db,sql:"SELECT payload FROM history_record"))
-            var object=try XCTUnwrap(JSONSerialization.jsonObject(with:raw) as? [String:Any])
-            object["state"]="completed";object["gaps"]=[]
-            try db.execute(sql:"UPDATE history_record SET payload=?",arguments:[try JSONSerialization.data(withJSONObject:object,options:[.sortedKeys])])
+            var predecessor=try HistoryJSON.decode(HistoryRecord.self,raw)
+            predecessor.state = .completed;predecessor.gaps=[]
+            // Preserve canonical Double bytes and SQL column identity. Generic
+            // JSONSerialization can spell endedAt differently from JSONEncoder.
+            try db.execute(sql:"UPDATE history_record SET payload=?",arguments:[try HistoryJSON.encode(predecessor)])
         }
         try vault.save(HistorySnapshotCodec.encode(queue));try queue.close()
         let fresh=HistoryStore(storage:vault);try fresh.open(create:false)
@@ -115,10 +121,9 @@ private struct CaptureEndKey:ProfileKeyProvider{
             let queue=try HistorySnapshotCodec.decode(vault.load())
             try await queue.write{db in
                 let raw=try XCTUnwrap(try Data.fetchOne(db,sql:"SELECT payload FROM history_capture"))
-                var capture=try XCTUnwrap(JSONSerialization.jsonObject(with:raw) as? [String:Any])
-                var stop=try XCTUnwrap(capture["stop"] as? [String:Any])
-                let bytes=try XCTUnwrap(Data(base64Encoded:try XCTUnwrap(stop["originalEventJSON"] as? String)))
-                var event=try XCTUnwrap(JSONSerialization.jsonObject(with:bytes) as? [String:Any])
+                var capture=try HistoryJSON.decode(HistoryCapture.self,raw)
+                let stop=try XCTUnwrap(capture.stop)
+                var event=try XCTUnwrap(JSONSerialization.jsonObject(with:stop.originalEventJSON) as? [String:Any])
                 switch variant{
                 case 0:event["captureSessionID"]=UUID().uuidString.lowercased()
                 case 1:event["sessionEpoch"]=2
@@ -127,9 +132,10 @@ private struct CaptureEndKey:ProfileKeyProvider{
                 case 4:event["sourceCode"]=2
                 default:event["payload"]=["reasonCode":"user_stop","quiesced":true,"invented":true]
                 }
-                stop["originalEventJSON"]=try JSONSerialization.data(withJSONObject:event,options:[.sortedKeys]).base64EncodedString()
-                capture["stop"]=stop
-                try db.execute(sql:"UPDATE history_capture SET payload=?",arguments:[try JSONSerialization.data(withJSONObject:capture,options:[.sortedKeys])])
+                let patched=PatchedCaptureStop(observedWallTime:stop.observedWallTime,
+                    originalEventJSON:try JSONSerialization.data(withJSONObject:event,options:[.sortedKeys]))
+                capture.stop=try JSONDecoder().decode(HistoryCaptureStop.self,from:HistoryJSON.encode(patched))
+                try db.execute(sql:"UPDATE history_capture SET payload=?",arguments:[try HistoryJSON.encode(capture)])
             }
             try vault.save(HistorySnapshotCodec.encode(queue));try queue.close()
             let before=try vault.load(),fresh=HistoryStore(storage:vault)

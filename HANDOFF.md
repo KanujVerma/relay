@@ -190,3 +190,8 @@ Exact record/note CAS now deletes only derived AI notes with a private actual me
 ## Reused Root Notes presentation
 
 Exact accepted Root e165ab34209778787f1d19bddda0d407aad4baf5 Draft/Section/presentation tests and review note are imported for the disjoint App controller. Existing local Notes backend/native/save/delete status is preserved above; UI remains unexposed until actual controller/Model wiring. The three Root source/test files are unchanged. This dependency import does not claim an additional native run or completed product.
+
+
+## Disjoint Notes app controller checkpoint
+
+Actual source→helper completion→same-run protected save/read/edit/delete/citation now passes the four App-controller cases, with original user-action CAS/unknown-write cases. Combined53collected52pass1explicit render skip, zero failures; command100.794s. Controller owns original intent/deadline/task and anchored actions; constructors/render remain inert. Exact Root e165 view/draft/tests are reused unchanged. No shared Model integration or completed product is claimed yet. Next: tested exact current-preparer preservation, shared Model/History workspace hooks after Memory freeze, export and stock bundled acceptance. Heavy slot released.

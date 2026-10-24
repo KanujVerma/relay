@@ -121,4 +121,64 @@ private final class NotesCommitStorage:HistoryOwnedSnapshotStorage,@unchecked Se
         do{_=try await history.commitGeneratedNotes(completed);XCTFail("Completion rebased onto later user revision")}catch{}
         XCTAssertEqual(try storage.load(),before);XCTAssertEqual(history.snapshot.selected?.record.note,"Later manual note.")
     }
+
+    func testUserWordingEditNeedsNoLiveHelperAndPreservesOriginalCitationsAndGeneration()async throws{
+        let(history,source,helper,_)=try await fixture(),completed=try await operation(history,source,helper)
+        let first=try await history.commitGeneratedNotes(completed);await helper.shutdownAndWait()
+        let edited=try await history.editGeneratedNotes(source.data.recordID,expectedRecordRevision:first.receipt.savedAtRecordRevision,
+            noteID:first.document.noteID,expectedNoteRevision:first.document.noteRevision,
+            texts:HistoryNotesEditedTexts(summary:["My edited meeting wording."],decisions:[],nextSteps:[]),epoch:history.snapshot.epoch,operationID:UUID())
+        XCTAssertEqual(edited.document.origin,"generated_user_edited");XCTAssertEqual(edited.document.notes.summary[0].text,"My edited meeting wording.")
+        XCTAssertEqual(edited.document.notes.summary[0].citations,first.document.notes.summary[0].citations)
+        XCTAssertEqual(edited.document.sourceRows,first.document.sourceRows);XCTAssertEqual(edited.document.generation,first.document.generation)
+        XCTAssertEqual(history.snapshot.selected?.record.revision,edited.receipt.savedAtRecordRevision)
+    }
+    func testAnchoredUserDeleteReturnsActualReceiptAndPreservesManualAndTranscript()async throws{
+        let(history,source,helper,_)=try await fixture(),completed=try await operation(history,source,helper)
+        let first=try await history.commitGeneratedNotes(completed),before=try XCTUnwrap(history.snapshot.selected)
+        await helper.shutdownAndWait()
+        let deleted=try await history.deleteGeneratedNotes(source.data.recordID,expectedRecordRevision:first.receipt.savedAtRecordRevision,
+            noteID:first.document.noteID,expectedNoteRevision:first.document.noteRevision,epoch:history.snapshot.epoch,operationID:UUID())
+        XCTAssertTrue(deleted.cleanupComplete);XCTAssertEqual(deleted.receipt.noteID,first.document.noteID)
+        XCTAssertEqual(history.snapshot.selected?.rows,before.rows);XCTAssertEqual(history.snapshot.selected?.record.note,"Keep these manual notes.")
+        let read=try await history.generatedNotes(source.data.recordID,expectedRevision:deleted.receipt.savedAtRecordRevision,epoch:history.snapshot.epoch)
+        XCTAssertNil(read)
+    }
+    func testUserMutationWithOldWorkspaceOrNoteVersionCannotRetargetAReopenedRecord()async throws{
+        let(history,source,helper,storage)=try await fixture(),completed=try await operation(history,source,helper)
+        let first=try await history.commitGeneratedNotes(completed),oldEpoch=history.snapshot.epoch
+        await history.lock();await history.waitForQuiescence();try await history.openExisting();try await history.openRecord(source.data.recordID)
+        let before=try storage.load()
+        do{_=try await history.editGeneratedNotes(source.data.recordID,expectedRecordRevision:first.receipt.savedAtRecordRevision,
+            noteID:first.document.noteID,expectedNoteRevision:first.document.noteRevision,
+            texts:HistoryNotesEditedTexts(summary:["Stale wording"],decisions:[],nextSteps:[]),epoch:oldEpoch,operationID:UUID());XCTFail("Old editor crossed workspace reopen")}catch{}
+        do{_=try await history.deleteGeneratedNotes(source.data.recordID,expectedRecordRevision:first.receipt.savedAtRecordRevision,
+            noteID:first.document.noteID,expectedNoteRevision:first.document.noteRevision+1,epoch:history.snapshot.epoch,operationID:UUID());XCTFail("Wrong note version deleted current notes")}catch{}
+        XCTAssertEqual(try storage.load(),before)
+    }
+    func testUnknownUserWordingSaveKeepsIndeterminateStateUntilOwnedReopen()async throws{
+        let(history,source,helper,storage)=try await fixture(),completed=try await operation(history,source,helper)
+        let first=try await history.commitGeneratedNotes(completed);storage.arm(.afterWrite)
+        do{_=try await history.editGeneratedNotes(source.data.recordID,expectedRecordRevision:first.receipt.savedAtRecordRevision,
+            noteID:first.document.noteID,expectedNoteRevision:first.document.noteRevision,
+            texts:HistoryNotesEditedTexts(summary:["A durable but initially unconfirmed edit."],decisions:[],nextSteps:[]),epoch:history.snapshot.epoch,operationID:UUID());XCTFail("Unconfirmed edit issued an acknowledgement")}
+        catch HistoryNotesCommitError.indeterminate{}catch{XCTFail("Expected typed unknown outcome")}
+        XCTAssertEqual(history.snapshot.phase,.unavailable)
+        await history.lock();await history.waitForQuiescence();try await history.openExisting();try await history.openRecord(source.data.recordID)
+        let revision=try XCTUnwrap(history.snapshot.selected?.record.revision)
+        let read=try await history.generatedNotes(source.data.recordID,expectedRevision:revision,epoch:history.snapshot.epoch)
+        XCTAssertEqual(read?.notes.summary[0].text,"A durable but initially unconfirmed edit.")
+    }
+    func testUnknownUserDeleteCannotPromiseTheOldNoteWasPreserved()async throws{
+        let(history,source,helper,storage)=try await fixture(),completed=try await operation(history,source,helper)
+        let first=try await history.commitGeneratedNotes(completed);storage.arm(.afterWrite)
+        do{_=try await history.deleteGeneratedNotes(source.data.recordID,expectedRecordRevision:first.receipt.savedAtRecordRevision,
+            noteID:first.document.noteID,expectedNoteRevision:first.document.noteRevision,epoch:history.snapshot.epoch,operationID:UUID());XCTFail("Unconfirmed delete issued a receipt")}
+        catch HistoryNotesCommitError.indeterminate{}catch{XCTFail("Expected typed unknown outcome")}
+        XCTAssertEqual(history.snapshot.phase,.unavailable)
+        await history.lock();await history.waitForQuiescence();try await history.openExisting();try await history.openRecord(source.data.recordID)
+        let revision=try XCTUnwrap(history.snapshot.selected?.record.revision)
+        let read=try await history.generatedNotes(source.data.recordID,expectedRevision:revision,epoch:history.snapshot.epoch)
+        XCTAssertNil(read);XCTAssertEqual(history.snapshot.selected?.record.note,"Keep these manual notes.")
+    }
 }

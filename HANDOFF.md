@@ -57,3 +57,6 @@ Response-preferences storage-purpose foundation now imports exact accepted194 so
 
 
 Response-preferences native catalog/coordinator checkpoint now has16new cases and29affected storage/native passes0.236s. It includes actual held encrypted save/restart receipt fencing, reentrant/obsolete-cancel and retirement-before-publication red/green evidence; defaults remain inert. Shared purpose053 remains unchanged. Actual helper/provider/Settings/Model integration stays next, author-owned; no product exposure yet. Exact APIs/tests/limits in docs/lanes/RESPONSE_PREFERENCES.md.
+
+
+Response-preferences helper/parser checkpoint now passes114affected Python cases1.998s and5native0.280s, including actual private native request/one-child/close proof, actual OAuth MockTransport text+AX/image+OCR use and held-token cancellation with no false thread-stop claim. New strict provider/timer/ledger plus one exact staged native-retirement hook preserve originals; retired used claims cannot become General. No OAuth core change or actual Settings/Model exposure yet. Native35071/shared purpose053 stay frozen. Next full app/Settings/held EOU+PNG join remains author-owned. See docs/lanes/RESPONSE_PREFERENCES.md.

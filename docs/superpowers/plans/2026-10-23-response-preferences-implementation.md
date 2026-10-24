@@ -47,14 +47,14 @@ For a held save, select General while the actual `save` call is blocked, require
 
 ## Task2: strict helper claim and prompt use
 
-**Files:** new `relay_spike/response_preferences.py`; narrow `session_host.py`, `generated_answer.py`; new `tests/test_response_preferences.py`; native optional generated provenance decode in `SessionDecision.swift` and focused tests.
+**Files:** new `relay_spike/response_preferences.py`; narrow `session_host.py`, `generated_answer.py`, and exact native-retirement cleanup hook in `user_question.py`; new `tests/test_response_preferences.py`; native optional generated provenance decode in `SessionDecision.swift` and focused tests.
 
 **Interfaces:** `HostResponsePreferences.stage(value)`, `retire(value)`, `claim(native)` returns privately owned use or nil; `owns(use,native)` leaf checks never recurse to base currentness; `close()` drops timer/data. `make_prompt(...,response_preferences=None)` adds only actual typed focus/guidance. Host-only optional generated provenance UUID records actual supplied activation. Native decoder accepts that one exact optional field alongside existing taskContext.
 
-- [ ] Write failing exact stage/retire/claim tests covering duplicate changed reuse, all identity counters, zero authority from stage, late attach, expiry/EOF and old retirement preserving new scope/revision.
-- [ ] Implement bounded provider/one owned expiry timer; wire actual native accepted-request claim and actual synchronous retirement before helper awaits.
-- [ ] Write captured-prompt/MockTransport tests proving one call, actual preference prompt, no personal/config authority, no default no-inference IO, held credential cancellation before POST, no retry after POST, local reviewed/personal answers omit use metadata.
-- [ ] Run red, add narrow currentness/prompt/use metadata; retain current output QA and32KiB prompt budget. Run affected host/user/context/visual tests only.
+- [x] Write failing exact stage/retire/claim tests covering duplicate changed reuse, all identity counters, zero authority from stage, late attach, expiry/EOF and old retirement preserving new scope/revision.
+- [x] Implement bounded provider/one owned expiry timer; wire actual native accepted-request claim and actual synchronous retirement before helper awaits.
+- [x] Write captured-prompt/MockTransport tests proving one call, actual preference prompt, no personal/config authority, no default no-inference IO, held credential cancellation before POST, no retry after POST, local reviewed/personal answers omit use metadata.
+- [x] Run red, add narrow currentness/prompt/use metadata; retain current output QA and32KiB prompt budget. Run affected host/user/context/visual tests only.
 
 ```python
 host = SessionHost(complete=held_mock_completion)

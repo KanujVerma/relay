@@ -2,7 +2,7 @@
 
 **Status:** [PR #46](https://github.com/KanujVerma/relay/pull/46) is a synthetic-only child of [issue #45](https://github.com/KanujVerma/relay/issues/45) and [issue #43](https://github.com/KanujVerma/relay/issues/43), based on the independently reviewed, merged 03B-A [PR #42](https://github.com/KanujVerma/relay/pull/42). On-device FluidAudio [issue #33](https://github.com/KanujVerma/relay/issues/33) is separately owned and has not yet established verified real-Mac speech accuracy or complete native transport.
 
-Implementation: [asr_turn_adapter.py](https://github.com/KanujVerma/relay/blob/0c87bae4c1d9c23662b262bf93608dc35901c8c4/relay_spike/asr_turn_adapter.py) and [test_asr_turn_adapter.py](https://github.com/KanujVerma/relay/blob/0c87bae4c1d9c23662b262bf93608dc35901c8c4/tests/test_asr_turn_adapter.py), synthetic data only.
+Implementation: [asr_turn_adapter.py](https://github.com/KanujVerma/relay/blob/88af72044b4dd0127bba869b8783803a2769ec40/relay_spike/asr_turn_adapter.py) and [test_asr_turn_adapter.py](https://github.com/KanujVerma/relay/blob/88af72044b4dd0127bba869b8783803a2769ec40/tests/test_asr_turn_adapter.py), synthetic data only.
 
 ## Upstream reuse and reasons
 
@@ -52,7 +52,7 @@ The bridge exercises E11 restart, D12 distinct-order/date correction, E04/D07 mu
 
 ## Synthetic intent-label evaluation
 
-[EVALS/asr-intent-cases.jsonl](https://github.com/KanujVerma/relay/blob/0c87bae4c1d9c23662b262bf93608dc35901c8c4/EVALS/asr-intent-cases.jsonl) contains **40 fabricated** question, correction, follow-up and unknown utterances with explicit prior-context conditions (14 question, 9 correction, 6 follow-up, 11 unknown). The offline [corpus test](https://github.com/KanujVerma/relay/blob/0c87bae4c1d9c23662b262bf93608dc35901c8c4/tests/test_asr_intent_corpus.py) checks their confusion counts and original wording without any model or ASR. Matching all 40 fixture labels is a **regression assertion**, not a measurement of precision, recall, ASR WER, accent/dialect understanding, or behavior on real interview speech. Missing punctuation/disfluencies are deliberately conservatively unlabeled where an explicit interrogative start is absent.
+[EVALS/asr-intent-cases.jsonl](https://github.com/KanujVerma/relay/blob/88af72044b4dd0127bba869b8783803a2769ec40/EVALS/asr-intent-cases.jsonl) contains **40 fabricated** question, correction, follow-up and unknown utterances with explicit prior-context conditions (14 question, 9 correction, 6 follow-up, 11 unknown). The offline [corpus test](https://github.com/KanujVerma/relay/blob/88af72044b4dd0127bba869b8783803a2769ec40/tests/test_asr_intent_corpus.py) checks their confusion counts and original wording without any model or ASR. Matching all 40 fixture labels is a **regression assertion**, not a measurement of precision, recall, ASR WER, accent/dialect understanding, or behavior on real interview speech. Missing punctuation/disfluencies are deliberately conservatively unlabeled where an explicit interrogative start is absent.
 
 ## Timing and evaluation boundary
 

@@ -95,6 +95,10 @@ public struct SessionActivitySnapshot:Sendable,Equatable {
                   let row=validated(event,source:source,generation:generation,id:id,original:original.start,end:end) else{return}
             guard !snapshot.rows.contains(where:{$0.id==row.id}) else{return}
             if let observer=onHistoryObservation,let final=try? HistoryFinal(event,row:row){observer(ValidatedTranscriptObservation(event:event,final:final))}
+            // Optional observation may synchronously End or revoke this source.
+            // Its saved prefix is independent; this old consume cannot restore
+            // ephemeral text after the original scope/high-water was retired.
+            guard !sealed,snapshot.sessionID==event.captureSessionID,epoch==event.sessionEpoch,sequence==event.eventSequence else{return}
             snapshot.rows.append(row);snapshot.rows.sort{($0.startUptimeNanoseconds,$0.id)<($1.startUptimeNanoseconds,$1.id)}
             bytes+=row.text.utf8.count
             while snapshot.rows.count>64 || bytes>65_536 {

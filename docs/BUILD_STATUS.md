@@ -26,6 +26,10 @@ The accepted Notes component reads the complete bounded original saved source ra
 
 Source3b3ee29 includes accepted Notesv2 e19 and timing/compact23 plus canonical optional-wire documentation591. Root complete Python gate:786collected/754pass/32optional skips,9.340seconds. Root independent combined native gate:89collected/88pass/oneexisting opt-in render skip,98.315seconds. No failures. Actual protected notes saving, source CAS/restart/delete and indeterminate-versus-positive-save/cleanup outcomes are now verified as internal components. SourceCoordinator, protected generation and UI remain pending. Corrected Learning matching/derivation, schema3 and actualModel hooks also remain pending. The full active goal is still incomplete; no live latency improvement is established by these tests.
 
+## Corrected source lifecycle
+
+Source9cef52d joins original Notes205 plus narrow797caller-admission correction. Root original stale/cancelled Start and repeated-old-End finding is reproduced and closed without changing fixtures or source/store schema. Independent joined native gate:67collected/66pass/one opt-in render skip, zero failures,94.932seconds. This includes all11Notes source cases,17legacy coordinator,6manual receipts,10actual ownership and23actualApp History/editor cases. This enables the actual Memory source adapter; it does not deliver the remaining Notes scope/UI or Learning schema3/Model pipeline. Exact prior690 hosted native/contract/converter checks are all green.
+
 ## Historical and preceding checkpoints
 
 ## New active product target

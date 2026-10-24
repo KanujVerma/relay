@@ -63,3 +63,19 @@ requested level as independently observed effective reasoning. Running the
 module still prints its plan only. Five new offline cases plus existing focused
 transport/helper/effort controls pass **35 tests / zero skips / 0.307 s**, after
 three initial missing-API failures. No account execution occurred.
+
+The comparison also accepts a caller-owned `report={}`. A supplied report must
+be an empty plain dict before attempts; existing evidence cannot be overwritten.
+For a real run the caller must supply it and retain it after cancellation. The
+utility initializes counts/status before requests, retains prior completed or
+failed rows and the current cancelled row with its final transport timing, marks
+the run `cancelled`, restores effort and rethrows the original `CancelledError`.
+Normal traversal returns that same dict with status `finished`; failed individual
+attempts remain failed. No callback, hidden persistence or retry is introduced.
+The original no-report offline API stays compatible, but cannot expose its local
+partial report after cancellation. Abrupt process termination is outside this
+in-memory cancellation guarantee. Four new controls plus the existing benchmark,
+actual socket/transport-lifetime and effort cases pass **34 / zero skips / 0.278 s**;
+the first three report cases previously failed on the absent API (0.023 s).
+An additional explicit-None validation control failed before the supplied-report
+guard was tightened; only omission preserves the older no-report API.

@@ -74,6 +74,12 @@ answer denial and actual cleanup. Product timing targets remain unachieved.
   failures/QA outcomes and restores its dedicated stream setting on cancellation.
   Five new cases plus original focused controls pass 35 / zero skips / 0.307 s.
   Its CLI prints the plan only. No account execution or runtime-default change.
+- Root's cancellation review is addressed with an optional caller-owned empty
+  report dict, required in the prepared real-run procedure. Prior answer/failure
+  rows and the current cancelled attempt survive while the original cancellation
+  escapes and effort restores. New three-case API-red and four-case additions
+  have focused benchmark/socket/lifetime/effort green, 34 / zero skips / 0.278 s.
+  No callbacks, hidden persistence, retry or runtime change.
 
 ## IN PROGRESS
 

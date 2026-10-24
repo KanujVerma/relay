@@ -32,9 +32,15 @@ construct a development/default token provider. Current catalog/account approval
 must establish Luna availability; documentation alone does not establish it.
 
 Invoke `EVALS/benchmark_answer_latency.py`'s
-`compare_effort_variants(stream, include_answers=True)` from that already
-authorized caller. A plain module invocation only prints its plan. Await the
-dedicated stream's `aclose()` in the caller's `finally`, including cancellation.
+`compare_effort_variants(stream, include_answers=True, report=report)` from that
+already authorized caller, supplying a new empty plain dict as `report` before
+the call. Retain that same dict on cancellation: it includes prior outcomes and
+the interrupted attempt, while the original `CancelledError` is rethrown and
+effort restored. Preserve the sanitized partial evidence in the authorized
+caller; the utility performs no hidden persistence or callback. A plain module
+invocation only prints its plan. Await the dedicated stream's `aclose()` in the
+caller's `finally`, including cancellation. This memory-only report cannot
+survive an abrupt process kill by itself.
 
 | Order | Case | Requested effort | Exact input |
 | --- | --- | --- | --- |

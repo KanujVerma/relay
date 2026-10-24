@@ -176,3 +176,77 @@ class AnswerLatencyBenchmarkTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(calls),6);self.assertEqual(result['declaredModelAttempts'],6)
         self.assertEqual(sum(row['modelAttempts'] for row in result['results']),6)
         self.assertTrue(any(row['outcome']=='request_cap_reached' for row in result['results']))
+
+    async def test_cancellation_preserves_prior_answer_and_interrupted_attempt_in_caller_report(self):
+        try: import httpx
+        except ImportError: self.skipTest('optional HTTPX transport dependency')
+        entered=asyncio.Event();calls=[];report={}
+        raw=json.dumps({'lead':'Explain that CTE and subquery performance depends on the database optimizer.',
+            'points':[],'detail':None,'assumptions':[],'coverage':['current_request'],'personal_fact_ids':[]})
+        async def handler(request):
+            calls.append(request)
+            if len(calls)==1:
+                return httpx.Response(200,headers={'content-type':'text/event-stream'},stream=httpx.ByteStream(wire(events(raw))))
+            entered.set();await asyncio.Event().wait()
+        stream=OAuthAnswerStream(model='gpt-6-luna',effort='low',token_provider=lambda:'synthetic',
+            client_factory=lambda **kw:httpx.AsyncClient(transport=httpx.MockTransport(handler),**kw))
+        self.addAsyncCleanup(stream.aclose)
+        task=asyncio.create_task(benchmark.compare_effort_variants(stream,include_answers=True,report=report))
+        await asyncio.wait_for(entered.wait(),1);task.cancel()
+        with self.assertRaises(asyncio.CancelledError):await task
+        self.assertEqual(report['status'],'cancelled');self.assertEqual(report['declaredModelAttempts'],2)
+        self.assertEqual(len(calls),2);self.assertEqual(stream.effort,'low')
+        self.assertEqual([row['outcome'] for row in report['results']],['completed','cancelled'])
+        self.assertIn('card',report['results'][0]);self.assertNotIn('card',report['results'][1])
+        self.assertEqual(report['results'][1]['transport']['outcome'],'cancelled')
+        self.assertIsNone(report['results'][1]['transport']['response_completed_ms'])
+        self.assertTrue(all(row['correctness']=='unreviewed' for row in report['results']))
+
+    async def test_prompt_cancellation_retains_original_failure_without_private_diagnostics_or_retry(self):
+        try: import httpx
+        except ImportError: self.skipTest('optional HTTPX transport dependency')
+        entered=asyncio.Event();calls=[];report={}
+        async def handler(request):
+            calls.append(request)
+            if len(calls)==1:
+                return httpx.Response(400,stream=httpx.ByteStream(b'{"error":{"message":"private provider diagnostic"}}'))
+            entered.set();await asyncio.Event().wait()
+        stream=OAuthAnswerStream(model='gpt-6-luna',effort='low',token_provider=lambda:'synthetic',
+            client_factory=lambda **kw:httpx.AsyncClient(transport=httpx.MockTransport(handler),**kw))
+        self.addAsyncCleanup(stream.aclose)
+        task=asyncio.create_task(benchmark.compare_prompt_variants(stream,'historical baseline',report=report))
+        await asyncio.wait_for(entered.wait(),1);task.cancel()
+        with self.assertRaises(asyncio.CancelledError):await task
+        self.assertEqual(report['status'],'cancelled');self.assertEqual(report['declaredModelAttempts'],2)
+        self.assertEqual([row['outcome'] for row in report['results']],['failed','cancelled'])
+        self.assertEqual(report['results'][0]['transport']['outcome'],'failed')
+        self.assertEqual(len(calls),2);self.assertEqual(stream.effort,'low')
+        self.assertNotIn('private',json.dumps(report))
+
+    async def test_caller_report_must_be_empty_before_any_token_or_client_access(self):
+        prior={'results':['keep previous evidence']}
+        for supplied in (prior,[],None):
+            with self.subTest(report_type=type(supplied).__name__):
+                reads=[];clients=[]
+                stream=OAuthAnswerStream(model='gpt-6-luna',token_provider=lambda:reads.append(True),
+                    client_factory=lambda **kw:clients.append(kw))
+                with self.assertRaisesRegex(ValueError,'empty_report_required'):
+                    await benchmark.compare_effort_variants(stream,report=supplied)
+                self.assertEqual(reads,[]);self.assertEqual(clients,[])
+        self.assertEqual(prior,{'results':['keep previous evidence']})
+
+    async def test_normal_return_is_the_caller_report_with_counts_visible_before_each_attempt(self):
+        try: import httpx
+        except ImportError: self.skipTest('optional HTTPX transport dependency')
+        report={};observed=[]
+        async def handler(_):
+            observed.append((report['status'],report['declaredModelAttempts']))
+            return httpx.Response(400,stream=httpx.ByteStream(b'{}'))
+        stream=OAuthAnswerStream(model='gpt-6-luna',token_provider=lambda:'synthetic',
+            client_factory=lambda **kw:httpx.AsyncClient(transport=httpx.MockTransport(handler),**kw))
+        self.addAsyncCleanup(stream.aclose)
+        result=await benchmark.compare_effort_variants(stream,report=report)
+        self.assertIs(result,report);self.assertEqual(report['status'],'finished')
+        self.assertEqual(observed,[('running',index) for index in range(1,7)])
+        self.assertEqual(report['declaredModelAttempts'],6)
+        self.assertEqual([row['outcome'] for row in report['results']],['failed']*6+['personal_context_missing']*2)

@@ -65,3 +65,19 @@ Interfaces: Model owns one lazy coordinator, injectable storage/preferences fact
 - [ ] Implement actual History list/detail/open/enable/Lock/title/note/delete/export controls. Export uses explicit save panel only, injected destination for tests. Show Off/Saving/Partial/Unavailable and no Generate/Resume stub.
 - [ ] Add actual action-routing and source/expiry/delete/held-write Model cases. Run affected app/presentation/core tests plus product compile. No assertion/timeouts/skips weakening.
 - [ ] Update lane evidence, freeze own head/draft PR against immutable foundation, request controller independent review. Product signature/GUI/hardware/private account acceptance remains separately attributed.
+
+### Approved follow-up: cross-process owner lease
+
+Controller approval2026-10-24 follows an actual two-independent-store lost-update reproduction. Add only a History-specific `HistoryOwnedSnapshotStorage` port and `HistoryVaultStorage` wrapper. Shared194 and peer053 files remain untouched. `beginAccess(create:)` holds a nonblocking exclusive Darwin flock on zero-content0600 `owner.lock` under owned0700 Relay/History before any load/create; `endAccess()` releases only after actual database/storage cleanup. No truncation, overwrite or permission healing; no existing-only missing directory/vault/key/lock creation. Validate retained descriptor/device/inode/owner/link/mode/path identity before storage calls. Constructor/default appearance remains inert. File lock is cooperating-process consistency, not same-user hostile-process isolation.
+
+- [ ] Red desired API and actual two-owner/synthetic subprocess contention, stale cached writer rejection and actual release/reopen.
+- [ ] Red inode/path replacement, symlink/hardlink/nonzero lock/wrong owner-mode/no healing and existing-only zero-create.
+- [ ] Red held actual `endAccess` plus repeated Lock, proving second owner cannot acquire before cleanup.
+- [ ] Implement wrapper/port and minimal HistoryStore/Model default factory; temporary tests use injected fake keys and actual wrapper.
+- [ ] Run focused store/coordinator and actual Model history cases, publish frozen narrow checkpoint/report.
+
+### Approved follow-up: root account/idle integration
+
+After narrow timing/lease checkpoints freeze, merge accepted canonical `e846c00012c73762fa4a599729a5c70b87e532be` into this isolated lane. Preserve194 ProfileVault compatibility/history purpose, accepted account domains, one ConversationOwnerBox/max4native profile flights, and account preparation outside the capture Start task. History logical records remain independent of helper/account lifetimes; idle account changes cannot create an audio history record. Root owns review, not a later serial manual Model join. First-launch160 shared Settings selection is a separately reviewed peer dependency; no unreviewed preference imports.
+
+Actual capture metadata is currently start-only. Record completion indicates the logical retention workflow, not a measured capture segment duration. Capture end receipt or explicit unknown-end/gap remains required before claiming complete segment timing; do not derive it from logical record endedAt or an elapsed UI timer. A later separate checkpoint will use only original native stop evidence/actual joins, retaining unknown when the native source has no qualifying end receipt.

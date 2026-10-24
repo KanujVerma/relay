@@ -129,13 +129,42 @@ public struct HistoryFinal:Sendable,Equatable,Codable,Identifiable {
               startUptimeNanoseconds.value<=endUptimeNanoseconds.value,!text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,
               text.unicodeScalars.count<=1200,text.utf8.count<=4800,!text.contains("\0") else{throw HistoryError.invalid}
         let o=try StrictJSON.decode(originalEventJSON).object(["schemaVersion","captureSessionID","sessionEpoch","eventSequence","presentationGeneration","kind","sourceCode","streamGeneration","emittedUptimeNanoseconds","payload","requestID"])
-        guard try o["schemaVersion"]?.uint()==1,case .string(let uuid)=o["captureSessionID"],UUID(uuidString:uuid)==captureSessionID,
-              try o["sessionEpoch"]?.uint()==sessionEpoch.value,try o["eventSequence"]?.uint()==eventSequence.value,
-              try o["sourceCode"]?.uint()==UInt64(source.rawValue),try o["streamGeneration"]?.uint()==streamGeneration.value,
-              case .string("eou")=o["kind"],case .object(let payload)=o["payload"],
-              case .object(let inner)=payload["event"],case .string(let originalText)=inner["text"],originalText==text,
-              try inner["segmentID"]?.uint()==segmentID.value,try inner["revision"]?.uint()==revision.value,
-              try payload["activityID"]?.uint()==activityID.value else{throw HistoryError.invalid}
+        func number(_ fields:[String:JSONNode],_ key:String)throws->UInt64{
+            guard let value=fields[key] else{throw HistoryError.invalid};return try value.uint(false)
+        }
+        guard try number(o,"schemaVersion")==1,case .string(let uuid)=o["captureSessionID"],UUID(uuidString:uuid)==captureSessionID,
+              try number(o,"sessionEpoch")==sessionEpoch.value,try number(o,"eventSequence")==eventSequence.value,
+              try number(o,"sourceCode")==UInt64(source.rawValue),try number(o,"streamGeneration")==streamGeneration.value,
+              case .string("eou")=o["kind"],let payloadNode=o["payload"] else{throw HistoryError.invalid}
+        _=try number(o,"presentationGeneration")
+        if let request=o["requestID"],!request.isNull{
+            guard case .string(let id)=request,UUID(uuidString:id) != nil else{throw HistoryError.invalid}
+        }
+        let payload=try payloadNode.object(["event","activityID","firstInputSequence","lastInputSequence","activityClosed","lastSpeechInputSequence"])
+        guard let innerNode=payload["event"],case .bool(true)=payload["activityClosed"],
+              try number(payload,"activityID")==activityID.value,
+              try number(payload,"firstInputSequence")<=number(payload,"lastInputSequence"),
+              try number(payload,"lastInputSequence")==number(payload,"lastSpeechInputSequence") else{throw HistoryError.invalid}
+        let inner=try innerNode.object(["version","status","sourceCode","streamGeneration","segmentID","revision","startHostTime","endHostTime","finalizedUptimeNanoseconds","receivedUptimeNanoseconds","text","confidence","timebase"])
+        guard try number(inner,"version")==1,case .string("final")=inner["status"],
+              try number(inner,"sourceCode")==UInt64(source.rawValue),try number(inner,"streamGeneration")==streamGeneration.value,
+              try number(inner,"segmentID")==segmentID.value,try number(inner,"revision")==revision.value,
+              case .string(let originalText)=inner["text"],originalText==text,
+              let confidence=inner["confidence"],let clockNode=inner["timebase"] else{throw HistoryError.invalid}
+        if !confidence.isNull{guard try confidence.uint(false)<=1 else{throw HistoryError.invalid}}
+        let clock=try clockNode.object(["hostTicksAtAnchor","uptimeNsAtAnchor","nsNumer","nsDenom"])
+        let anchor=try number(clock,"uptimeNsAtAnchor")
+        let calibration=NativeClockCalibration(hostTicksAtAnchor:try number(clock,"hostTicksAtAnchor"),uptimeNsAtAnchor:anchor,
+            nsNumer:try number(clock,"nsNumer"),nsDenom:try number(clock,"nsDenom"))
+        let start=try calibration.uptimeNanoseconds(forHostTicks:number(inner,"startHostTime"))
+        let end=try calibration.uptimeNanoseconds(forHostTicks:number(inner,"endHostTime"))
+        let finalized=try number(inner,"finalizedUptimeNanoseconds"),received=try number(inner,"receivedUptimeNanoseconds")
+        // Exactly the existing live transcript bounds, additionally matching
+        // the stored projection to its own original calibrated evidence.
+        guard start==startUptimeNanoseconds.value,end==endUptimeNanoseconds.value,start<=end,
+              end<=finalized,finalized<=received,try received<=number(o,"emittedUptimeNanoseconds"),
+              end-start<=120_000_000_000,finalized-end<=30_000_000_000,
+              (finalized>=anchor ? finalized-anchor:anchor-finalized)<=600_000_000_000 else{throw HistoryError.invalid}
     }
 }
 /// Only the existing validator in this module can construct this wrapper. An

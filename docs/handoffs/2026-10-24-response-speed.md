@@ -1,8 +1,9 @@
 # Response speed continuation
 
 2026-10-24, Relay, branch `feature/response-latency-2026-10-24`.
-Verified source base at writing: `7d5ebaddcae65cbcd323efb9acd90982b0614d05`.
-This handoff accompanies the following conditional-source checkpoint; verify Git.
+Verified published source: `18f982c672a1c4671203af86a1a2e659be6640e2`.
+Verify live Git before continuation; this record accompanies the guarded
+benchmark checkpoint following that source commit.
 
 ## GOAL
 
@@ -48,6 +49,9 @@ answer denial and actual cleanup. Product timing targets remain unachieved.
   Receipt: `asr-prefix-source-full-green.log`. Ten new native cases include actual
   stop/join, two-source independence, original late-final identity, queue-pressure
   local fallback and release of the retired recognizer graph.
+- Guarded benchmark compiled: Swift 0 / 39.907 s, exactly one early opt-out skip
+  / zero failures / 0.003 s. Receipt: `asr-prefix-benchmark-optout.log`. No cache,
+  audio, model or child action. Actual model comparison remains unexecuted.
 
 ## IN PROGRESS
 
@@ -55,14 +59,17 @@ Active plan: [safe-prefix ASR](../superpowers/plans/2026-10-24-safe-prefix-asr.m
 Approved [design](../superpowers/specs/2026-10-24-lagged-asr-preprocessing-design.md).
 Tasks 1–3 are verified foundations. SourcePipeline has a conditional path;
 SourceComponents defaults to closedSpan and normal factory remains unchanged.
-Task 4 real paced public-WAVE comparison/RSS is next before any activation.
+Task 4 real paced public-WAVE comparison/RSS is prepared and root source-reviewed.
+The benchmark has compiled and safely opted out. One separately granted actual
+model run is next, with root's reviewed reporting controls and existing inputs.
 
 ## AT RISK
 
-The uncommitted actual Model four-case fixture is preserved in
-`spikes/macos-panel/Tests/RelaySessionApplicationTests/ResponseLatencyApplicationTests.swift`,
-and intentionally cannot compile until the root/Memory observation seam joins.
-Do not claim it is green. Other adapter files belong to this verified checkpoint.
+The actual Model four-case fixture remains uncommitted in
+`spikes/macos-panel/Tests/RelaySessionApplicationTests/ResponseLatencyApplicationTests.swift`
+and intentionally cannot compile until the shared observation seam joins.
+The benchmark code compiles/guards only; no actual model/performance success is
+claimed. Do not activate the normal factory from its opt-out result.
 
 ## DECISIONS
 
@@ -81,6 +88,19 @@ Do not claim it is green. Other adapter files belong to this verified checkpoint
   every awaited lane call before indexing history that cancel can clear.
 - Keep implementation default-off until exact text/cutoff, paced existing WAVE,
   two-source independence, remaining sample counts and actual RSS pass.
+- Benchmark uses only the unchanged installed fictional WAVE, SHA-256
+  `98f0000e24688c1e665bd90de70d99b378b661bb749b483aeeed90cd5b2be9c7`,
+  39,516 mono Float32 samples at 16 kHz (read-only afinfo observation). Root
+  confirmed the existing real public cache, manifest
+  `parakeet-eou320-silero621-v1`, 21 hashes / 225,301,695 bytes. No file copies,
+  TTS, trim/repeat, playback, downloads or private-source/account operation.
+- Controlled benchmark has sequential baseline/prefix children, each with two
+  existing ASR managers, fresh VAD states per trial, one declared native warm-up
+  and two unchanged paced trials. Report 8,000 leading / 32,000 trailing zeros,
+  actual per-source paced count and final-packet padding. Check treatment mode,
+  baseline one legacy call / zero prefix acknowledgements, exact words/cuts,
+  >10% median native-end→final improvement, no normal-rate local fallback and
+  <=256 MiB peak-RSS increase. Report all outcomes; no automatic real-gate rerun.
 
 ## STANDING INSTRUCTIONS
 
@@ -96,11 +116,10 @@ the single Model observation hook outside the native publication lock.
 
 ## NEXT STEP
 
-Prepare matched paced public-WAVE baseline/prefix tests with two existing ASR
-managers, exact text/cutoffs, accepted input counts and actual RSS; request the
-next separate root lease/current cached inputs. Run unchanged Model fixtures
-when root supplies the separately accepted observation seam. Do not activate the
-normal source path before the measured gate and root approval.
+Obtain the separate actual-model lease to select PrefixSpeechBenchmarkTests with
+root's confirmed unchanged public inputs and the controlled opt-in. Do not rerun
+a failed real gate automatically. Run unchanged Model fixtures when the accepted shared
+observation seam arrives. Keep normal factory closedSpan until measured approval.
 
 ## OPEN QUESTIONS
 

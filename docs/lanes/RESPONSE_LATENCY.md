@@ -259,6 +259,25 @@ window. Actual paced-model text/cutoff/RSS and full app/account results remain
 separate pending gates. Fresh budget was 23.332 GiB temporary / 47.685 GiB free /
 0.75 GiB reserve; same bounded cache/jobs/deadline, lease released.
 
+The controlled paced comparison harness now **compiles and safely opts out**:
+Swift exited 0 in 39.907 s, with one selected case / one early guard skip /
+zero failures in 0.003 s. Prefix/offline/download opt-ins were explicitly zero,
+so no audio/cache inspection, models or child process ran. This does not pass
+the actual model/performance gate. Root reviewed its source/reporting controls.
+
+When separately permitted it uses only the unchanged installed fictional WAVE
+with the approved SHA before model load, two real existing ASR managers per
+sequential baseline/prefix child, fresh actual VAD states per trial, one declared
+native warm-up and two paced trials. It discloses 8,000 leading / 32,000 trailing
+zeros plus last-packet padding and actual paced count, identical across modes.
+Full recognized text/cutoffs and treatment identities must match; baseline has
+one legacy call and zero prefix acknowledgements. Counts are input acceptance,
+not completed encoder work. Timing and RSS results are still unknown; normal
+activation requires the real gate (>10% median native-end→final reduction,
+no normal-rate local fallback, <=256 MiB peak-RSS increase) and root review.
+Fresh opt-out budget: 23.360 GiB temporary / 46.879 GiB free / 0.75 GiB reserve;
+same cache/jobs/180 s deadline, lease released. No actual account/window claim.
+
 No real account, Keychain, private source, audio/screen capture, model inference,
 download or full-app latency result is claimed. Product goals from speech-end
 remain first visible text under 1 s median, useful advice by 2 s median, and a

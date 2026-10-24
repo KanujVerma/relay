@@ -10,7 +10,7 @@ import unicodedata
 from .panel_wire import exact, u64, uuid_string, WireError
 
 _OFFER=('schemaVersion','kind','captureSessionID','sessionEpoch','presentationGeneration',
-        'requestID','eventSequence','memoryRevision','scope','continuity','adjustments','preparation','examples','supportIDs')
+        'requestID','eventSequence','memoryRevision','scope','evidenceGap','continuity','adjustments','preparation','examples','supportIDs')
 _RETIRE=('schemaVersion','kind','captureSessionID','sessionEpoch','memoryRevision')
 
 
@@ -29,6 +29,7 @@ def decode_learning(value):
     for field in ('captureSessionID','requestID','memoryRevision'):uuid_string(value[field])
     for field in ('sessionEpoch','presentationGeneration','eventSequence'):u64(value[field],True)
     if value['scope'] not in ('technical','recruiter','other'):raise WireError('learning_scope')
+    if type(value['evidenceGap']) is not bool:raise WireError('learning_gap')
     adjustments=value['adjustments']
     if (not isinstance(adjustments,list) or len(adjustments)>2 or not all(isinstance(item,str) for item in adjustments) or len(set(adjustments))!=len(adjustments)
         or any(item not in ('concise_lead','stepwise','example_first') for item in adjustments)):
@@ -44,7 +45,7 @@ def decode_learning(value):
     supports=value['supportIDs']
     if not isinstance(supports,list) or len(supports)>8 or not all(isinstance(item,str) for item in supports) or len(set(supports))!=len(supports):raise WireError('learning_supports')
     for support in supports:uuid_string(support)
-    if len(json.dumps({key:value[key] for key in ('scope','continuity','adjustments','preparation','examples','supportIDs')},ensure_ascii=False).encode())>2048:
+    if len(json.dumps({key:value[key] for key in ('scope','evidenceGap','continuity','adjustments','preparation','examples','supportIDs')},ensure_ascii=False).encode())>2048:
         raise WireError('learning_budget')
     return copy.deepcopy(value)
 
@@ -119,7 +120,7 @@ class HostLearningMemory:
         value,_=entry;revision=_revision(value)
         if revision in self._retired:return None
         use=_LearningUse(native,uuid_string(value['memoryRevision']),revision,
-                           {key:copy.deepcopy(value[key]) for key in ('scope','continuity','adjustments','preparation','examples','supportIDs')})
+                           {key:copy.deepcopy(value[key]) for key in ('scope','evidenceGap','continuity','adjustments','preparation','examples','supportIDs')})
         self._use=use;return use
 
     def _owns(self,use,native):

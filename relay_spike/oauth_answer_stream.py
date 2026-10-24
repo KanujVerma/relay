@@ -145,13 +145,17 @@ class OAuthAnswerStream:
             await self._owned_client.aclose()
             self._owned_client.cookies.clear()
 
-    async def _token(self):
+    async def _token(self, *, notes_owned=False):
         if self._token_provider is None:
             from .auth import active_access_token
             provider = active_access_token
         else:
             provider = self._token_provider
-        token = await asyncio.to_thread(provider)
+        if notes_owned:
+            from .account_oauth import owned_thread
+            token = await owned_thread(provider)
+        else:
+            token = await asyncio.to_thread(provider)
         if not isinstance(token, str) or not token.strip() or len(token) > 32768:
             raise AnswerTransportError('credential_unavailable')
         return token
@@ -240,7 +244,7 @@ class OAuthAnswerStream:
         outcome='failed'
         try:
             async with asyncio.timeout(self.deadline):
-                token = await self._token()
+                token = await self._token(notes_owned=notes_text_permit is not None)
                 timing.mark('token_ready_ms')
                 part, guard = None, None
                 if visual_attachment is not None:
@@ -259,7 +263,8 @@ class OAuthAnswerStream:
                     current_token = await self._token()
                     visual_attachment._mark_completed(token=current_token, model=self.model, effort=self.effort, endpoint=self._endpoint)
                 if notes_text_permit is not None:
-                    notes_text_permit._mark_completed(token=token,model=self.model,effort=self.effort,endpoint=self._endpoint)
+                    current_token = await self._token(notes_owned=True)
+                    notes_text_permit._mark_completed(token=current_token,model=self.model,effort=self.effort,endpoint=self._endpoint)
                 success = True
                 outcome='completed'
                 return answer

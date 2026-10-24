@@ -6,13 +6,24 @@ import RelayProfile
 /// serialized UUID cannot construct this proof or substitute another store.
 final class HistoryNotesStoreRead:@unchecked Sendable {
     fileprivate let store:HistoryStore
+    fileprivate let storeEpoch:UUID
     let sourceData:HistoryNotesSourceData
     let intentID:UUID
     let expiresAt:TimeInterval
     fileprivate var consumed=false
-    fileprivate init(store:HistoryStore,data:HistoryNotesSourceData,intentID:UUID,expiresAt:TimeInterval){
-        self.store=store;sourceData=data;self.intentID=intentID;self.expiresAt=expiresAt
+    fileprivate init(store:HistoryStore,epoch:UUID,data:HistoryNotesSourceData,intentID:UUID,expiresAt:TimeInterval){
+        self.store=store;storeEpoch=epoch;sourceData=data;self.intentID=intentID;self.expiresAt=expiresAt
     }
+}
+public final class HistoryNotesSaveReceipt:Sendable {
+    public let operationID:UUID,recordID:UUID,noteID:UUID,sourceRecordRevision:Int64,savedAtRecordRevision:Int64,noteRevision:Int64
+    fileprivate init(operationID:UUID,document:HistoryNotesDocumentData){
+        self.operationID=operationID;recordID=document.recordID;noteID=document.noteID;sourceRecordRevision=document.sourceRecordRevision
+        savedAtRecordRevision=document.savedAtRecordRevision;noteRevision=document.noteRevision
+    }
+}
+public struct HistoryNotesCommitOutcome:Sendable{
+    public let receipt:HistoryNotesSaveReceipt,document:HistoryNotesDocumentData,cleanupComplete:Bool
 }
 
 /// One serialized canonical ledger and at most one bounded candidate. Callers
@@ -26,6 +37,8 @@ final class HistoryStore:@unchecked Sendable {
     private var queue:DatabaseQueue?
     private var retiringQueue:DatabaseQueue?
     private var ownsStorage=false
+    private var notesEpoch=UUID(),notesWriteIndeterminate=false
+    private var retiringNotesCandidate:DatabaseQueue?
     // One bounded destructive-mutation receipt, consumed by the sole workspace
     // flight after this store's lock is released; never a persistent registry.
     private var expiredRecordIDs:Set<UUID>?=[]
@@ -41,14 +54,28 @@ final class HistoryStore:@unchecked Sendable {
         "history_final":"CREATE TABLE history_final (id TEXT PRIMARY KEY, record_id TEXT NOT NULL REFERENCES history_record(id) ON DELETE CASCADE, capture_id TEXT NOT NULL REFERENCES history_capture(id) ON DELETE CASCADE, source INTEGER NOT NULL CHECK(source IN (1,2)), sort_ticks BLOB NOT NULL, text_bytes INTEGER NOT NULL, payload BLOB NOT NULL CHECK(typeof(payload)='blob'))"
     ]
     private static let index="CREATE INDEX history_final_order ON history_final(record_id,capture_id,sort_ticks,id)"
-    private static func schema(_ q:DatabaseQueue)throws{
+    private static let notesTable="CREATE TABLE history_generated_note (record_id TEXT PRIMARY KEY REFERENCES history_record(id) ON DELETE CASCADE, payload BLOB NOT NULL CHECK(typeof(payload)='blob' AND length(payload)<=262144))"
+    private static func schema(_ q:DatabaseQueue,version:Int=1)throws{
+        guard [1,2].contains(version) else{throw HistoryError.invalid}
         try q.write{db in
             for name in ["history_record","history_capture","history_final"]{try db.execute(sql:tables[name]!)}
-            try db.execute(sql:index);try db.execute(sql:"PRAGMA user_version=1")
+            try db.execute(sql:index)
+            if version==2{try db.execute(sql:notesTable)}
+            try db.execute(sql:"PRAGMA user_version=\(version)")
         }
     }
     private static func key(_ id:UUID)->String{id.uuidString.lowercased()}
-    private func required()throws->DatabaseQueue{guard retiringQueue==nil,let queue else{throw HistoryError.closed};return queue}
+    private func required()throws->DatabaseQueue{guard !notesWriteIndeterminate,retiringQueue==nil,retiringNotesCandidate==nil,let queue else{throw HistoryError.closed};return queue}
+    private static func version(_ db:Database)throws->Int{
+        guard let version=try Int.fetchOne(db,sql:"PRAGMA user_version"),[1,2].contains(version) else{throw HistoryError.invalid};return version
+    }
+    private static func notesRows(_ db:Database,_ id:UUID)throws->[HistoryFinal]{
+        try Data.fetchAll(db,sql:"SELECT f.payload FROM history_final f JOIN history_capture c ON f.capture_id=c.id WHERE f.record_id=? ORDER BY c.ordinal,f.sort_ticks,f.id",arguments:[key(id)]).map{try HistoryJSON.decode(HistoryFinal.self,$0)}
+    }
+    private static func storedNotes(_ db:Database,_ id:UUID)throws->(HistoryNotesDocumentData,HistoryNotesSourceData)?{
+        guard try version(db)==2,let raw=try Data.fetchOne(db,sql:"SELECT payload FROM history_generated_note WHERE record_id=?",arguments:[key(id)]) else{return nil}
+        return try HistoryNotesDocuments.restore(raw,record:record(db,id),rows:notesRows(db,id))
+    }
     private static func record(_ db:Database,_ id:UUID)throws->HistoryRecord{
         guard let data=try Data.fetchOne(db,sql:"SELECT payload FROM history_record WHERE id=?",arguments:[key(id)]) else{throw HistoryError.missing}
         guard data.count<=16_384 else{throw HistoryError.invalid}
@@ -79,7 +106,8 @@ final class HistoryStore:@unchecked Sendable {
     /// Retained rows are copied into the fixed schema, not a VACUUM/temp file.
     private static func copyRows(_ source:DatabaseQueue,to destination:DatabaseQueue,
                                  excludingRecords:Set<String>=[],excludingSource:(String,UInt32)?=nil)throws{
-        try schema(destination)
+        let originalVersion=try source.read{try version($0)}
+        try schema(destination,version:originalVersion)
         try source.read{from in try destination.write{to in
             for table in ["history_record","history_capture","history_final"]{
                 for row in try Row.fetchAll(from,sql:"SELECT * FROM \(table)"){
@@ -99,6 +127,20 @@ final class HistoryStore:@unchecked Sendable {
                         if let excluded=excludingSource,capture==excluded.0,source==excluded.1{continue}
                         try to.execute(sql:"INSERT INTO history_final VALUES(?,?,?,?,?,?,?)",arguments:[try row.decode(String.self,forColumn:"id"),recordID,capture,source,try row.decode(Data.self,forColumn:"sort_ticks"),try row.decode(Int.self,forColumn:"text_bytes"),try row.decode(Data.self,forColumn:"payload")])
                     }
+                }
+            }
+            if originalVersion==2{
+                for row in try Row.fetchAll(from,sql:"SELECT record_id,payload FROM history_generated_note"){
+                    let owner=try row.decode(String.self,forColumn:"record_id")
+                    if excludingRecords.contains(owner){continue}
+                    guard let id=UUID(uuidString:owner) else{throw HistoryError.invalid}
+                    let raw=try row.decode(Data.self,forColumn:"payload"),originals=try notesRows(from,id)
+                    let document=try HistoryNotesDocuments.restore(raw,record:record(from,id),rows:originals).0
+                    if let excluded=excludingSource{
+                        let removed=Set(originals.filter{$0.captureID==excluded.0 && $0.source.rawValue==excluded.1}.map(\.id))
+                        if document.sourceRows.contains(where:{removed.contains($0.rowID)}){continue}
+                    }
+                    try to.execute(sql:"INSERT INTO history_generated_note VALUES(?,?)",arguments:[owner,raw])
                 }
             }
         }}
@@ -154,7 +196,7 @@ final class HistoryStore:@unchecked Sendable {
                 catch{try? candidate.close();throw error}
             }
             do{
-                try Self.validate(candidate);guard admission() else{throw HistoryError.stale};queue=candidate
+                try Self.validate(candidate);guard admission() else{throw HistoryError.stale};queue=candidate;notesEpoch=UUID()
                 try expire(admission:admission)
                 let repairs=try required().read{db in
                     try Data.fetchAll(db,sql:"SELECT payload FROM history_record").compactMap{data->HistoryRecord? in
@@ -173,9 +215,11 @@ final class HistoryStore:@unchecked Sendable {
             }catch{if let q=queue{try? q.close()};queue=nil;try? candidate.close();throw error}
     }
     func close()throws{try lock.withLock{
+        if let failed=retiringNotesCandidate{try failed.close();retiringNotesCandidate=nil}
         if let old=retiringQueue{try old.close();retiringQueue=nil}
         if let q=queue{try q.close();queue=nil}
         if ownsStorage,let owner=storage as? any HistoryOwnedSnapshotStorage{try owner.endAccess();ownsStorage=false}
+        notesWriteIndeterminate=false;notesEpoch=UUID()
     }}
     private func expire(admission:@Sendable()->Bool={true})throws{
         let now=clock().timeIntervalSince1970
@@ -342,7 +386,105 @@ final class HistoryStore:@unchecked Sendable {
             let raw=try JSONSerialization.data(withJSONObject:value,options:[.sortedKeys,.withoutEscapingSlashes])
             let data=try HistoryNotesData.source(raw)
             guard admission(),clock().timeIntervalSince1970<record.expiresAt else{throw HistoryError.stale}
-            return HistoryNotesStoreRead(store:self,data:data,intentID:intentID,expiresAt:record.expiresAt)
+            return HistoryNotesStoreRead(store:self,epoch:notesEpoch,data:data,intentID:intentID,expiresAt:record.expiresAt)
+        }
+    }
+    func generatedNotes(_ id:UUID)throws->HistoryNotesDocumentData?{
+        try lock.withLock{try expire();return try required().read{db in _=try Self.record(db,id);return try Self.storedNotes(db,id)?.0}}
+    }
+    private func revalidateNotesStorage()throws{
+        let current=try required()
+        guard try storage.exists(),try storage.load()==HistorySnapshotCodec.encode(current) else{throw HistoryError.invalid}
+    }
+    private func matchesNotesRead(_ source:HistoryNotesStoreRead,_ detail:HistoryDetail)throws{
+        let r=detail.record,data=source.sourceData
+        guard source.store===self,source.storeEpoch==notesEpoch,r.id==data.recordID,r.revision==data.recordRevision,
+              r.expiresAt==source.expiresAt,r.state.rawValue==data.recordState,
+              HistoryNotesData.gaps.filter({r.gaps.map(\.rawValue).contains($0)})==data.gaps,
+              detail.totalRows==data.selection.totalSavedRows else{throw HistoryError.stale}
+        let ids=data.rows.map(\.rowID),wanted=Set(ids),actual=detail.rows.filter{wanted.contains($0.id)}
+        guard actual.map(\.id)==ids,data.selection.kind != "full_saved_transcript" || actual.count==detail.rows.count else{throw HistoryError.stale}
+        for (row,proof) in zip(actual,data.rows){
+            guard row.revision.value==proof.revision,Data(row.text.utf8)==Data(proof.text.utf8),
+                  HistoryNotesData.digest(Data(row.text.utf8))==proof.textDigest else{throw HistoryError.stale}
+        }
+    }
+    /// This separate mutation path preserves the accepted ordinary-write API.
+    /// A thrown save may already have replaced ciphertext. Only its positive
+    /// return issues a receipt; later queue cleanup cannot erase that outcome.
+    private func commitNotes(operationID:UUID,admission:@Sendable()->Bool,
+                             _ body:(Database)throws->HistoryNotesDocumentData)throws->HistoryNotesCommitOutcome{
+        guard admission() else{throw HistoryError.stale}
+        let original=try required(),candidate=try HistorySnapshotCodec.makeQueue()
+        do{
+            try original.backup(to:candidate)
+            let document=try candidate.write{db in
+                if try Self.version(db)==1{try db.execute(sql:Self.notesTable);try db.execute(sql:"PRAGMA user_version=2")}
+                return try body(db)
+            }
+            try Self.validate(candidate)
+            let bytes=try HistorySnapshotCodec.encode(candidate)
+            guard bytes.count<=contentLimitBytes else{throw HistoryError.capacity}
+            guard admission() else{throw HistoryError.stale}
+            do{try storage.save(bytes,createKey:false)}
+            catch{notesWriteIndeterminate=true;throw HistoryNotesCommitError.indeterminate}
+            queue=candidate;retiringQueue=original
+            let receipt=HistoryNotesSaveReceipt(operationID:operationID,document:document)
+            do{
+                try original.close();retiringQueue=nil
+                return HistoryNotesCommitOutcome(receipt:receipt,document:document,cleanupComplete:true)
+            }catch{
+                return HistoryNotesCommitOutcome(receipt:receipt,document:document,cleanupComplete:false)
+            }
+        }catch{
+            if queue !== candidate{
+                do{try candidate.close()}catch{retiringNotesCandidate=candidate}
+            }
+            throw error
+        }
+    }
+    func saveGeneratedNotes(_ output:HistoryNotesOutputData,provenance:HistoryNotesGenerationData,modelID:String,
+                            source:HistoryNotesStoreRead,operationID:UUID,admission:@Sendable()->Bool)throws->HistoryNotesCommitOutcome{
+        try lock.withLock{
+            // A foreign store cannot consume another owner's read. Every
+            // attempt on its actual issuer consumes it, including a rejection.
+            guard source.store===self,!source.consumed else{throw HistoryError.stale};source.consumed=true
+            guard admission(),source.storeEpoch==notesEpoch,operationID==source.intentID,provenance.operationID==operationID else{throw HistoryError.stale}
+            try revalidateNotesStorage();try expire(admission:admission)
+            let now=clock().timeIntervalSince1970
+            guard now.isFinite,now<source.expiresAt else{throw HistoryError.stale}
+            let detail=try required().read{try Self.detail($0,source.sourceData.recordID,all:true)}
+            try matchesNotesRead(source,detail)
+            let checked=try HistoryNotesData.output(output.canonicalBytes,source:source.sourceData)
+            return try commitNotes(operationID:operationID,admission:admission){db in
+                let previous=try Self.storedNotes(db,detail.record.id)?.0
+                guard previous?.generation.operationID != operationID else{throw HistoryError.stale}
+                if let previous,previous.noteRevision==Int64.max{throw HistoryError.capacity}
+                let record=try Self.bumped(detail.record)
+                let document=try HistoryNotesDocuments.make(checked,source:source.sourceData,noteID:previous?.noteID ?? UUID(),noteRevision:(previous?.noteRevision ?? 0)+1,
+                    savedAt:record.revision,generation:provenance,modelID:modelID)
+                try Self.put(db,record)
+                try db.execute(sql:"INSERT INTO history_generated_note(record_id,payload) VALUES(?,?) ON CONFLICT(record_id) DO UPDATE SET payload=excluded.payload",arguments:[Self.key(record.id),document.canonicalBytes])
+                return document
+            }
+        }
+    }
+    func editGeneratedNotes(_ id:UUID,expectedRecordRevision:Int64,noteID:UUID,expectedNoteRevision:Int64,
+                            texts:HistoryNotesEditedTexts,operationID:UUID,admission:@Sendable()->Bool)throws->HistoryNotesCommitOutcome{
+        try lock.withLock{
+            guard admission() else{throw HistoryError.stale}
+            try revalidateNotesStorage();try expire(admission:admission)
+            return try commitNotes(operationID:operationID,admission:admission){db in
+                let old=try Self.record(db,id)
+                guard old.revision==expectedRecordRevision,let (previous,source)=try Self.storedNotes(db,id),
+                      previous.noteID==noteID,previous.noteRevision==expectedNoteRevision else{throw HistoryError.stale}
+                guard previous.noteRevision<Int64.max else{throw HistoryError.capacity}
+                let record=try Self.bumped(old),output=try HistoryNotesDocuments.edited(texts,previous:previous,source:source)
+                let document=try HistoryNotesDocuments.make(output,source:source,noteID:noteID,noteRevision:previous.noteRevision+1,savedAt:record.revision,
+                    generation:previous.generation,modelID:previous.modelID,origin:"generated_user_edited",editedAt:HistoryNotesDocuments.timestamp(clock()))
+                try Self.put(db,record);try db.execute(sql:"UPDATE history_generated_note SET payload=? WHERE record_id=?",arguments:[document.canonicalBytes,Self.key(id)])
+                return document
+            }
         }
     }
     func deleteSource(_ id:UUID,expectedRevision:Int64,captureID:String,source:TranscriptSource,admission:@Sendable()->Bool={true})throws{
@@ -371,12 +513,13 @@ final class HistoryStore:@unchecked Sendable {
     }
     private static func validate(_ q:DatabaseQueue)throws{
         try q.read{db in
-            guard try Int.fetchOne(db,sql:"PRAGMA user_version")==1 else{throw HistoryError.invalid}
-            var expected=tables;expected["history_final_order"]=index
+            let schemaVersion=try version(db)
+            var known=tables;if schemaVersion==2{known["history_generated_note"]=notesTable}
+            var expected=known;expected["history_final_order"]=index
             for row in try Row.fetchAll(db,sql:"SELECT type,name,tbl_name,sql FROM sqlite_schema"){
                 let name=try row.decode(String.self,forColumn:"name"),table=try row.decode(String.self,forColumn:"tbl_name")
                 let sql=try row.decode(String?.self,forColumn:"sql")
-                if sql==nil,name.hasPrefix("sqlite_autoindex_"),tables[table] != nil{continue}
+                if sql==nil,name.hasPrefix("sqlite_autoindex_"),known[table] != nil{continue}
                 guard let actual=sql,expected.removeValue(forKey:name)==actual else{throw HistoryError.invalid}
             }
             guard expected.isEmpty,try Row.fetchAll(db,sql:"PRAGMA foreign_key_check").isEmpty else{throw HistoryError.invalid}
@@ -417,6 +560,15 @@ final class HistoryStore:@unchecked Sendable {
                 try capture.1.stop?.follows(f)
                 rowCount[owner,default:0]+=1;textCount[owner,default:0]+=f.text.utf8.count
                 guard rowCount[owner]!<=HistoryBounds.rows,textCount[owner]!<=HistoryBounds.text else{throw HistoryError.capacity}
+            }
+            if schemaVersion==2{
+                let notes=try Row.fetchAll(db,sql:"SELECT record_id,payload FROM history_generated_note")
+                guard notes.count<=HistoryBounds.records else{throw HistoryError.capacity}
+                for row in notes{
+                    let id=try row.decode(String.self,forColumn:"record_id"),raw=try row.decode(Data.self,forColumn:"payload")
+                    guard let record=records[id],raw.count<=HistoryNotesData.documentBytes else{throw HistoryError.invalid}
+                    _=try HistoryNotesDocuments.restore(raw,record:record,rows:notesRows(db,record.id))
+                }
             }
         }
     }

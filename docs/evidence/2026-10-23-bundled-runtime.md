@@ -1,6 +1,14 @@
 # Self-contained typed and personal-context app artifacts
 
-## Current query-corrected artifact
+## Current joined résumé artifact and full relocation
+
+Clean exact source5575b184a081450308b88b622ec5fcb5eb81318a, sourceDirty=false: `/private/tmp/relay-root-resume-runtime/Relay.app`. Unchanged full-app copy `/private/tmp/relay-root-resume-relocation/Folder With Spaces/Relay.app`.170,985,016bytes;100arm64 Mach-O files independently audited before and after relocation; all inner/outer strict ad-hoc signatures pass. Native SHA256 `2b7c8916311b38ebad478b5265cb1565d44c37bb3f7ad0c27ff058b10e7ff924`; frozen helper SHA256 `653757843786c517649ea2b9d1c84b937b622adba989e30d8b7b7e3eac08ecf5`. Actual frozen TXT/PDF/DOCX/profile/session3case run passes5.143s after assembly. Offline build reuses pinned public dependencies, with no source workaround.
+
+Twenty-two distinct relocated resolver/actual Model/context/résumé cases passed across the initial22collected run20pass/2explicit opt-in skips and a targeted2case run enabling those exact missing environment switches. Do not describe this as a single22case zero-skip run. Four actual résumé Model cases pass with real fictional TXT/selectablePDF/simpleDOCX/entered input, normal bundled helper, cwd `/`, no repository/Python override. They exercise review/Save/End/fresh restore/personal card/Lock. Test-onlyd26632f adds this packaged path; document fixtures are explicitly fictional, not private user files. Query and saved-context packaged controls remain green.
+
+This artifact includes schema3 résumé coverage and query6eb. It predates the newly joined idle Ask feature and protected-account app. No current idle/account visible-window or distribution acceptance is inferred from it. Earlier artifacts below retain exact historical attribution.
+
+## Earlier query-corrected artifact
 
 Clean source6eb17170799df7708e3c3525e3e4513adb8e6de7, sourceDirty=false in build-provenance.json. Artifact `/private/tmp/relay-root-query-runtime/Relay.app`:170,817,203bytes,100 arm64 Mach-O audits, all strict inner/outer ad-hoc signatures pass. Native executable SHA256 `ec47e8caa4ac0d366746496696785c866b4bb5787ff1287d9ac7f24016b22fad`; helper SHA256 `752d4783bf8152e477715af7540abf9c4bac8ee31db6db79bb782e06adb6c555`.
 

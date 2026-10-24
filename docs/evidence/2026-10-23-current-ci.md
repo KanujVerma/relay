@@ -1,6 +1,12 @@
 # Hosted integration verification
 
-## Current query-corrected controller
+## Current joined résumé checkpoint
+
+Exact5575b184a081450308b88b622ec5fcb5eb81318a: [macOS/Python40055828276](https://github.com/KanujVerma/relay/actions/runs/40055828276), [contract40055828279](https://github.com/KanujVerma/relay/actions/runs/40055828279) and [real converter40055828303](https://github.com/KanujVerma/relay/actions/runs/40055828303) succeeded. Native job120758479191 confirms Swift6.2.3/x86_64 macOS15:637Python collected/611pass/26optional skips in10.837s; session60/2skips, profile50, context28, controls18, composition19, panel134/8skips =309native collected/299pass/10skips. All six packages and final app compilation succeeded. Converter job120758479418 separately passed15worker-document and12mandatory real-library cases with zero skips; its Linux full-suite optional skips are not native résumé-format acceptance. Four real-format actual-app gates passed locally against the bundled artifact.
+
+This exact hosted head includes the accepted complete first résumé increment. Idle Ask was subsequently joined at ac70eb3 and locally passed653Python/26skips and171panel/app/state/7opt-in skips; its hosted result must be observed separately. Account app/history remain separate. No real account, capture or distribution claim follows from synthetic checks.
+
+## Earlier query-corrected controller
 
 Exact0e9f6d0bf5e61e8d37f30586235dc7bf1b4d38d3: [macOS/Python40053765188](https://github.com/KanujVerma/relay/actions/runs/40053765188) and [contract40053765194](https://github.com/KanujVerma/relay/actions/runs/40053765194) both succeeded. Actual job120752094948 logs confirm Python605collected/581pass/24optional skips in9.992s; native session60/2skips, profile45, context28, controls18, composition19, panel130/6skips =300collected/292pass/8skips. All six native packages and final app compile succeeded on Swift6.2.3, x86_64 macOS15/Xcode26.2. This includes query grammar6eb1717 and test64ff4b8; its opt-in packaged-only case remains among explicit hosted skips, separately passed against the actual local artifact. New account/idle/résumé feature branches are not integrated in this head.
 

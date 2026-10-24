@@ -51,10 +51,11 @@ struct LiveSessionView:View {
         }.padding(8).foregroundStyle(.white).preferredColorScheme(.dark).frame(width:706)
     }
     @ViewBuilder private var emptyContent:some View {
+        let message=RelayEmptyAnswerPresentation(state:state,status:status,hasQuestion:question != nil)
         VStack(alignment:.leading,spacing:12){
-            Image(systemName:state.paused ? "pause.circle":state.stopping ? "stop.circle":"waveform").font(.system(size:26,weight:.light)).foregroundStyle(RelayTheme.muted)
-            Text(state.paused ? "Take your time.":state.stopping || state.assistantClosing ? "Finishing the session…":question != nil ? "Thinking it through…":state.running ? "Listening for the next question.":"Ask Relay a question.").font(.system(size:19,weight:.medium))
-            Text(state.paused ? "Resume starts a fresh conversation. Your saved context stays available.":state.stopping || state.assistantClosing ? "Relay is waiting for active work to finish.":state.running ? "Talking points appear automatically as the conversation develops.":"Audio recording is off. Type a question or follow-up above.").font(.system(size:13)).lineSpacing(5).foregroundStyle(RelayTheme.muted)
+            Image(systemName:message.symbol).font(.system(size:26,weight:.light)).foregroundStyle(RelayTheme.muted)
+            Text(message.title).font(.system(size:19,weight:.medium))
+            Text(message.detail).font(.system(size:13)).lineSpacing(5).foregroundStyle(RelayTheme.muted)
         }.padding(.vertical,26).frame(maxWidth:.infinity,alignment:.leading)
     }
 }

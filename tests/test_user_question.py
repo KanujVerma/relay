@@ -184,7 +184,7 @@ class UserQuestionHostTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(legacy['requestID'],host.user.bases)
         self.assertEqual(host.active.question,semantic);self.assertEqual(host.active.token,token)
         self.assertEqual(host.active.projection.snapshot(),current_projection)
-        follow=question(host,'How does that queue work?',basis=legacy['requestID'])
+        follow=question(host,'Explain queue scheduling.',basis=legacy['requestID'])
         self.assertTrue(await host.handle_user_question(follow));await host.drain()
         self.assertEqual(self.out[-1]['disposition'],'answer')
         self.assertEqual(self.out[-1]['question'],follow['question'])

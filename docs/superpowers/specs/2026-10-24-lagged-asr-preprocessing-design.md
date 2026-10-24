@@ -1,6 +1,7 @@
 # Lagged ASR preprocessing with an exact native cutoff
 
-Status: source-backed proposal for root review, not implemented. Existing
+Status: root approved this architecture on 2026-10-24 with the mandatory
+optimization-backpressure fallback below. Not implemented yet. Existing
 response instrumentation/compact foundation is frozen at `23bf594`; native
 Model observation and account acceptance remain separate ongoing gates.
 
@@ -108,13 +109,24 @@ while the preceding final finishes, preserving original keys on all callbacks.
 Never reset the old decoder to admit new onset. Remote and microphone drainers
 have independent existing managers and no shared per-utterance actor/queue lock.
 
-Queue proposal: at most 32 commands and 16,000 queued PCM samples, plus one
+Queue bound: at most 32 commands and 16,000 queued PCM samples, plus one
 in-flight 5,120-sample append per source. Existing 120 s activity/history bound
-remains. Queue overflow or noncontiguous input retires the affected source with
-the existing fixed error path; no silent drop, invented final or second inference.
+remains. Optimization-only queue saturation disables prefix work for that
+original activity. It must not retire otherwise valid capture. After the actual
+in-flight accept returns, discard queued prefix work for that key and reset;
+at its actual closure run the original full closed-span recognizer once under
+the same original key. A monotonic one-fallback latch prevents replay loops.
+This is one local ASR fallback, never an external provider request or retry.
+An unstarted queued activity needs no reset of the preceding owner's state.
+Fallback/closure/cancel signals cannot be dropped behind a full PCM queue.
+Invalid source/watermark/gaps and model errors retain the existing fail-closed
+error path. Next activities preserve FIFO ownership across either finish path.
 Keep the full original closed-span witness initially, so this optimization adds
 only bounded queued copies, not another full history/model state. Remove that
 copy only in a separately proven memory optimization if measurements justify it.
+Initially the capability is explicit/default-off in source components. Normal
+production activation requires the matched paced-input and resource gate below;
+there is no user-facing detector/model switch or new automatic download.
 
 ## Admission, cancellation and quiescence
 
@@ -146,10 +158,14 @@ Runtime negative/positive gates must include:
    full late constraints and same final partition as closed recognition.
 2. A low chunk followed by long middle-band input and later closure; no prefix
    beyond the original candidate end. Speech resumption clears only that cap.
-3. Invalid/backwards/oversized watermarks, source generation/sequence gaps,
-   queue saturation and model error with no final or stale publication.
+3. Invalid/backwards/oversized watermarks, source generation/sequence gaps and
+   model error with no final or stale publication. Optimization queue saturation
+   instead proves the single original closed-span fallback, including a large
+   watermark jump after long middle-band input and resumed speech.
 4. Held accept/finish during Stop, actual reset after release, original join,
    no replacement early admission, and a later activity queued under its own key.
+   Saturation while accept is held must neither reset underneath it nor emit two
+   finals; disabling further prefixes cannot erase the retained original span.
 5. Held remote prefix while microphone closes/finalizes independently, and the
    converse. No cross-source content/state; native event counters stay contiguous.
 6. Existing native provenance/manual/typed/clock/cancellation controls unchanged.

@@ -134,6 +134,7 @@ public final class HelperTransport: @unchecked Sendable {
     private var imageWrites:[UUID:ImageWriteReservation]=[:]
     private var queuedFrames=0;private var queuedBytes=0;private var failed=false
     private let exitReceipt=OwnedChildExit()
+    public var hasExited:Bool{exitReceipt.isFinished}
     private let decoder=AnswerFrameDecoder();private var partialSince:UInt64?
     public init(root:URL,python:URL,pythonArguments:[String]=[],mode:HelperMode,
                 accountBootstrap:AccountSecretBootstrap?=nil,model:String?=nil,role:String="analytics",

@@ -24,9 +24,15 @@ extension RelayPreparationPresentation {
 }
 extension SessionApplicationModel {
     var relayPresentation:RelaySessionPresentation {
-        RelaySessionPresentation(running:running,starting:starting,paused:paused,stopping:stopping,preparing:speechSetup.snapshot.isBusy,visualBusy:visual.isBusy || visual.status == .busy,cancellingPreparation:speechSetup.snapshot.stage == .cancelled && speechSetup.snapshot.isBusy,
+        RelaySessionPresentation(running:running,starting:starting,paused:paused,stopping:stopping,preparing:speechSetup.snapshot.isBusy || accountPreparationActive || accountPreparationCancelling,visualBusy:visual.isBusy || visual.status == .busy,cancellingPreparation:accountPreparationCancelling || (speechSetup.snapshot.stage == .cancelled && speechSetup.snapshot.isBusy),
             hasQuestion:snapshot.question != nil,hasAnswer:snapshot.card != nil,hasSelectedSource:fixture || microphoneEnabled || !selectedBundleID.isEmpty,hasRemoteSource:fixture || !selectedBundleID.isEmpty,
             authorizedConversation:fixture || authorizedConversation,ownerCanStart:canStartSession,ownerCanResume:canResume)
+    }
+    var relayPreparation:RelayPreparationPresentation {
+        if accountPreparationActive || accountPreparationCancelling {
+            return RelayPreparationPresentation(title:accountPreparationCancelling ? "Finishing cancellation…":"Checking ChatGPT…",detail:"Restoring your saved connection before the session starts.",busy:true)
+        }
+        return RelayPreparationPresentation(speechSetup.snapshot)
     }
     var relayAnswer:RelayAnswerPresentation? {
         snapshot.card.map{RelayAnswerPresentation(lead:$0.lead,points:$0.points,detail:$0.detail?.text,language:$0.detail?.language,isCode:$0.detail?.kind=="code")}

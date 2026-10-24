@@ -188,16 +188,16 @@ import Foundation
     }
     private static func message(_ response: AccountResponse) -> String {
         switch response.reason {
-        case .connected, .accountSelected: return response.status == .planDisabled ? "Signed in. Enable ChatGPT plan usage to use AI." : "Connected. Identity was checked at sign-in; model availability is checked separately."
+        case .connected, .accountSelected: return response.status == .planDisabled ? "Signed in. Enable ChatGPT plan usage to use AI." : "Connected. Relay is ready to use your ChatGPT plan."
         case .planPermissionMissing: return "Signed in. ChatGPT plan usage was not granted. Enable it explicitly to use AI."
-        case .signedOut: return "Signed out. Local tokens were cleared; your registration label remains saved."
+        case .signedOut: return "Signed out. Your saved account can be reconnected."
         case .remoteRevocationUnconfirmed: return "Local tokens were cleared. Remote sign-out could not be confirmed; review your ChatGPT connected apps."
         case .reauthenticationRequired: return "Reconnect this saved ChatGPT account before using AI."
         case .authorizationDeclined: return "ChatGPT authorization was declined."
         case .catalogUnavailable: return "Current model availability could not be checked. Try Refresh models."
         case .operationBusy: return "Another account operation is still finishing."
         case .authorizationCancelled: return "Account setup cancelled."
-        default: return response.status == .signedOut ? "No active ChatGPT connection." : "Account status is the last completed local check."
+        default: return response.status == .signedOut ? "No active ChatGPT connection." : "Saved connection checked."
         }
     }
 }

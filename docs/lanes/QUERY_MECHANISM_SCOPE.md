@@ -16,8 +16,10 @@ a named subject and “does” as an attribution predicate. Technology names in
 The correction is confined to query admission. A leading present-tense
 How/What-does mechanism relation is grammatical framing. Its remaining clauses
 still undergo the existing attribution checks. Past-tense, possession,
-biography, explicit my/our team, passive attribution and mixed personal tails
-continue to require approved personal evidence. Typed host-owned semantic
+biography, current/historical my/our team, passive attribution and mixed personal
+tails continue to require approved personal evidence. Prospective team planning
+uses the existing modal/procedural coaching grammar; it asserts no past team
+ownership. Every nonplanning team mention still needs facts. Typed host-owned semantic
 captions are removed before this query check; the original current question
 and retained basis remain separate lines and retain their content.
 
@@ -38,18 +40,25 @@ this patch.
 
 ## Verification
 
-`tests/test_query_mechanism_scope.py` has six tests with ten positive mechanism
-phrases, sixteen personal/attribution negatives, real `SessionHost` typed-basis
-flows, and malicious generated-output controls. Each technical follow-up uses
+`tests/test_query_mechanism_scope.py` has seven tests with twelve positive
+mechanism/planning phrases, twenty-four personal/attribution negatives, real
+`SessionHost` automatic and typed-basis flows, and malicious generated-output
+controls. Each technical follow-up uses
 an actually accepted fresh technical basis within the existing retained-basis
 budget. Completions are injected neutral synthetic JSON; no account or network
 model is used.
 
 - Exact base source with the new regression: six tests, 21 failed assertions.
-- Corrected source: all six pass.
+- First scoped review found an introduced planning false withhold: the initial
+  unconditional my/our-team guard blocked two previously eligible prospective
+  case-study requests. The expanded regression fails six assertions against
+  that initial source, and its automatic team-planning control passes base.
+- Corrected source: all seven pass.
 - New tests plus existing round-two attribution, contextual answer, review,
-  typed-request and session-host files: all 73 pass.
-- AST-extracted source of `_has_individual_attribution` compared equal to base.
+  typed-request and session-host files: all 74 pass.
+- AST-extracted source of `_has_individual_attribution`, `_ATTRIBUTION`,
+  `_HISTORY_REQUEST`, `_CONTRIBUTION_ASSERTION` and `_NEUTRAL_START` compares
+  equal to base.
 
 Run from the repository root:
 

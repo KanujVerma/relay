@@ -161,7 +161,13 @@ def requires_personal_evidence(question):
     """
     text=' '.join(question.split())
     if _query_has_individual_attribution(question): return True
-    if re.search(r'\b(?:your|yourself|yours|my (?:resume|résumé|project|experience|background)|(?:my|our) team|tell me about (?:yourself|a time)|describe a time|did you|have you|were you|are you|do you hold)\b',text,re.I): return True
+    if re.search(r'\b(?:your|yourself|yours|my (?:resume|résumé|project|experience|background)|tell me about (?:yourself|a time)|describe a time|did you|have you|were you|are you|do you hold)\b',text,re.I): return True
+    # Prospective team planning is task context. Each other team reference
+    # still requires facts; the whole-request attribution scan above also wins.
+    planning_teams={match.span('team') for match in re.finditer(
+        r'\b(?:can|could|would|should) (?P<team>(?:my|our) team) (?:please )?'
+        r'(?:do|ask|explain|describe|discuss|compare|implement|design|build|solve|approach|improve|test|calculate|write|show|outline|handle|validate|optimi[sz]e|use|choose|clarify)\b',text,re.I)}
+    if any(match.span() not in planning_teams for match in re.finditer(r'\b(?:my|our) team\b',text,re.I)): return True
     if re.search(r'\byou (?:[a-z]+ed|built|made|led|did|spent|taught|were|was|have|had|hold|own)\b',text,re.I): return True
     addressed=bool(re.search(r"\byou(?:'re|'ve|'d)?\b",text,re.I))
     if not addressed:

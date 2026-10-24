@@ -51,9 +51,9 @@ public struct KeychainProfileKey: ProfileKeyProvider {
                     else { throw ProfileError.unavailable }
                     return Data(bytes)
                 }) {
-        self.purpose=purpose
         self.client = client
         self.random = random
+        self.purpose=purpose
     }
     public func key(createIfMissing: Bool) throws -> Data {
         var query: [String: Any] = [

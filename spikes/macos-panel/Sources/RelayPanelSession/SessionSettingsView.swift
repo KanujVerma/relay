@@ -5,6 +5,7 @@ import RelayControls
 import RelayScreenContext
 import RelaySessionPanel
 import RelaySessionCapture
+import RelayAccount
 
 enum RelaySettingsSection:String,CaseIterable{case general="General",screen="Screen context",ai="AI",responses="Responses",shortcuts="Shortcuts",advanced="Advanced";var symbol:String{switch self{case .general:"slider.horizontal.3";case .screen:"rectangle.dashed";case .ai:"sparkles";case .responses:"text.bubble";case .shortcuts:"keyboard";case .advanced:"wrench.and.screwdriver"}}}
 
@@ -44,9 +45,8 @@ enum RelaySettingsSection:String,CaseIterable{case general="General",screen="Scr
             Divider().overlay(RelayTheme.line)
             SelectedTextOptions(model:model)
         case .ai:
-            settingsTitle("AI suggestions","Uses your existing Relay sign-in and configured ChatGPT plan.")
-            Toggle("Enable AI suggestions",isOn:Binding(get:{model.oauth},set:{enabled in Task{await model.setAIEnabled(enabled)}})).disabled(!model.canChangeAIMode)
-            Text("Account sign-in is not available in this window yet. Local reference cards remain available with AI off.").font(.system(size:12)).foregroundStyle(RelayTheme.muted)
+            AccountSettingsView(controller:model.account)
+            Text("Local reference cards remain available with AI off. Finish or pause the current session before changing your connection.").font(.system(size:12)).foregroundStyle(RelayTheme.muted)
             Divider().overlay(RelayTheme.line)
             VisualInputOptions(model:model)
         case .responses:

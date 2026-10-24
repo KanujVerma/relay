@@ -163,3 +163,8 @@ The new pure `session_notes_data.py` and20focused tests validate source/output/p
 ## Notes backend review correction
 
 Frozen bfa85b2 is preserved. Two actual regressions reproduce false credential-thread quiescence and stale protected-generation completion. Notes-only token reads now join the actual existing owned thread and reread the actual protected grant after validated SSE, with original source/config checks and no retry. Both original reds are green;154affected Python cases pass/zero skips5.300s. This remains a backend component, not native completion/save or product acceptance. Next: strict native Notes wire, actual HelperTransport receipt/controller, genuine completed-operation save, Model/History UI and bundled synthetic gates.
+
+
+## Native Notes wire and anchored display checkpoint
+
+Strict notes response/result DATA and anchored read-only snapshot types now pass20focused native cases/zero skips5.583s after five missing-API reds. Snapshot actions carry the original epoch/record revision/operation and document identity; save-edit UI awaits its actual matching save. No parsed frame or presentation Boolean grants completion or persistence. Actual helper/controller/private completion, protected save bridge, app UI wiring and bundled Notes gate remain next; Store/Coordinator frontiers are unchanged. Heavy slot is released.

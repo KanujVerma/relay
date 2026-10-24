@@ -2,6 +2,19 @@ import Foundation
 import GRDB
 import RelayProfile
 
+/// Issued only by the actual locked source read below. Parsed DATA or a
+/// serialized UUID cannot construct this proof or substitute another store.
+final class HistoryNotesStoreRead:@unchecked Sendable {
+    fileprivate let store:HistoryStore
+    let sourceData:HistoryNotesSourceData
+    let intentID:UUID
+    let expiresAt:TimeInterval
+    fileprivate var consumed=false
+    fileprivate init(store:HistoryStore,data:HistoryNotesSourceData,intentID:UUID,expiresAt:TimeInterval){
+        self.store=store;sourceData=data;self.intentID=intentID;self.expiresAt=expiresAt
+    }
+}
+
 /// One serialized canonical ledger and at most one bounded candidate. Callers
 /// run storage off the UI actor and retain/join actual operations on retirement.
 /// No database path, plaintext index, audio bytes or helper lifetime is used.
@@ -271,7 +284,10 @@ final class HistoryStore:@unchecked Sendable {
     func detail(_ id:UUID,offset:Int=0,all:Bool=false)throws->HistoryDetail{
         try lock.withLock{
             guard (0...HistoryBounds.rows).contains(offset) else{throw HistoryError.invalid};try expire()
-            return try required().read{db in
+            return try required().read{try Self.detail($0,id,offset:offset,all:all)}
+        }
+    }
+    private static func detail(_ db:Database,_ id:UUID,offset:Int=0,all:Bool=false)throws->HistoryDetail{
                 let record=try Self.record(db,id)
                 let captures=try Data.fetchAll(db,sql:"SELECT payload FROM history_capture WHERE record_id=? ORDER BY ordinal",arguments:[Self.key(id)])
                     .map{try HistoryJSON.decode(HistoryCapture.self,$0)}
@@ -284,7 +300,37 @@ final class HistoryStore:@unchecked Sendable {
                 }
                 let count=try Int.fetchOne(db,sql:"SELECT count(*) FROM history_final WHERE record_id=?",arguments:[Self.key(id)]) ?? 0
                 return HistoryDetail(record:record,captures:captures,rows:rows,nextOffset:offset+rows.count<count ? offset+rows.count:nil,totalRows:count)
+    }
+    /// Reads the complete actual bounded record, never the selected view page.
+    /// No vault/open/key is created and no schema migration occurs here.
+    func readNotesSource(_ id:UUID,expectedRevision:Int64,selection:HistoryNotesSelection,intentID:UUID,
+                         admission:@Sendable()->Bool)throws->HistoryNotesStoreRead{
+        try lock.withLock{
+            guard admission() else{throw HistoryError.stale}
+            let original=try required()
+            guard try storage.exists(),try storage.load()==HistorySnapshotCodec.encode(original) else{throw HistoryError.invalid}
+            guard admission() else{throw HistoryError.stale}
+            try expire(admission:admission)
+            let current=try required();try Self.validate(current)
+            let all=try current.read{try Self.detail($0,id,all:true)},record=all.record
+            let now=clock().timeIntervalSince1970
+            guard now.isFinite,now<record.expiresAt,record.revision==expectedRevision,record.revision<Int64.max,
+                  record.state != .recording,!all.rows.isEmpty,all.rows.count==all.totalRows else{throw HistoryError.stale}
+            let rows:[HistoryFinal],kind:String
+            switch selection{
+            case .fullSavedTranscript:rows=all.rows;kind="full_saved_transcript"
+            case .excerpt(let first,let last):
+                guard let a=all.rows.firstIndex(where:{$0.id==first}),let z=all.rows.firstIndex(where:{$0.id==last}),a<=z else{throw HistoryError.invalid}
+                rows=Array(all.rows[a...z]);kind="explicit_excerpt"
             }
+            let value:[String:Any]=["schemaVersion":1,"recordID":Self.key(record.id),"recordRevision":String(record.revision),
+                "selection":["kind":kind,"totalSavedRows":all.totalRows,"includedRows":rows.count,"firstRowID":rows[0].id,"lastRowID":rows[rows.count-1].id],
+                "recordState":record.state.rawValue,"gaps":HistoryNotesData.gaps.filter{record.gaps.map(\.rawValue).contains($0)},
+                "rows":rows.map{["id":$0.id,"revision":String($0.revision.value),"source":$0.source == .microphone ? "microphone":"selected_app_audio","text":$0.text]}]
+            let raw=try JSONSerialization.data(withJSONObject:value,options:[.sortedKeys,.withoutEscapingSlashes])
+            let data=try HistoryNotesData.source(raw)
+            guard admission(),clock().timeIntervalSince1970<record.expiresAt else{throw HistoryError.stale}
+            return HistoryNotesStoreRead(store:self,data:data,intentID:intentID,expiresAt:record.expiresAt)
         }
     }
     func deleteSource(_ id:UUID,expectedRevision:Int64,captureID:String,source:TranscriptSource,admission:@Sendable()->Bool={true})throws{

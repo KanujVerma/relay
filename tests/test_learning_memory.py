@@ -144,13 +144,25 @@ class LearningPersonalHostTests(unittest.IsolatedAsyncioTestCase):
         baseline=copy.deepcopy(out[-1]);native=question(host,'Tell me about yourself.')
         value=offer(native,scope='recruiter',continuity=[],examples=[{'sourceID':'original-mic-7','text':'I invented a credential that is not approved.'}])
         host.handle_learning_memory(value);await host.handle_user_question(native);await host.drain();adapted=out[-1]
-        self.assertEqual(adapted['card']['lead'],'Use confirmed details only.')
-        self.assertEqual(adapted['card']['points'],baseline['card']['points'])
+        self.assertEqual(adapted['card']['lead'],baseline['card']['points'][0])
+        self.assertEqual(adapted['card']['points'],baseline['card']['points'][1:])
         self.assertEqual(adapted['provenance']['facts'],baseline['provenance']['facts'])
         self.assertEqual(adapted['provenance']['learningMemoryRevision'],value['memoryRevision'])
         self.assertNotIn('invented',str(adapted['card']));self.assertEqual(host.model_requests,0)
         host.handle_learning_memory_retirement(retire(value))
         self.assertFalse(host.learning_memory.current_for(host.active))
+
+    async def test_stepwise_presentation_preserves_every_complete_verified_unit(self):
+        host,out,_,_=await resume_fixture.ResumePersonalAnswers.prepared(self)
+        first=question(host,'Tell me about yourself.');await host.handle_user_question(first);await host.drain()
+        baseline=copy.deepcopy(out[-1]);native=question(host,'Tell me about yourself.')
+        value=offer(native,scope='recruiter',continuity=[],adjustments=['stepwise'])
+        host.handle_learning_memory(value);await host.handle_user_question(native);await host.drain();adapted=out[-1]
+        self.assertEqual(adapted['card']['lead'],'First: '+baseline['card']['points'][0])
+        expected=[('Then: '+point) if len(('Then: '+point).encode())<=180 else point for point in baseline['card']['points'][1:]]
+        self.assertEqual(adapted['card']['points'],expected)
+        self.assertEqual(adapted['provenance']['facts'],baseline['provenance']['facts'])
+        self.assertEqual(host.model_requests,0)
 
     async def test_current_explicit_length_and_saved_guide_suppress_inferred_personal_lead(self):
         host,out,_,_=await resume_fixture.ResumePersonalAnswers.prepared(self)

@@ -121,6 +121,9 @@ def render_personal(bundle, *, presentation=None):
         if len(points) == 2: break
     if not points: raise CardError('personal_detail_budget')
     lead = 'Start with these confirmed details.' if bundle.intent == 'overview' else 'Use these confirmed details; add only what you can personally support.'
-    if presentation == 'concise_lead':lead='Use confirmed details only.'
-    elif presentation == 'stepwise':lead='Explain each confirmed detail in a short step.'
+    if presentation == 'concise_lead':
+        lead=points[0];points=points[1:]
+    elif presentation == 'stepwise':
+        lead='First: '+points[0]
+        points=[('Then: '+point) if len(('Then: '+point).encode())<=180 else point for point in points[1:]]
     return tuple(facts), {'lead': lead, 'points': points, 'detail': None}

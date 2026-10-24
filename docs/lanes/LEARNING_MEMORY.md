@@ -22,9 +22,9 @@ Independent root review found that a replacement card currently loses pending-ca
 
 ## Personal presentation component
 
-The controller approved a deterministic personal-route adaptation. The actual approved-fact renderer now changes only its fixed neutral coaching lead for concise/stepwise wording. Complete points, actor labels, qualifiers and selected fact IDs stay byte-exact. Raw learning examples never supply personal card text. Explicit current wording/length requests and any staged explicit guide suppress inferred style. Only an actually applied fixed lead reports learningMemoryRevision. Source retirement makes that claimed use noncurrent, and no model is called.
+The controller approved a deterministic personal-route adaptation. The initial428 checkpoint changed only its fixed coaching lead and was not accepted as proof of personal voice matching. The revised implementation promotes the first complete verified unit into the visible lead for concise presentation; stepwise presentation frames complete units with First/Then where bounds permit. Actor labels, qualifiers, complete verified unit text and selected fact IDs remain intact. Raw learning examples never supply personal card text. Explicit current wording/length requests and any staged explicit guide suppress inferred style. Only applied presentation reports learningMemoryRevision. Source retirement makes that claimed use noncurrent, and no model is called. Personal lexical paraphrase beyond approved whole units remains an explicit limitation.
 
-The new actual approved-résumé baseline/adapted fixture first failed on the unchanged lead, then60 focused learning/preferences/résumé/personal/query cases passed in0.671s. The paired native learningMemoryRevision decoder/currentness join remains required before enabling this path in the app; this Python component alone is not product acceptance.
+The actual approved-résumé baseline/adapted fixture first failed on the unchanged lead. Revised whole-unit/stepwise fixtures failed against428 before implementation, then61 focused learning/preferences/résumé/personal/query cases passed in0.671s. The paired native learningMemoryRevision decoder/currentness join remains required before enabling this path in the app; this Python component alone is not product acceptance.
 
 ## Next exact action
 

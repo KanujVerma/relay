@@ -80,6 +80,8 @@ class SessionHost:
         self.visual=HostVisualInput(self,visual_transport)
         from .assistant_scope import AssistantScopeCoordinator
         self.assistant=AssistantScopeCoordinator(self)
+        from .session_notes_host import HostNotesCoordinator
+        self.notes=HostNotesCoordinator(self)
         from .response_preferences import HostResponsePreferences
         self.response_preferences=HostResponsePreferences(self)
         from .learning_memory import HostLearningMemory
@@ -103,6 +105,7 @@ class SessionHost:
         if callable(invalidate):invalidate()
 
     def close(self,*,preserve_visual=False):
+        self.notes.retire_transport()
         self.response_preferences.close()
         self.learning_memory.close()
         if not preserve_visual:self.visual.disable(cancel_work=False)
@@ -177,6 +180,7 @@ class SessionHost:
         encode_frame(value);self.terminal.add(n['requestID']);self.user.note_result(value);self.emit(value)
 
     async def handle(self,raw,*,received_ns=None):
+        if self.notes.busy:return False
         timing=HelperRequestTiming(time.monotonic_ns() if received_ns is None else received_ns)
         try: n,inner=decode_event(raw)
         except Exception:
@@ -451,7 +455,10 @@ class SessionHost:
 
     def personal_context_changed(self):
         # Called before native-selected review/revocation changes the ledger.
+        if self.scope_kind=='notes':return
         self._invalidate();self.user.replies.clear()
+
+    def handle_notes(self,value):return self.notes.handle(value)
 
     @staticmethod
     def _personal_question(question):
@@ -538,7 +545,12 @@ async def run_stdio(args,*,oauth_stream=None):
         complete=visual_transport.complete
     elif args.fixture_model:
         async def complete(prompt,instructions):
-            obj=json.loads(prompt);task=obj['conversation']['task']
+            obj=json.loads(prompt)
+            if obj.get('task')=='saved_transcript_notes':
+                row=obj['rows'][0];quote=row['text'].encode()[:240].decode('utf-8',errors='ignore')
+                return json.dumps({'schemaVersion':1,'summary':[{'text':'Synthetic fixture summary of supplied saved text.',
+                    'citations':[{'rowID':row['id'],'quote':quote}]}],'decisions':[],'nextSteps':[]})
+            task=obj['conversation']['task']
             if task['kind']=='case_study':
                 return json.dumps({'lead':'Start with the users, workflow, and problem that needs to improve.',
                     'points':['Clarify the information needed and where the current workflow fails.',
@@ -573,7 +585,9 @@ async def run_stdio(args,*,oauth_stream=None):
             received_ns=time.monotonic_ns()
             if not chunk: decoder.finish();host.close();break
             for value in decoder.feed(chunk):
-                if isinstance(value,dict) and value.get('kind')=='assistant_scope_request':
+                if isinstance(value,dict) and value.get('kind') in ('notes_scope_request','notes_source_begin','notes_source_chunk','notes_source_end','notes_generate','notes_cancel'):
+                    host.handle_notes(value)
+                elif isinstance(value,dict) and value.get('kind')=='assistant_scope_request':
                     host.handle_assistant_scope(value)
                 elif isinstance(value,dict) and value.get('kind')=='learning_memory':
                     host.handle_learning_memory(value)
@@ -633,6 +647,7 @@ async def run_stdio(args,*,oauth_stream=None):
             if output_task.done(): await output_task
         await host.drain()
         await host.assistant.drain()
+        await host.notes.drain()
         await asyncio.wait_for(queue.join(),2)
     except Exception:
         return 2
@@ -643,6 +658,7 @@ async def run_stdio(args,*,oauth_stream=None):
             # a retained HTTP client may not outlive this helper/account owner.
             await host.drain()
             await host.assistant.drain()
+            await host.notes.drain()
             if visual_transport is not None:
                 await visual_transport.aclose()
         finally:

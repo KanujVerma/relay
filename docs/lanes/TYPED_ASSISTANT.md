@@ -22,7 +22,7 @@ All inputs and responses were synthetic. HTTPX0.28.1 came from the existing `/pr
 
 | Check | Result | Evidence boundary |
 |---|---|---|
-| Affected Python user/helper/semantic/context/reference suites |137 passed,1.632s | Actual SessionHost and no-network child; complete mocked OAuth additionally covered below |
+| Affected Python user/helper/semantic/context/reference suites |139 passed,1.416s | Actual SessionHost and no-network child; complete mocked OAuth additionally covered below |
 | Native session package |27 passed,0.881s | Native source lock/sequence/issuance and existing lifecycle; includes last-source-loss rejection |
 | Explicit and existing ordered forwarder suites |7 passed,0.013s | Original denial before held release, no reorder, bounded queue and optional-work deadline |
 | New/affected panel foundation suites |20 passed,1.631s | Draft/controller, transcript, real transport receipt and actual helper/MockTransport proofs |
@@ -60,3 +60,5 @@ Four added regressions ran red before the correction: personal follow-up Help, t
 ## Legacy Help caller compatibility
 
 Root review of `b5aa2ae` found that accepted legacy audio Help was not retained in the typed read-only basis map. The visible Help UUID therefore could not be used for a typed follow-up. Accepted ManualHelp now captures the actual current task projection and enters the same8-record bounded map with its existing exact display/semantic question; it keeps the original legacy token/admission/equality/anchor contract. A new audio -> legacy Help -> typed follow-up regression failed red before the narrow correction. Rejected stale/mismatched Help remains unrecorded with zero extra work. Affected Python evidence and exact correction head are recorded in the scoped compatibility handoff.
+
+Final affected run:139 tests passed (`/private/tmp/relay-typed-manual-basis-final.log`), including the existing actual stdio helper context/legacy-Help scenario. The positive fixture uses neutral Explain queue scheduling to isolate caller compatibility from the unchanged conservative intent grammar: literal How does that queue work is independently classified personal_context_missing by that baseline policy. No grammar/model authority was loosened.

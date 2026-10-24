@@ -106,7 +106,8 @@ component factory only after the observed gate and root approval.
 - [x] Add a no-download benchmark requiring the existing verified public cache
   and fictional WAVE. Use the exact same warmed model/accept partition and paced
   input for baseline/prefix comparisons; cold setup is separate. Opt-out compile
-  exits 0 with exactly one early guarded skip, 0.003 s; no actual run yet.
+  exits 0 with exactly one early guarded skip, 0.003 s; no actual run occurred
+  at that opt-out checkpoint.
 - [x] Record original start/end indices, full text equality, prefix/tail/fallback
   counts, endpoint→ASR-final, both sources overlapping and actual process RSS.
   Failures stay in the report. No p95 or full-app/account speed claim.

@@ -1,9 +1,9 @@
 # Response speed continuation
 
 2026-10-24, Relay, branch `feature/response-latency-2026-10-24`.
-Verified published base: `0e9d440ae3863b168e30032216e752885f6c1005`;
-measured source is exact `6672985`. This record accompanies the verified narrow
-factory activation checkpoint following that base; verify live Git.
+Verified published implementation: `bfc077a3830923fcd2144ffc345054040e7652a9`;
+measured source is exact `6672985`. The bounded effort harness is `b6f7b5a`.
+Verify live Git before continuing; the four actual Model fixtures remain pending.
 
 ## GOAL
 
@@ -51,7 +51,7 @@ answer denial and actual cleanup. Product timing targets remain unachieved.
   local fallback and release of the retired recognizer graph.
 - Guarded benchmark compiled: Swift 0 / 39.907 s, exactly one early opt-out skip
   / zero failures / 0.003 s. Receipt: `asr-prefix-benchmark-optout.log`. No cache,
-  audio, model or child action. Actual model comparison remains unexecuted.
+  audio, model or child action at that opt-out checkpoint.
 - The one permitted actual-667 gate passed: Swift 0 / 75.360 s, one case / zero
   skips / 41.097 s; all owned children joined. Native closure→ASR-final median
   135.629→40.602 ms (95.027 ms, 70.1%); exact words and [6592,46656) cutoffs
@@ -62,18 +62,29 @@ answer denial and actual cleanup. Product timing targets remain unachieved.
   green 87 collected / 84 passed / three explicit model/download/benchmark skips;
   native 47 passes / 1.185 s, capture 37/40 passes / 0.435 s, 8.154 s command.
   Receipt: `asr-prefix-production-activation-green.log`. No actual-model rerun.
+- Root independently ran the broader unchanged real speech regression at
+  [`7302dcf`](https://github.com/KanujVerma/relay/commit/7302dcfa51492d5b514289348038103199006f88):
+  actual WAVE → normal prefix assembly → native/helper with synthetic answer →
+  real panel reducer passes in 6.353 s. Joined native receipt has 193 collected /
+  191 passed / two explicit skips / 124.150 s; joined Python has 833 collected /
+  801 passed / 32 optional skips / 11.483 s. This lane read those exact receipts
+  and source; it is Root's independent run, not another run by this lane.
+- The evaluation-only default versus literal Luna `none` harness uses identical
+  compact prompts, alternates order, enforces at most six attempts, retains all
+  failures/QA outcomes and restores its dedicated stream setting on cancellation.
+  Five new cases plus original focused controls pass 35 / zero skips / 0.307 s.
+  Its CLI prints the plan only. No account execution or runtime-default change.
 
 ## IN PROGRESS
 
 Active plan: [safe-prefix ASR](../superpowers/plans/2026-10-24-safe-prefix-asr.md).
 Approved [design](../superpowers/specs/2026-10-24-lagged-asr-preprocessing-design.md).
-Tasks 1–3 are verified foundations. SourcePipeline has a conditional path;
-SourceComponents defaults to closedSpan and normal factory remains unchanged.
-Task 4 real paced public-WAVE comparison/RSS is prepared and root source-reviewed.
-The benchmark passed once on unchanged actual local public inputs. The approved
-narrow normal assembly now selects safePrefixes, preserving injected generic
-closedSpan defaults, and its real composition behavior check passes without model
-load/download. Broader actual speech and actual Model/account gates remain.
+Tasks 1–4 are verified: the benchmark passed once on unchanged actual local
+public inputs, then the approved narrow normal assembly selected safePrefixes.
+Generic injected SourceComponents retains closedSpan. The composition behavior
+check passes without model load/download, and Root's broader actual speech
+regression passes with its original assertions. Task 5 remains active: actual
+Model observation, protected-account comparison and whole-app timing/usefulness.
 
 ## AT RISK
 
@@ -82,7 +93,7 @@ The actual Model four-case fixture remains uncommitted in
 and intentionally cannot compile until the shared observation seam joins.
 The actual ASR result is recorded in the sanitized evidence files; it is not
 cloud, full-app, visible-window or usefulness acceptance. The normal assembly
-selection is now changed and verified, with broader actual regression pending.
+selection and broader actual speech-to-reducer regression are now verified.
 
 ## DECISIONS
 
@@ -132,7 +143,7 @@ the single Model observation hook outside the native publication lock.
 
 Obtain the accepted shared Model observation seam and run the unchanged four
 actual Model cases plus original publication/held-image/watchdog controls under
-root's lease. Include broader actual normal-assembly speech in final acceptance.
+root's lease. Retain Root's immutable broader speech acceptance above.
 Keep generic injected fixtures on closedSpan. Run the protected account gate only
 after root coordinates current setup/authorization. The normal local factory
 selection has passed its approved activation check; full app acceptance has not.

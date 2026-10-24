@@ -26,6 +26,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import Request, urlopen
 import uuid
 import webbrowser
+from . import protected_storage as _storage
 
 ISSUER = "https://auth.openai.com"
 AUTHORIZE_URL = ISSUER + "/api/accounts/authorize"
@@ -65,67 +66,20 @@ class MalformedRefreshResponse(AuthError):
 
 
 def _durable_sync(fd: int) -> None:
-    """Best available file/directory flush for local rotating credentials.
-
-    Apple's ordinary fsync does not request the drive's hardware buffer flush.
-    On the target macOS platform, require F_FULLFSYNC (no silent downgrade).
-    This is an OS/filesystem assurance, not a blanket guarantee of power-loss
-    safety on every drive; actual APFS behavior requires a native Mac test.
-    """
-    if sys.platform == "darwin":
-        cmd = getattr(fcntl, "F_FULLFSYNC", None)
-        if cmd is None:
-            raise AuthError("Strong macOS credential sync is unavailable on this runtime.")
-        try:
-            fcntl.fcntl(fd, cmd)
-        except OSError:
-            raise AuthError(
-                "Strong macOS credential sync is unsupported on this filesystem."
-            ) from None
-    else:
-        os.fsync(fd)
+    try: _storage.durable_sync(fd)
+    except _storage.ProtectedStorageError as error: raise AuthError(str(error)) from None
 
 
 def _sync_parent_directory(path: Path) -> None:
-    """Sync the post-rename directory entry for crash-sensitive token rotation.
-
-    The OS/filesystem must support syncing directory descriptors; if not,
-    refuse to claim a durable rotation and explain the local limitation.
-    """
-    if not hasattr(os, "O_NOFOLLOW"):
-        raise AuthError("Secure credential-directory sync needs POSIX no-follow.")
-    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_DIRECTORY", 0)
-    try:
-        fd = os.open(path.parent, flags)
-        try:
-            if not stat.S_ISDIR(os.fstat(fd).st_mode):
-                raise AuthError("Credential parent is not a directory.")
-            _durable_sync(fd)
-        finally:
-            os.close(fd)
-    except OSError:
-        raise AuthError(
-            "Could not durably sync credential rotation on this filesystem."
-        ) from None
+    try: _storage.sync_parent(path, sync=_durable_sync)
+    except _storage.ProtectedStorageError as error: raise AuthError(str(error)) from None
 
 
 def _write_protected(path: Path, value: dict) -> None:
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if path.parent.is_symlink() or path.is_symlink():
-        raise AuthError("Refusing to write credential data through a symlink.")
-    os.chmod(path.parent, 0o700)
-    fd, temp_path = tempfile.mkstemp(dir=path.parent, prefix=".relay-", text=True)
     try:
-        os.chmod(temp_path, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as out:
-            json.dump(value, out)
-            out.flush()
-            _durable_sync(out.fileno())  # Hardware-aware flush on macOS.
-        os.replace(temp_path, path)
-        _sync_parent_directory(path)
-    finally:
-        if os.path.exists(temp_path):
-            os.unlink(temp_path)
+        _storage.replace_bytes(path, json.dumps(value).encode('utf-8'),
+                               sync=_durable_sync, sync_directory=_sync_parent_directory)
+    except _storage.ProtectedStorageError as error: raise AuthError(str(error)) from None
 
 
 def _read_protected(path: Path) -> dict | None:
@@ -182,38 +136,10 @@ def _nearing_expiry(record: dict) -> bool:
 
 @contextmanager
 def _refresh_lock():
-    """Serialize rotating refresh grants between independent CLI processes.
-
-    Lockfile remains on disk permanently: deleting/recreating it could allow
-    separate inode locks to be held at the same time. Uses POSIX flock on Mac
-    and Linux, with an owned regular file and no-follow open.
-    """
-    folder = TOKEN_PATH.parent
-    folder.mkdir(parents=True, mode=0o700, exist_ok=True)
-    if folder.is_symlink():
-        raise AuthError("Refusing to lock credentials through a symlinked directory.")
-    os.chmod(folder, 0o700)
-    path = folder / (TOKEN_PATH.name + ".lock")
-    flags = os.O_CREAT | os.O_RDWR
-    if not hasattr(os, "O_NOFOLLOW"):
-        raise AuthError("Secure refresh lock requires POSIX no-follow support.")
-    flags |= os.O_NOFOLLOW
+    """Same permanent interprocess lock; never unlink a rotating-grant lock."""
     try:
-        fd = os.open(path, flags, 0o600)
-    except OSError:
-        raise AuthError("Could not securely open the OAuth refresh lock.") from None
-    try:
-        info = os.fstat(fd)
-        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                or info.st_mode & 0o077):
-            raise AuthError("OAuth refresh lock must be an owner-only regular file.")
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
-    finally:
-        os.close(fd)
+        with _storage.credential_lock(TOKEN_PATH): yield
+    except _storage.ProtectedStorageError as error: raise AuthError(str(error)) from None
 
 
 def _clear_unusable_credentials(record: dict) -> None:

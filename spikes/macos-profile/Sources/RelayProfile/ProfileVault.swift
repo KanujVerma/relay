@@ -27,12 +27,19 @@ public struct SystemSecurityItems: SecurityItemClient {
     }
 }
 
+/// Fixed namespaces keep credentials and Personal Brain keys independent.
+public enum KeychainKeyPurpose:Sendable {
+    case profile,chatGPTCredentials
+    fileprivate var service:String{self == .profile ? "com.relay.profile.v1":"com.relay.chatgpt-auth.v1"}
+    fileprivate var account:String{self == .profile ? "local-profile-aes256":"local-chatgpt-aes256"}
+}
 /// Construction does not access Keychain. Only an explicit native open action
 /// calls key(). No generic-password enumeration, cloud sync or automatic reset.
 public struct KeychainProfileKey: ProfileKeyProvider {
+    private let purpose:KeychainKeyPurpose
     private let client: any SecurityItemClient
     private let random: @Sendable () throws -> Data
-    public init(client: any SecurityItemClient = SystemSecurityItems(),
+    public init(purpose:KeychainKeyPurpose = .profile,client: any SecurityItemClient = SystemSecurityItems(),
                 random: @escaping @Sendable () throws -> Data = {
                     var bytes = [UInt8](repeating: 0, count: 32)
                     guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess
@@ -41,12 +48,13 @@ public struct KeychainProfileKey: ProfileKeyProvider {
                 }) {
         self.client = client
         self.random = random
+        self.purpose=purpose
     }
     public func key(createIfMissing: Bool) throws -> Data {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.relay.profile.v1",
-            kSecAttrAccount as String: "local-profile-aes256",
+            kSecAttrService as String: purpose.service,
+            kSecAttrAccount as String: purpose.account,
             kSecAttrSynchronizable as String: false,
             kSecUseDataProtectionKeychain as String: true,
             kSecReturnData as String: true,

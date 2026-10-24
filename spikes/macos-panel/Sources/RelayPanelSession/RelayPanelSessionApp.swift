@@ -80,7 +80,7 @@ private struct RelayAppCommands:Commands {
     private var router:RelayCommandRouter{RelayCommandRouter(state:{model.relayPresentation},control:model.performWindowAction,start:{await model.start()},cancelPreparation:model.cancelPreparation,retryPreparation:{await model.retryPreparation()},openContext:{openWindow(id:"relay-context")},openSettings:{openWindow(id:"relay-settings")},showSession:{openWindow(id:"relay-live")})}
     var body:some View {
         TimelineView(.periodic(from:.now,by:1)){_ in
-            LiveSessionView(state:model.relayPresentation,question:model.snapshot.question,answer:model.relayAnswer,status:model.snapshot.status,contextLabel:model.relayContextLabel,contextDetail:model.contextStatus.isEmpty ? nil:model.contextStatus,error:model.error,elapsed:elapsed,fixture:model.fixture,attachScroll:{window,scroll in model.attachWindow(window,scrollView:scroll)},expanded:$shell.expanded,detailExpanded:$model.expanded,onAction:{router.perform($0)})
+            LiveSessionView(state:model.relayPresentation,question:model.snapshot.question,answer:model.relayAnswer,status:model.snapshot.status,contextLabel:model.relayContextLabel,contextDetail:model.contextStatus.isEmpty ? nil:model.contextStatus,error:model.error,elapsed:elapsed,fixture:model.fixture,assistant:model.assistant,attachScroll:{window,scroll in model.attachWindow(window,scrollView:scroll)},expanded:$shell.expanded,detailExpanded:$model.expanded,onAction:{router.perform($0)})
         }
         .background(RelayLiveWindowAttachment(shell:shell,attach:{window in model.attachWindow(window,scrollView:nil)}))
         .onAppear{if model.running{startedAt=ProcessInfo.processInfo.systemUptime}}

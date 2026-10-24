@@ -23,13 +23,14 @@ private actor RetirementOCR:ScreenTextRecognizer {
     var binding:PanelRequestBinding?
     func wrote(_ data:Data,_ binding:PanelRequestBinding)async {
         guard let value=try? JSONSerialization.jsonObject(with:data) as? [String:Any],value["kind"] as? String=="screen_image_end" else{return}
+        guard self.binding==nil else{return}
         self.binding=binding
         await withCheckedContinuation{held=$0}
     }
     func release(){let old=held;held=nil;old?.resume()}
 }
 @MainActor final class StagedVisualRetirementTests:XCTestCase {
-    private enum Action:CaseIterable{case complete,onset,source,pause,end,disableThenOnset,closedTransport}
+    private enum Action:CaseIterable{case complete,onset,source,pause,end,disableThenOnset,closedTransport,typed,stopResponse}
     private var root:URL{URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()}
     private func python()throws->String {
         let environment=ProcessInfo.processInfo.environment
@@ -58,6 +59,8 @@ private actor RetirementOCR:ScreenTextRecognizer {
     func testActualEndRetiresCompleteStagedImageBeforeOldEOU()async throws{try await exercise(.end)}
     func testImageDisableFlushesOCRFallbackBeforeLaterActualOnset()async throws{try await exercise(.disableThenOnset)}
     func testFailedRetirementChannelNeverReleasesItsHeldEOU()async throws{try await exercise(.closedTransport)}
+    func testActualTypedSendDeniesHeldOriginalImageBeforeReleasingEOU()async throws{try await exercise(.typed)}
+    func testActualStopResponseDeniesHeldOriginalImageAndJoinsItsWorker()async throws{try await exercise(.stopResponse)}
     private func exercise(_ action:Action)async throws {
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("relay-staged-retirement-"+UUID().uuidString,isDirectory:true)
         try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
@@ -98,6 +101,13 @@ private actor RetirementOCR:ScreenTextRecognizer {
             case .pause:model.beginRetirement(end:false)
             case .end:model.beginRetirement(end:true)
             case .closedTransport:helper.stop();onset()
+            case .typed:
+                model.assistant.draft="Tell me about my experience with Atlas."
+                model.assistant.submitDraft()
+            case .stopResponse:
+                XCTAssertTrue(model.assistant.snapshot.canStop)
+                await model.assistant.cancelCurrentResponse()
+                XCTAssertEqual(model.assistant.snapshot.status,"Response stopped")
             case .disableThenOnset:
                 model.disableVisualInput()
                 let released=nativeEvents.contains{$0.kind == .eou}
@@ -120,10 +130,13 @@ private actor RetirementOCR:ScreenTextRecognizer {
             if [.onset,.disableThenOnset].contains(action){try await waitUntil{nativeEvents.filter{$0.kind == .speechStarted}.count==2}}
             if action == .complete{try await waitUntil{model.snapshot.card != nil}}
             if action == .disableThenOnset{try await waitUntil{questionKinds(log).contains("text_question")}}
+            if action == .typed{try await waitUntil{model.snapshot.question=="Tell me about my experience with Atlas." && model.snapshot.status != "Thinking"}}
             let posts=questionKinds(log)
             if action == .complete{XCTAssertEqual(posts,["image_question"]);XCTAssertTrue(model.contextStatus.contains("image and local OCR"))}
             else{XCTAssertFalse(posts.contains("image_question"),"locally retired image must not reach the model: \(action)")}
             if action == .disableThenOnset{XCTAssertEqual(posts,["text_question"])}
+            if action == .typed{XCTAssertTrue(posts.isEmpty)}
+            if action == .stopResponse{XCTAssertTrue(posts.isEmpty);XCTAssertTrue(model.running)}
             let eou=try XCTUnwrap(nativeEvents.first{$0.kind == .eou})
             XCTAssertEqual(PanelRequestBinding(eou),original)
             XCTAssertEqual(nativeEvents.map(\.eventSequence),Array(1...UInt64(nativeEvents.count)))

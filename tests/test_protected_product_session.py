@@ -62,6 +62,11 @@ class ProtectedProductEntryTests(unittest.TestCase):
     def setUp(self):
         path=Path(__file__).resolve().parents[1]/'packaging'/'relay_helper_entry.py'
         spec=spec_from_file_location('protected_product_entry_test',path);self.entry=module_from_spec(spec);spec.loader.exec_module(self.entry)
+        self.source_home=tempfile.TemporaryDirectory();self.addCleanup(self.source_home.cleanup)
+        # Only these source-script children need an explicit repository import
+        # fixture. The frozen product never receives a Python/repository path.
+        self.source_environment=dict(PATH='/usr/bin:/bin',PYTHONDONTWRITEBYTECODE='1',PYTHONPATH=str(path.parent.parent),
+            HOME=self.source_home.name,TMPDIR=self.source_home.name,HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1')
 
     def test_unprotected_or_abbreviated_product_oauth_never_dispatches_a_session_host(self):
         with patch('relay_spike.session_host.main') as host:
@@ -85,7 +90,7 @@ class ProtectedProductEntryTests(unittest.TestCase):
         from tests.test_session_host import start
         for payload in (b'',encode_frame(start())):
             result=subprocess.run([sys.executable,str(entry),'-m','relay_spike.session_host','--oauth','--protected-account','--model','gpt-synthetic-first'],
-                input=payload,capture_output=True,timeout=5)
+                input=payload,capture_output=True,timeout=5,env=self.source_environment)
             self.assertEqual(result.returncode,2);self.assertEqual(result.stdout+result.stderr,b'')
 
     def test_actual_fixture_and_noinference_entry_keep_reviewed_reference_without_secret_bootstrap(self):
@@ -93,7 +98,7 @@ class ProtectedProductEntryTests(unittest.TestCase):
         root=Path(__file__).resolve().parents[1];entry=root/'packaging'/'relay_helper_entry.py'
         for mode in ([],['--fixture-model']):
             child=subprocess.Popen([sys.executable,str(entry),'-m','relay_spike.session_host','--role','analytics',*mode],
-                cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+                cwd=root,env=self.source_environment,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
             try:
                 child.stdin.write(b''.join(encode_frame(value) for value in [start(),speech(2),end(3),final(4,'What is the difference between WHERE and HAVING?')]))
                 child.stdin.flush();decoder=FrameDecoder();terminal=None;deadline=time.monotonic()+5

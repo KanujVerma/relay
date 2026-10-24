@@ -1,0 +1,205 @@
+import Foundation
+import XCTest
+import RelayProfile
+import RelayAccount
+import RelaySessionPanel
+import RelaySessionPanel
+@testable import RelayPanelSession
+
+final class ApplicationPreferenceStorage:ProtectedSnapshotStorage,@unchecked Sendable {
+    private let condition=NSCondition();private var bytes:Data?,calls=[0,0,0],held=false,waiting=false
+    init(_ bytes:Data?=nil){self.bytes=bytes}
+    var counts:[Int]{condition.lock();defer{condition.unlock()};return calls}
+    var entered:Bool{condition.lock();defer{condition.unlock()};return waiting}
+    func holdLoad(){condition.lock();held=true;waiting=false;condition.unlock()}
+    func release(){condition.lock();held=false;condition.broadcast();condition.unlock()}
+    func exists()throws->Bool{condition.lock();defer{condition.unlock()};calls[0]+=1;return bytes != nil}
+    func load()throws->Data{
+        condition.lock();defer{condition.unlock()};calls[1]+=1
+        if held{waiting=true;while held{condition.wait()};waiting=false}
+        guard let bytes else{throw ProfileError.unavailable};return bytes
+    }
+    func save(_ payload:Data,createKey:Bool)throws{condition.lock();defer{condition.unlock()};calls[2]+=1;bytes=payload}
+}
+@MainActor final class ApplicationPreferenceReceipts:ResponsePreferencesReceiptStore {
+    var value:ResponsePreferencesReceipt;var reads=0
+    init(_ value:ResponsePreferencesReceipt = .init(enabled:false,revision:nil)){self.value=value}
+    func read()->ResponsePreferencesReceipt{reads+=1;return value}
+    func commit(_ revision:UUID){value = .init(enabled:true,revision:revision)}
+    func disable(){value = .init(enabled:false,revision:nil)}
+}
+@MainActor private final class ApplicationContextPreferences:SessionContextUsePreferences{var useInSessions=false}
+private struct PreferenceAppKey:ProfileKeyProvider {
+    func key(createIfMissing:Bool)throws->Data{Data(repeating:91,count:32)}
+}
+@MainActor final class ResponsePreferencesApplicationTests:XCTestCase {
+    private var root:URL{URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()}
+    private func args(_ role:String="developer")throws->[String]{["Relay","--repository",root.path,"--python",try XCTUnwrap(ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"]),"--role",role]}
+    private func waitUntil(_ predicate:()->Bool)async throws{
+        for _ in 0..<2500{if predicate(){return};try await Task.sleep(for:.milliseconds(2))}
+        throw NSError(domain:"actual preference app boundary not reached",code:1)
+    }
+    private func directory()throws->URL{
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("relay-response-app-"+UUID().uuidString)
+        try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:false,attributes:[.posixPermissions:0o700])
+        addTeardownBlock{try? FileManager.default.removeItem(at:directory)};return directory
+    }
+    private func ports(_ directory:URL)throws->AccountApplicationPorts{
+        let repository=root
+        return AccountApplicationPorts(storage:AccountStorage(sharedDirectory:directory.appendingPathComponent("Relay"),keys:PreferenceAppKey()),preferences:FixtureChatGPTPlanPreferences(),control:{ runtime,bootstrap in
+            PipeAccountPort(python:runtime.executable,repository:runtime.resourceRoot,bootstrap:bootstrap,pythonArguments:[repository.appendingPathComponent("tests/support/account_backend_helper.py").path,"--synthetic-account-test","--log",directory.appendingPathComponent("control-"+UUID().uuidString+".jsonl").path])
+        },openBrowser:{_ in true},sessionArguments:{runtime,mode in
+            mode == .protectedOAuth ? [repository.appendingPathComponent("tests/support/account_product_helper.py").path,"--synthetic-product-account-test","--log",directory.appendingPathComponent("requests.jsonl").path]:runtime.arguments
+        })
+    }
+    private func generatedRig()async throws->(SessionApplicationModel,URL){
+        let directory=try directory(),log=directory.appendingPathComponent("requests.jsonl")
+        let model=SessionApplicationModel(arguments:try args(),contextPreferences:ApplicationContextPreferences(),responsePreferencesStorage:ApplicationPreferenceStorage(),responsePreferencesReceipts:ApplicationPreferenceReceipts(),accountPorts:try ports(directory))
+        addTeardownBlock{await model.shutdown()}
+        await model.account.connect();XCTAssertNotNil(model.account.inferenceSelection)
+        return(model,log)
+    }
+    private func posts(_ log:URL)->Int{
+        ((try? String(contentsOf:log,encoding:.utf8)) ?? "").split(separator:"\n").filter{line in
+            (try? JSONSerialization.jsonObject(with:Data(line.utf8)) as? [String:String])?["kind"]=="model"
+        }.count
+    }
+    func testActualGeneratedGuideChangeWithholdsOldCardAndHelpUsesFreshGuideWithoutLosingDraft()async throws {
+        let (model,log)=try await generatedRig()
+        try await model.responsePreferences.useBuiltin(.coding)
+        let old=try XCTUnwrap(model.responsePreferences.capture())
+        XCTAssertEqual(model.responseGuideName,"Coding discussion");XCTAssertNil(model.usedResponseGuideName)
+        model.assistant.draft="Explain event loops.";model.assistant.submitDraft()
+        try await waitUntil{model.snapshot.card != nil}
+        XCTAssertEqual(model.snapshot.responsePreferencesRevision,old.revision)
+        XCTAssertEqual(model.usedResponseGuideName,"Coding discussion")
+        XCTAssertFalse(model.running);XCTAssertTrue(model.assistantActive);XCTAssertFalse(model.authorizedConversation)
+        let scope=model.currentSessionID,helper=try model.ensureHelper()
+        model.assistant.draft="Newer unsent draft remains here."
+        try await model.responsePreferences.useBuiltin(.feature)
+        XCTAssertNil(model.snapshot.card);XCTAssertEqual(model.snapshot.status,"Response guide changed. Ask again.")
+        XCTAssertNil(model.usedResponseGuideName)
+        XCTAssertEqual(model.snapshot.question,"Explain event loops.");XCTAssertEqual(model.currentSessionID,scope)
+        XCTAssertTrue(model.assistant.snapshot.canHelpCurrent);XCTAssertEqual(posts(log),1)
+        model.assistant.requestCurrentQuestionHelp()
+        try await waitUntil{model.snapshot.card != nil}
+        XCTAssertEqual(model.snapshot.responsePreferencesRevision,try XCTUnwrap(model.responsePreferences.capture()).revision)
+        XCTAssertNotEqual(model.snapshot.responsePreferencesRevision,old.revision)
+        XCTAssertEqual(model.usedResponseGuideName,"Feature discussion")
+        XCTAssertEqual(model.assistant.draft,"Newer unsent draft remains here.")
+        XCTAssertTrue(try model.ensureHelper() === helper);XCTAssertEqual(posts(log),2)
+        XCTAssertTrue(model.assistant.transcript.snapshot.rows.isEmpty)
+        await model.stop()
+    }
+    func testDefaultModelTypingAndPresentationNeverReadOrCreatePreferenceStorage()async throws {
+        let store=ApplicationPreferenceStorage(),receipts=ApplicationPreferenceReceipts()
+        let model=SessionApplicationModel(arguments:try args(),contextPreferences:ApplicationContextPreferences(),responsePreferencesStorage:store,responsePreferencesReceipts:receipts,accountPorts:try ports(directory()))
+        model.assistant.draft="Unsent public question."
+        _=model.relayPresentation;_=model.responsePreferences.snapshot
+        XCTAssertEqual(model.responseGuideName,"General");XCTAssertNil(model.usedResponseGuideName)
+        var opened=false
+        model.showResponsePreferences{opened=true;XCTAssertEqual(model.settingsSection,.responses)}
+        XCTAssertTrue(opened);XCTAssertEqual(SessionSettingsView(model:model).selectedSection,.responses)
+        XCTAssertEqual(store.counts,[0,0,0]);XCTAssertEqual(receipts.reads,0)
+        XCTAssertFalse(model.running);XCTAssertFalse(model.assistantActive);XCTAssertNil(model.currentSessionID)
+        await model.stop();XCTAssertEqual(store.counts,[0,0,0]);XCTAssertEqual(model.assistant.draft,"Unsent public question.")
+    }
+    func testActualIdleReferenceSurvivesGuideChangeWithSameHelperAndNoRecording()async throws {
+        let store=ApplicationPreferenceStorage(),receipts=ApplicationPreferenceReceipts()
+        var audio=0
+        let model=SessionApplicationModel(arguments:try args("analytics"),ingressEnqueued:{_ in audio+=1},contextPreferences:ApplicationContextPreferences(),responsePreferencesStorage:store,responsePreferencesReceipts:receipts,accountPorts:try ports(directory()))
+        try await model.responsePreferences.useBuiltin(.coding)
+        model.assistant.draft="What is the difference between WHERE and HAVING?";model.assistant.submitDraft()
+        do{
+            try await waitUntil{model.snapshot.card != nil}
+            let card=model.snapshot.card,session=model.currentSessionID,helper=try model.ensureHelper()
+            XCTAssertNil(model.snapshot.responsePreferencesRevision);XCTAssertTrue(model.assistantActive);XCTAssertNil(model.usedResponseGuideName)
+            XCTAssertFalse(model.running);XCTAssertFalse(model.authorizedConversation);XCTAssertEqual(audio,0)
+            model.assistant.draft="Newer unsent public question."
+            try await model.responsePreferences.useBuiltin(.feature)
+            XCTAssertEqual(model.snapshot.card,card);XCTAssertEqual(model.currentSessionID,session)
+            XCTAssertTrue(try model.ensureHelper() === helper);XCTAssertTrue(model.assistant.snapshot.canHelpCurrent)
+            XCTAssertEqual(model.assistant.draft,"Newer unsent public question.")
+            await model.stop()
+        }catch{await model.stop();throw error}
+    }
+    func testHeldRememberedGuidePreparationJoinsBeforeStopAndKeepsNewDraftWithoutScope()async throws {
+        let catalog=try ResponsePreferencesCatalog(selected:"coding"),store=ApplicationPreferenceStorage(try catalog.encoded())
+        let receipts=ApplicationPreferenceReceipts(.init(enabled:true,revision:catalog.revision))
+        let model=SessionApplicationModel(arguments:try args(),contextPreferences:ApplicationContextPreferences(),responsePreferencesStorage:store,responsePreferencesReceipts:receipts,accountPorts:try ports(directory()))
+        store.holdLoad();defer{store.release()}
+        model.assistant.draft="Original public question.";model.assistant.sendDraftAsNewQuestion()
+        try await waitUntil{store.entered}
+        XCTAssertNil(model.currentSessionID);XCTAssertFalse(model.assistantActive);XCTAssertFalse(model.running)
+        model.assistant.draft="Newer draft while the real preference call is held."
+        var stopped=false
+        let stopping=Task{await model.stop();stopped=true}
+        try await waitUntil{model.stopping}
+        XCTAssertFalse(stopped);XCTAssertTrue(model.responsePreferences.snapshot.isBusy);XCTAssertFalse(model.canStartSession)
+        store.release();await stopping.value
+        XCTAssertTrue(stopped);XCTAssertFalse(model.responsePreferences.snapshot.isBusy)
+        XCTAssertFalse(model.assistantActive);XCTAssertNil(model.currentSessionID)
+        XCTAssertEqual(model.assistant.draft,"Newer draft while the real preference call is held.")
+    }
+    func testActualSavedAccountReadinessPrecedesHeldPreferencesAndNativeScope()async throws {
+        let directory=try directory(),accountPorts=try ports(directory)
+        let first=SessionApplicationModel(arguments:try args(),contextPreferences:ApplicationContextPreferences(),accountPorts:accountPorts)
+        await first.account.connect();XCTAssertNotNil(first.account.inferenceSelection);await first.shutdown()
+        let catalog=try ResponsePreferencesCatalog(selected:"coding"),store=ApplicationPreferenceStorage(try catalog.encoded())
+        let receipts=ApplicationPreferenceReceipts(.init(enabled:true,revision:catalog.revision))
+        let restored=SessionApplicationModel(arguments:try args(),contextPreferences:ApplicationContextPreferences(),responsePreferencesStorage:store,responsePreferencesReceipts:receipts,accountPorts:accountPorts)
+        store.holdLoad();defer{store.release()};addTeardownBlock{await restored.shutdown()}
+        restored.assistant.draft="Explain event loops.";restored.assistant.submitDraft()
+        try await waitUntil{store.entered}
+        XCTAssertNotNil(restored.account.inferenceSelection);XCTAssertFalse(restored.accountPreparationActive)
+        XCTAssertNil(restored.currentSessionID);XCTAssertFalse(restored.assistantActive);XCTAssertFalse(restored.running)
+        XCTAssertFalse(FileManager.default.fileExists(atPath:directory.appendingPathComponent("requests.jsonl").path))
+        restored.assistant.draft="Newer text while restored guidance is held."
+        var finished=false;let stop=Task{await restored.stop();finished=true}
+        for _ in 0..<10{await Task.yield()};XCTAssertFalse(finished)
+        store.release();await stop.value
+        XCTAssertNil(restored.currentSessionID);XCTAssertEqual(restored.assistant.draft,"Newer text while restored guidance is held.")
+    }
+
+    func testUnusedPersonalEvidenceSurvivesGuideChangeAndLockRetiresOnlyItsOriginalAuthority()async throws {
+        let directory=try directory(),context=ApplicationContextPreferences()
+        let model=SessionApplicationModel(arguments:try args("analytics"),contextPreferences:context,
+            profileVaultFactory:{ProfileVault(directory:directory.appendingPathComponent("Relay"),keys:PreferenceAppKey())},
+            responsePreferencesStorage:ApplicationPreferenceStorage(),responsePreferencesReceipts:ApplicationPreferenceReceipts(),accountPorts:try ports(directory))
+        addTeardownBlock{await model.shutdown()}
+        try await model.responsePreferences.useBuiltin(.coding)
+        model.openMyContext();await model.contextUse.waitForQuiescence();XCTAssertTrue(model.profile.opened)
+        await model.profile.stageEnteredText("I implemented validation tests for Fictional Northstar.",purpose:"project",label:"Synthetic project",role:model.role,project:"Fictional Northstar")
+        await model.profile.review(try XCTUnwrap(model.profile.card),actor:"self",claimKey:"fictional.northstar.tests",replaces:nil)
+        model.assistant.draft="What did you personally do on your Fictional Northstar project?";model.assistant.submitDraft()
+        try await waitUntil{model.snapshot.card != nil}
+        let answer=model.snapshot.card,helper=try model.ensureHelper(),scope=model.currentSessionID
+        XCTAssertEqual(answer?.points,["Your contribution: I implemented validation tests for Fictional Northstar."])
+        XCTAssertNil(model.snapshot.responsePreferencesRevision);XCTAssertNil(model.usedResponseGuideName)
+        try await model.responsePreferences.useBuiltin(.feature)
+        XCTAssertEqual(model.snapshot.card,answer);XCTAssertEqual(model.currentSessionID,scope)
+        XCTAssertTrue(try model.ensureHelper() === helper)
+        let guide=try XCTUnwrap(model.responsePreferences.capture())
+        model.lockMyContext();XCTAssertNil(model.snapshot.card);await model.contextUse.waitForQuiescence()
+        XCTAssertFalse(model.profile.opened);XCTAssertFalse(context.useInSessions);XCTAssertTrue(model.responsePreferences.owns(guide))
+        model.assistant.draft="What did you personally do on your Fictional Northstar project?";model.assistant.sendDraftAsNewQuestion()
+        try await waitUntil{model.snapshot.status != "Thinking" && model.snapshot.question != nil}
+        XCTAssertNil(model.snapshot.card);XCTAssertNil(model.snapshot.responsePreferencesRevision)
+        XCTAssertFalse(model.running);XCTAssertTrue(model.assistant.transcript.snapshot.rows.isEmpty)
+        await model.shutdown()
+    }
+    func testMissingRememberedGuideCannotCreateStoreOrScopeAndGeneralRecoversLocalReference()async throws {
+        let store=ApplicationPreferenceStorage(),receipts=ApplicationPreferenceReceipts(.init(enabled:true,revision:UUID()))
+        let model=SessionApplicationModel(arguments:try args("analytics"),contextPreferences:ApplicationContextPreferences(),responsePreferencesStorage:store,responsePreferencesReceipts:receipts,accountPorts:try ports(directory()))
+        addTeardownBlock{await model.shutdown()}
+        let question="What is the difference between WHERE and HAVING?"
+        model.assistant.draft=question;model.assistant.submitDraft();await model.assistant.waitForPreparationQuiescence()
+        XCTAssertNil(model.currentSessionID);XCTAssertFalse(model.assistantActive);XCTAssertEqual(model.assistant.draft,question)
+        XCTAssertEqual(store.counts,[1,0,0]);XCTAssertEqual(model.responsePreferences.snapshot.stage,.unavailable)
+        model.responsePreferences.useGeneral();model.assistant.submitDraft()
+        try await waitUntil{model.snapshot.card != nil}
+        XCTAssertNil(model.snapshot.responsePreferencesRevision);XCTAssertNil(model.usedResponseGuideName)
+        XCTAssertEqual(store.counts,[1,0,0]);await model.shutdown()
+    }
+
+}

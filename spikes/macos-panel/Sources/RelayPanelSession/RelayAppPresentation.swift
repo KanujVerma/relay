@@ -24,13 +24,25 @@ extension RelayPreparationPresentation {
 }
 extension SessionApplicationModel {
     var relayPresentation:RelaySessionPresentation {
-        RelaySessionPresentation(running:running,starting:starting,paused:paused,stopping:stopping,preparing:speechSetup.snapshot.isBusy,visualBusy:visual.isBusy || visual.status == .busy,cancellingPreparation:speechSetup.snapshot.stage == .cancelled && speechSetup.snapshot.isBusy,
+        RelaySessionPresentation(running:running,starting:starting,paused:paused,stopping:stopping,preparing:speechSetup.snapshot.isBusy || accountPreparationActive || accountPreparationCancelling,visualBusy:visual.isBusy || visual.status == .busy,cancellingPreparation:accountPreparationCancelling || (speechSetup.snapshot.stage == .cancelled && speechSetup.snapshot.isBusy),
             hasQuestion:snapshot.question != nil,hasAnswer:snapshot.card != nil,hasSelectedSource:fixture || microphoneEnabled || !selectedBundleID.isEmpty,hasRemoteSource:fixture || !selectedBundleID.isEmpty,
             authorizedConversation:fixture || authorizedConversation,ownerCanStart:canStartSession,ownerCanResume:canResume,
             assistantActive:assistantActive,assistantPreparing:assistant.snapshot.isPreparing,assistantClosing:assistantClosing)
     }
+    var relayPreparation:RelayPreparationPresentation {
+        if accountPreparationActive || accountPreparationCancelling {
+            return RelayPreparationPresentation(title:accountPreparationCancelling ? "Finishing cancellation…":"Checking ChatGPT…",detail:"Restoring your saved connection before the session starts.",busy:true)
+        }
+        if responsePreferences.isBusy{return RelayPreparationPresentation(title:"Checking response guides…",detail:responsePreferences.snapshot.message,busy:true)}
+        return RelayPreparationPresentation(speechSetup.snapshot)
+    }
     var relayAnswer:RelayAnswerPresentation? {
         snapshot.card.map{RelayAnswerPresentation(lead:$0.lead,points:$0.points,detail:$0.detail?.text,language:$0.detail?.language,isCode:$0.detail?.kind=="code")}
+    }
+    var relayContextDetail:String? {
+        var parts=contextStatus.isEmpty ? []:[contextStatus]
+        if let guide=usedResponseGuideName{parts.append("Response guide: "+guide)}
+        return parts.isEmpty ? nil:parts.joined(separator:" · ")
     }
     var relayContextLabel:String {
         if contextStatus.contains("selected text"){return "Selected text"}

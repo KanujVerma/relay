@@ -1,7 +1,11 @@
 import Foundation
 import XCTest
 import RelaySessionPanel
+import RelayAccount
+import RelayProfile
 @testable import RelayPanelSession
+@MainActor private final class VisualPlanPreferences:ChatGPTPlanPreferences{var enabled=false}
+private struct VisualAccountKey:ProfileKeyProvider{func key(createIfMissing:Bool)throws->Data{Data(repeating:97,count:32)}}
 
 @MainActor final class VisualApplicationTests:XCTestCase {
     private var root:URL{URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()}
@@ -60,7 +64,14 @@ import RelaySessionPanel
             elif req['action']=='disable':send(req,'disabled','user_disabled')
         """
         try Data(script.utf8).write(to:launcher);try FileManager.default.setAttributes([.posixPermissions:0o700],ofItemAtPath:launcher.path)
-        let model=SessionApplicationModel(arguments:["relay","--oauth","--repository",root.path,"--python",launcher.path])
+        let python=try XCTUnwrap(ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"])
+        let controlLog=directory.appendingPathComponent("control.jsonl")
+        let repository=root
+        let ports=AccountApplicationPorts(storage:AccountStorage(sharedDirectory:directory.appendingPathComponent("Relay"),keys:VisualAccountKey()),preferences:VisualPlanPreferences(),control:{_,bootstrap in
+            PipeAccountPort(python:URL(fileURLWithPath:python),repository:repository,bootstrap:bootstrap,pythonArguments:[repository.appendingPathComponent("tests/support/account_backend_helper.py").path,"--synthetic-account-test","--log",controlLog.path])
+        },openBrowser:{_ in true},sessionArguments:{runtime,_ in runtime.arguments})
+        let model=SessionApplicationModel(arguments:["relay","--repository",root.path,"--python",launcher.path],accountPorts:ports)
+        await model.account.connect();XCTAssertNotNil(model.account.inferenceSelection)
         XCTAssertTrue(model.canTestVisualInput)
         model.beginVisualVerification()
         XCTAssertTrue(model.visual.isBusy);XCTAssertFalse(model.canStartSession);XCTAssertFalse(model.canChangeAIMode)
@@ -73,7 +84,7 @@ import RelaySessionPanel
         for _ in 0..<5{await Task.yield()}
         XCTAssertTrue(model.visual.isBusy);XCTAssertTrue(model.stopping)
         try Data().write(to:gate)
-        await model.stop()
+        await model.shutdown()
         XCTAssertFalse(model.visual.isBusy);XCTAssertFalse(model.visual.mayOfferImages)
         XCTAssertFalse(model.stopping);XCTAssertTrue(model.canStartSession)
     }

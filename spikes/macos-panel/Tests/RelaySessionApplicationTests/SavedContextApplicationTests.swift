@@ -179,20 +179,17 @@ private final class AppContextKey:ProfileKeyProvider,@unchecked Sendable {
         XCTAssertNotEqual(model.currentSessionID,session);XCTAssertEqual(profile.memoryCount,1)
         XCTAssertEqual(rig.receipts.commands.filter{$0=="load_commit"}.count,1)
     }
-    func testLocalAIModeRetirementPreservesPreferenceWithoutAnyAccountOrModelRequest()async throws {
+    func testUnconnectedAIEnableCannotRetireSavedContextOrAuthorizeAModel()async throws {
         let rig=try rig(fixture:false),model=rig.model
         model.openMyContext();await model.contextUse.waitForQuiescence();try await approveFictionalFact(model)
         let oldProfile=model.profile,oldHelper=try model.ensureHelper(),created=rig.key.calls.creates
-        // Only the existing local mode setting changes. No OAuth-mode helper
-        // is launched: return to no-inference mode before explicitly reopening.
         await model.setAIEnabled(true)
-        XCTAssertTrue(model.oauth);XCTAssertTrue(rig.preferences.useInSessions)
-        XCTAssertFalse(oldProfile.opened);XCTAssertEqual(oldProfile.closeOutcome,.locked)
+        XCTAssertFalse(model.oauth);XCTAssertTrue(rig.preferences.useInSessions)
+        XCTAssertTrue(oldProfile.opened);XCTAssertNil(model.account.inferenceSelection)
         XCTAssertFalse(model.running);XCTAssertEqual(rig.receipts.nativeStarts,0)
         await model.setAIEnabled(false);XCTAssertFalse(model.oauth)
-        model.openMyContext();await model.contextUse.waitForQuiescence()
-        XCTAssertTrue(model.profile.opened);XCTAssertEqual(model.profile.memoryCount,1)
-        XCTAssertFalse(try model.ensureHelper() === oldHelper)
+        XCTAssertTrue(model.profile === oldProfile);XCTAssertEqual(model.profile.memoryCount,1)
+        XCTAssertTrue(try model.ensureHelper() === oldHelper)
         XCTAssertEqual(rig.key.calls.creates,created);XCTAssertTrue(rig.preferences.useInSessions)
         XCTAssertEqual(rig.receipts.nativeStarts,0)
     }

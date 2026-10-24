@@ -85,19 +85,19 @@ private actor IdleSpeechCalls{
         try Data().write(to:release);try await waitUntil{model.snapshot.card != nil}
         XCTAssertTrue(model.assistantActive);XCTAssertNil(model.error)
     }
-    func testAIModeChangeReapsHeldAccountGlobalTokenThreadBeforeMutation()async throws {
+    func testUnconnectedAIEnableCannotMutateOrRetireTheHeldIdleRequest()async throws {
         let (model,_,log,release)=try heldRig("token")
         model.assistant.draft="Explain event loops.";model.assistant.submitDraft()
         try await waitUntil{kinds(log).contains("token_entered")}
-        var changed=false
-        let change=Task{await model.setAIEnabled(true);changed=true}
-        try await waitUntil{model.stopping}
-        for _ in 0..<10{await Task.yield()}
-        XCTAssertFalse(changed);XCTAssertFalse(model.oauth);XCTAssertFalse(kinds(log).contains("token_finished"))
-        try Data().write(to:release);await change.value
-        XCTAssertTrue(changed);XCTAssertTrue(model.oauth);XCTAssertFalse(model.assistantActive)
-        XCTAssertTrue(kinds(log).filter{$0=="text_post"}.isEmpty)
-        XCTAssertNil(model.snapshot.card);XCTAssertNil(model.currentSessionID)
+        let original=try model.ensureHelper(),session=try XCTUnwrap(model.currentSessionID)
+        await model.setAIEnabled(true)
+        XCTAssertFalse(model.oauth);XCTAssertNil(model.account.inferenceSelection)
+        XCTAssertFalse(model.stopping);XCTAssertTrue(model.assistantActive)
+        XCTAssertFalse(kinds(log).contains("token_finished"));XCTAssertFalse(original.hasExited)
+        XCTAssertEqual(model.currentSessionID,session)
+        try Data().write(to:release);try await waitUntil{model.snapshot.card != nil}
+        XCTAssertEqual(kinds(log).filter{$0=="text_post"}.count,1)
+        XCTAssertTrue(try model.ensureHelper() === original);XCTAssertFalse(model.oauth)
     }
     func testActualReusedHelperEOFClearsTheCurrentAppCardAndAllowsFreshIdleOwner()async throws {
         let (model,_,log,release)=try heldRig("eof")

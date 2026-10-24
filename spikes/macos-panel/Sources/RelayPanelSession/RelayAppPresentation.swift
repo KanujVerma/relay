@@ -33,10 +33,16 @@ extension SessionApplicationModel {
         if accountPreparationActive || accountPreparationCancelling {
             return RelayPreparationPresentation(title:accountPreparationCancelling ? "Finishing cancellation…":"Checking ChatGPT…",detail:"Restoring your saved connection before the session starts.",busy:true)
         }
+        if responsePreferences.isBusy{return RelayPreparationPresentation(title:"Checking response guides…",detail:responsePreferences.snapshot.message,busy:true)}
         return RelayPreparationPresentation(speechSetup.snapshot)
     }
     var relayAnswer:RelayAnswerPresentation? {
         snapshot.card.map{RelayAnswerPresentation(lead:$0.lead,points:$0.points,detail:$0.detail?.text,language:$0.detail?.language,isCode:$0.detail?.kind=="code")}
+    }
+    var relayContextDetail:String? {
+        var parts=contextStatus.isEmpty ? []:[contextStatus]
+        if let guide=usedResponseGuideName{parts.append("Response guide: "+guide)}
+        return parts.isEmpty ? nil:parts.joined(separator:" · ")
     }
     var relayContextLabel:String {
         if contextStatus.contains("selected text"){return "Selected text"}

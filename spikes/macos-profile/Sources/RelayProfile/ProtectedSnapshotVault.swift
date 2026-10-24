@@ -9,9 +9,10 @@ public protocol ProtectedSnapshotStorage:Sendable {
     func save(_ payload:Data,createKey:Bool)throws
 }
 public enum ProtectedSnapshotPurpose:Sendable {
-    case profile,history
-    fileprivate var filename:String{self == .profile ? "profile.relayvault":"history.relayvault"}
-    fileprivate var header:Data{Data((self == .profile ? "RELAYPROFILE1\n":"RELAYHISTORY1\n").utf8)}
+    case profile,history,responsePreferences
+    fileprivate var filename:String{switch self{case .profile:"profile.relayvault";case .history:"history.relayvault";case .responsePreferences:"preferences.relayvault"}}
+    fileprivate var header:Data{Data(headerText.utf8)}
+    private var headerText:String{switch self{case .profile:"RELAYPROFILE1\n";case .history:"RELAYHISTORY1\n";case .responsePreferences:"RELAYPREFERENCES1\n"}}
 }
 
 /// Whole-payload authenticated encryption, with ciphertext-only atomic files.
@@ -48,8 +49,9 @@ public final class ProtectedSnapshotVault:ProtectedSnapshotStorage,@unchecked Se
         else{throw ProfileError.invalidLocation}
     }
     private func checkDirectory(create:Bool)throws{
-        if purpose == .history{
+        if purpose != .profile{
             // Shared Relay0700 may already belong to profile/account storage.
+            // History and response preferences use fixed sibling directories.
             // Never recursively manufacture or permission-heal its ancestry.
             try checkOneDirectory(directory.deletingLastPathComponent(),create:create,recursive:false)
             try checkOneDirectory(directory,create:create,recursive:false)

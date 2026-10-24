@@ -8,11 +8,10 @@ import RelaySessionCapture
 import RelayAccount
 
 enum RelaySettingsSection:String,CaseIterable,Sendable {
-    case general="General",screen="Screen context",ai="AI",history="History",shortcuts="Shortcuts",advanced="Advanced"
-    var symbol:String{switch self{case .general:"slider.horizontal.3";case .screen:"rectangle.dashed";case .ai:"sparkles";case .history:"clock.arrow.circlepath";case .shortcuts:"keyboard";case .advanced:"wrench.and.screwdriver"}}
+    case general="General",screen="Screen context",ai="AI",history="History",responses="Responses",shortcuts="Shortcuts",advanced="Advanced"
+    var symbol:String{switch self{case .general:"slider.horizontal.3";case .screen:"rectangle.dashed";case .ai:"sparkles";case .history:"clock.arrow.circlepath";case .responses:"text.bubble";case .shortcuts:"keyboard";case .advanced:"wrench.and.screwdriver"}}
 }
 @MainActor struct SessionSettingsView:View {
-
     @ObservedObject var model:SessionApplicationModel
     @ObservedObject private var setup:SpeechSetupCoordinator
     @ObservedObject private var visual:VisualInputSetupState
@@ -52,6 +51,8 @@ enum RelaySettingsSection:String,CaseIterable,Sendable {
             Text("Local reference cards remain available with AI off. Finish or pause the current session before changing your connection.").font(.system(size:12)).foregroundStyle(RelayTheme.muted)
             Divider().overlay(RelayTheme.line)
             VisualInputOptions(model:model)
+        case .responses:
+            ResponsePreferencesSettingsView(model:model)
         case .shortcuts:
             settingsTitle("Keyboard shortcuts","Control Relay's own window and current answer.")
             ControlsSettingsView(controller:model.controls).onAppear{model.restoreShortcuts()}.onChange(of:model.controls.shortcuts){_,_ in model.saveShortcuts()}.onDisappear{model.saveShortcuts()}

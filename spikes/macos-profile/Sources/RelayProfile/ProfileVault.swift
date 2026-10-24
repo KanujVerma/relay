@@ -27,14 +27,15 @@ public struct SystemSecurityItems: SecurityItemClient {
 }
 
 /// Fixed namespaces. The profile and credential identities match accepted
-/// account storage728e929; history is a separately approved local domain.
+/// account storage728e929; history and response preferences are separate
+/// approved local domains.
 public enum KeychainKeyPurpose:Sendable {
-    case profile,chatGPTCredentials,history
+    case profile,chatGPTCredentials,history,responsePreferences
     fileprivate var service:String {
-        switch self {case .profile:"com.relay.profile.v1";case .chatGPTCredentials:"com.relay.chatgpt-auth.v1";case .history:"com.relay.history.v1"}
+        switch self {case .profile:"com.relay.profile.v1";case .chatGPTCredentials:"com.relay.chatgpt-auth.v1";case .history:"com.relay.history.v1";case .responsePreferences:"com.relay.response-preferences.v1"}
     }
     fileprivate var account:String {
-        switch self {case .profile:"local-profile-aes256";case .chatGPTCredentials:"local-chatgpt-aes256";case .history:"local-history-aes256"}
+        switch self {case .profile:"local-profile-aes256";case .chatGPTCredentials:"local-chatgpt-aes256";case .history:"local-history-aes256";case .responsePreferences:"local-response-preferences-aes256"}
     }
 }
 /// Construction does not access Keychain. Only an explicit native open action
@@ -50,9 +51,9 @@ public struct KeychainProfileKey: ProfileKeyProvider {
                     else { throw ProfileError.unavailable }
                     return Data(bytes)
                 }) {
-        self.purpose=purpose
         self.client = client
         self.random = random
+        self.purpose=purpose
     }
     public func key(createIfMissing: Bool) throws -> Data {
         var query: [String: Any] = [

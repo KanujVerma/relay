@@ -1,0 +1,11 @@
+# Actual idle Ask window verification
+
+The normal self-contained app at exact clean3e83f8e0157b7496674ece71ad3ded0f397b818f was copied to an owned folder with spaces. A preview-only copy changed its bundle/display identity and was re-signed; its native executable/helper stayed identical. It launched with no repository/Python/fixture override. Only public technical text was entered; AI remained off, recording consent unchecked, screen off, no audio/account/Keychain/private file was used.
+
+Home provides Ask without Start; normal Settings has automatic speech and no normal ASR/VAD selector. Expanded empty audio transcript fits the window. Normal bundled Send opens Assistant · not listening; the terminal copy now correctly says AI requests are off, not Thinking. End returns Home. All owned previews were quit and inventory confirms none remained; the unrelated original Relay was untouched.
+
+The [before](idle-terminal-unavailable.png) screenshot records the established terminal-message P2 inac70, reproduced in the earlier bundledfc062 source too. The [after](idle-terminal-fixed.png) is the corrected actual bundled3e83 window. [Expanded empty audio transcript](home-transcript-empty.png) is the earlierac70 developer preview, not a screenshot of a later binary. No answer/model quality or latency claim follows from these public negative-path screenshots.
+
+The first four direct developer-runtime preview Sends failed during scope preparation; a diagnostic Python-script wrapper succeeded and recorded an open age304ms/ready. Ten independently launched normal production-interpreter children passed132–219ms; they do not establish cache-cold readiness. A new actual bundled normal launch and actual bundled Model reference test both pass. The developer-preview cause remains unproven and is not misreported as a corrected cold-start bug. No freshness limit, new ready protocol, source guard or timeout was changed.
+
+The developer screenshot uses explicit public paths and no private context. The corrected normal-bundle screenshot uses only the stock nested helper. This is product-window evidence for3e83; the newer protected-account join15d6f6d/300c needs its own actual Settings/window acceptance. CUA launch-tool delays are not app startup measurements.

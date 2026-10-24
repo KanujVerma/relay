@@ -42,3 +42,24 @@ every failure/format withhold, requested versus server-reported effort where
 available, output length, first delta, valid completion, native availability
 and human rubric assessment. No p95 from a tiny sample. Do not change the normal
 default or infer plan support before that actual protected-factory gate.
+
+## Prepared bounded evaluation
+
+`EVALS/benchmark_answer_latency.py` now exposes
+`compare_effort_variants(stream, include_answers=False)` for a dedicated,
+explicitly supplied protected product stream. Both declared variants use the
+identical compact instructions and question input; `default` omits effort and
+`none` sends that exact Luna value. Unsupported Sol None rejects through the
+existing validator before token/client access. The original stream setting is
+restored on completion, failure or cancellation; normal runtime defaults do not
+change. A hard six-attempt cap is enforced even if the case inventory expands.
+Personal-missing controls make zero model attempts. No changed-effort retry or
+credential/client creation is introduced.
+
+Failures, completed-but-format-rejected cards, refusals/incomplete markers and
+human correctness status remain in the results. `serverReportedEffort` is null
+because the current product adapter does not expose that echo; do not report
+requested level as independently observed effective reasoning. Running the
+module still prints its plan only. Five new offline cases plus existing focused
+transport/helper/effort controls pass **35 tests / zero skips / 0.307 s**, after
+three initial missing-API failures. No account execution occurred.

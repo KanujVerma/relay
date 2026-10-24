@@ -319,6 +319,18 @@ composition selection and original controls, not another real model run or
 hardware/account/window acceptance. Broader actual speech and the unchanged
 actual Model/account fixtures remain active final gates.
 
+The evaluation-only cloud-lever harness is now ready: `compare_effort_variants`
+holds compact prompts/inputs constant for omitted effort versus explicit Luna
+None, at most six declared attempts. It requires a dedicated explicit product
+stream, rejects unsupported combinations before credentials, retains every
+failure/QA outcome and restores original configuration even after cancellation.
+Five new offline cases cover identical payloads, rejection before token access,
+restoration/cancellation, no hidden failure fallback and hard caps. Combined
+focused verification passes 35 tests / zero skips / 0.307 s. The CLI still
+prints a plan only; no actual account request or runtime effort-default change
+has occurred. Effective server reasoning remains unobserved unless an actual
+echo becomes available; requested levels alone cannot establish it.
+
 No real account, Keychain, private source, audio/screen capture, cloud inference,
 download or full-app latency result is claimed. Product goals from speech-end
 remain first visible text under 1 s median, useful advice by 2 s median, and a

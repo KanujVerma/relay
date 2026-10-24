@@ -1,5 +1,7 @@
 import Foundation
 
+public enum ActivityRecognitionMode:Sendable,Equatable {case closedSpan,safePrefixes}
+
 public struct SpeechActivityObservation:Sendable {
     public let boundaries:[SpeechBoundary]
     public let processedSamples:UInt64
@@ -36,8 +38,9 @@ public protocol IncrementalActivityRecognizer:ActivityRecognizer {
 }
 
 struct ActivityPreprocessingStatistics:Sendable {
+    /// Input acknowledged by append; the backend may still buffer an encoder window.
     var prefixSamples=0
-    var prefixCompletedBeforeCloseSamples=0
+    var prefixAcceptedBeforeCloseSamples=0
     var suffixSamples=0
     var closedSpanFallbacks=0
     var closedReplaySamples=0
@@ -112,7 +115,7 @@ actor ActivityPreprocessingLane {
               endSample-key.startSample==UInt64(activity.samples.count),job.nextOffered<=endSample else{
             throw NativeSessionError.invalidFrame
         }
-        job.stats.prefixCompletedBeforeCloseSamples=job.stats.prefixSamples
+        job.stats.prefixAcceptedBeforeCloseSamples=job.stats.prefixSamples
         job.closed=activity;job.finalEnd=endSample;wake()
     }
     func cancel(){

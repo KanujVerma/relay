@@ -55,10 +55,10 @@ fixed diagnostics value for synthetic test observations.
 - [x] Implement bounded owned feeds with independently deliverable close/cancel
   state, one fallback latch and one serial worker. Never await model work under
   its queue lock. Preserve original ClosedActivity until completion.
-- [ ] Obtain the next lease; run the same cases plus existing session-pipeline
-  cancellation/clock/late-source controls. Four-case core green completed under
-  the granted lease; existing controls remain part of the affected integration
-  gate. The inert core checkpoint does not claim them or runtime activation.
+- [x] Obtain the next lease; run the same cases plus existing session-pipeline
+  cancellation/clock/late-source controls. Inert core had four-case green; the
+  later full conditional-source gate passed all 47 native cases and 36/38
+  capture cases (two explicit download/model skips), still no normal activation.
 
 ## Task 2: Actual pinned VAD watermark and original single backend
 
@@ -87,15 +87,15 @@ serialized prefix operations using its existing backend, with original key/count
 default-off component capability; one live lane/source; original `onEnd`/`onFinal`
 and real `waitForQuiescence()` retain ownership across all worker operations.
 
-- [ ] Add native-controller cases proving zero prefix calls before actual start
+- [x] Add native-controller cases proving zero prefix calls before actual start
   lease, all original start/end/padding samples consumed, and prefix work before
   closure without an early EOU. Unsupported components retain legacy behavior.
-- [ ] Add invalid/backwards watermark, source gap/rotation, held stop/replacement,
+- [x] Add invalid watermark/model error, original source gap/rotation, held stop,
   next-activity FIFO and held-remote/microphone-completes controls. Assert original
   event counters, leases and late-history identities, never replacement stamping.
-- [ ] Observe API/behavior red under the shared lease; implement the conditional
+- [x] Observe API/behavior red under the shared lease; implement the conditional
   source branch. Prefix saturation selects one original closed fallback.
-- [ ] Run affected full native/capture packages under a lease, preserve skips and
+- [x] Run affected full native/capture packages under a lease, preserve skips and
   commit the integrated but default-off implementation for root review.
 
 ## Task 4: Matched offline local inference and activation gate

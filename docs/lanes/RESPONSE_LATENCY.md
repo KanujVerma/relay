@@ -197,7 +197,8 @@ rejected: a pending VAD end survives long middle-band sequences. Design-only
 metadata fixtures preserve that counterexample and six explicit original-cutoff
 cases. Four pure tests pass in 0.067 s, including 9,841 bounded class sequences.
 This is not execution of the future Swift path or an ASR performance claim.
-No preprocessing implementation has begun before root's concrete design review.
+At that design checkpoint no preprocessing implementation had begun; root
+subsequently approved the architecture with the explicit local fallback below.
 
 [Current official effort research](../research/RESPONSE_EFFORT_OPTIONS.md)
 confirms generic Luna None/Low and Sol Low support, distinguishes omitted effort
@@ -235,6 +236,28 @@ default segmentation, and the recognizer retains its one existing backend.
 SourcePipeline and normal factory remain unmodified, so prefix processing is
 still not activated or performance accepted. Fresh gate budget: 23.315 GiB
 temporary / 48.777 GiB free / 0.75 GiB reserve; same cache/jobs/deadline, released.
+
+The conditional native integration now passes the **full macos-session package:
+85 collected, 83 passed, two explicit model/download skips**. Native session has
+47 passes / zero skips / 0.977 s; capture has 38 collected / 36 passed / two skips
+/ 0.414 s. Overall command 13.937 s, with live model/download opt-ins explicitly
+off. It includes ten new actual native-controller cases for prefix-before-end,
+full sample order/suffix/one final, unchanged default, no work without onset,
+held remote versus independent microphone, original lease/timebase after newer
+onset, true held-stop join, one queue-pressure fallback without capture failure,
+invalid watermark/model error denial and retired recognizer release.
+
+`SourceComponents.recognitionMode` defaults to `closedSpan`, and the normal
+capture factory still omits it. Only explicit synthetic callers exercise the new
+branch. Source liveness is checked instead of old display-lease currentness,
+native end precedes recognition close, and cursor advances only on accepted
+offers. Post-await checks prevent history access after cancellation. A stored
+strong source predicate would form a source/processor/lane cycle; a weak capture
+and the release invariant prevent that ownership leak. Accepted-input counts
+do not claim completed encoder computation: the backend can still buffer a
+window. Actual paced-model text/cutoff/RSS and full app/account results remain
+separate pending gates. Fresh budget was 23.332 GiB temporary / 47.685 GiB free /
+0.75 GiB reserve; same bounded cache/jobs/deadline, lease released.
 
 No real account, Keychain, private source, audio/screen capture, model inference,
 download or full-app latency result is claimed. Product goals from speech-end

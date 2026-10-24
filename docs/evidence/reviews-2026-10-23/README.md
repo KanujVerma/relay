@@ -50,3 +50,7 @@ These are local scoped independent reviews, not GitHub approval or a main merge.
 - [Protected account storage/key checkpoint728](review-account-storage-728e929.md): accepted at storage boundary; actual account control/bootstrap/product UI remains separate.
 
 - [Query mechanism/team-planning correction](review-query-f0fe9d0.md): accepted f0fe9d0, joined6eb1717;74focused/605full collected and18 packaged cases.
+
+- [Standalone scope foundation369](review-idle-foundation-3698e28.md): accepted96Python+10native; actual transport/app follow.
+- [Native account consumer28](review-account-native-28d5948.md): accepted17native+3launcher tests; full product consumer follows.
+- [Résumé backendf353 first review](review-resume-backend-f353253.md): one P2 shared-name employer relevance finding, correction pending.

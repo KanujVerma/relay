@@ -9,9 +9,11 @@ private struct NotesAppKey:ProfileKeyProvider{func key(createIfMissing:Bool)thro
 @MainActor private final class NotesAppHelperPort {
     let root:URL,python:URL
     var helper:HelperTransport?,preparations=0,held=false,release:CheckedContinuation<Void,Never>?
+    var onPrepare:(@MainActor (UUID)async->Void)?
     init(_ root:URL,_ python:URL){self.root=root;self.python=python}
     func prepare(_ intent:UUID,_ isCurrent:@escaping @MainActor ()->Bool)async throws->HelperTransport{
         preparations+=1
+        if let onPrepare{await onPrepare(intent)}
         if held{await withCheckedContinuation{release=$0}}
         try Task.checkCancellation();guard isCurrent() else{throw CancellationError()}
         if let helper{return helper}
@@ -79,5 +81,22 @@ private struct NotesAppKey:ProfileKeyProvider{func key(createIfMissing:Bool)thro
         let notes=GeneratedMeetingNotesController(history:history,prepareHelper:{_,_ in XCTFail("Constructor cannot prepare helper");throw HistoryError.unavailable},mayOfferGeneration:{true})
         XCTAssertNil(notes.snapshot.recordID);XCTAssertNil(notes.snapshot.document);XCTAssertFalse(notes.isBusy)
         XCTAssertEqual(history.snapshot.phase,.locked)
+    }
+
+    func testExactCurrentHelperPreparerSurvivesAccountHelperRetirementWithoutSelfAwait()async throws{
+        let(_,notes,port)=try await fixture()
+        port.onPrepare={intent in await notes.retireHelperDependents(excludingPreparation:intent)}
+        notes.generate(notes.snapshot,selection:.fullSavedTranscript);await notes.waitForQuiescence()
+        XCTAssertNotNil(notes.snapshot.document);XCTAssertEqual(port.preparations,1);XCTAssertFalse(notes.isBusy)
+    }
+    func testForeignPreparerExclusionCannotPreserveOrReleaseHeldOriginalWork()async throws{
+        let(_,notes,port)=try await fixture();port.held=true
+        notes.generate(notes.snapshot,selection:.fullSavedTranscript);try await until{port.release != nil}
+        var joined=false
+        let retirement=Task{await notes.retireHelperDependents(excludingPreparation:UUID());joined=true}
+        for _ in 0..<10{await Task.yield()}
+        XCTAssertFalse(joined);XCTAssertTrue(notes.isBusy);XCTAssertNil(port.helper)
+        port.release?.resume();port.release=nil;await retirement.value
+        XCTAssertTrue(joined);XCTAssertFalse(notes.isBusy);XCTAssertNil(notes.snapshot.document);XCTAssertNil(port.helper)
     }
 }

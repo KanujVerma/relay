@@ -282,4 +282,27 @@ private final class NotesHeldSQLiteStatement:@unchecked Sendable{
         XCTAssertFalse(outcome.cleanupComplete);XCTAssertEqual(outcome.receipt.noteID,saved.document.noteID)
         XCTAssertThrowsError(try store.generatedNotes(id));statement.finish();try store.close()
     }
+
+    func testGeneratedExportUsesTypedSeparateSectionAndVersionedProvenance()async throws{
+        let(store,_,_,id,_)=try fixture(),saved=try save(store,source(store,id)),detail=try store.detail(id)
+        let json=try HistoryExport.encode(detail,format:.json,generatedNotes:saved.document)
+        let value=try XCTUnwrap(JSONSerialization.jsonObject(with:json) as? [String:Any])
+        XCTAssertEqual(value["schemaVersion"] as? Int,2)
+        let derived=try XCTUnwrap(value["generatedMeetingNotes"] as? [String:Any])
+        XCTAssertEqual(derived["origin"] as? String,"generated");XCTAssertEqual(derived["modelID"] as? String,saved.document.modelID)
+        XCTAssertEqual((value["userNotes"] as? [String:Any])?["origin"] as? String,"user")
+        let markdown=String(decoding:try HistoryExport.encode(detail,format:.markdown,generatedNotes:saved.document),as:UTF8.self)
+        XCTAssertTrue(markdown.contains("AI-generated meeting notes"));XCTAssertTrue(markdown.contains("Fictional original"))
+        XCTAssertTrue(markdown.contains("not approved personal facts"))
+    }
+    func testExportRejectsForeignDerivedDocumentAndNoNoteExportRemainsVersionOne()async throws{
+        let(store,_,_,id,_)=try fixture(),(other,_,_,otherID,_)=try fixture(),foreign=try save(other,source(other,otherID))
+        let detail=try store.detail(id)
+        XCTAssertThrowsError(try HistoryExport.encode(detail,format:.json,generatedNotes:foreign.document))
+        let original=try HistoryExport.encode(detail,format:.json)
+        let without=try HistoryExport.encode(detail,format:.json,generatedNotes:nil)
+        XCTAssertEqual(original,without)
+        let value=try XCTUnwrap(JSONSerialization.jsonObject(with:original) as? [String:Any])
+        XCTAssertEqual(value["schemaVersion"] as? Int,1);XCTAssertNil(value["generatedMeetingNotes"])
+    }
 }

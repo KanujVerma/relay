@@ -731,7 +731,7 @@ final class HistoryAdmission:@unchecked Sendable {
                 let data=try await self.run(gate:gate){store in
                     let detail=try store.detail(id,all:true)
                     guard detail.record.revision==expectedRevision else{throw HistoryError.stale}
-                    return try HistoryExport.encode(detail,format:format)
+                    return try HistoryExport.encode(detail,format:format,generatedNotes:store.generatedNotes(id))
                 }
                 guard self.epoch==original,self.selectionEpoch==selected,gate.allowed,!self.tombstones.contains(id) else{throw HistoryError.stale}
                 try await self.run(gate:gate){_ in guard gate.allowed else{throw HistoryError.stale};try destination.write(data)}

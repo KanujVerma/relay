@@ -22,6 +22,7 @@ private final class NotesActionDenial:@unchecked Sendable {
         let id=UUID(),kind:Kind,target:GeneratedMeetingNotesSnapshot,gate=NotesActionDenial(),deadline:UInt64
         var task:Task<Void,Error>?,source:HistoryNotesSource?,native:NativeNotesSessionController?,completion:NotesCompletedOperation?
         var acceptedRevision:Int64?,citation:HistoryFinal?
+        var preparingHelper=false
         init(_ kind:Kind,_ target:GeneratedMeetingNotesSnapshot){self.kind=kind;self.target=target;deadline=DispatchTime.now().uptimeNanoseconds+30_000_000_000}
     }
     @Published private(set) var snapshot=GeneratedMeetingNotesSnapshot()
@@ -103,6 +104,13 @@ private final class NotesActionDenial:@unchecked Sendable {
     func retireForOwnerChange(){if let original=work{cancel(original);phase = .cancelling;publish()}}
     func waitForQuiescence()async{while let original=work,let task=original.task{_=await task.result}}
     func retireAndWait()async{retireForOwnerChange();await waitForQuiescence()}
+    /// The helper-only account retirement may be called from this exact
+    /// preparer. It must not cancel or await itself before source admission.
+    func retireHelperDependents(excludingPreparation intentID:UUID?)async{
+        if let original=work,original.id==intentID,original.kind == .generate,original.preparingHelper,
+           original.source==nil,original.native==nil,original.completion==nil,current(original){return}
+        await retireAndWait()
+    }
 
     /// Called only by an explicit record-open/refresh action, not rendering.
     func loadSelectedRecord()async throws{
@@ -119,7 +127,12 @@ private final class NotesActionDenial:@unchecked Sendable {
         guard mayOfferGeneration(),matches(target),work==nil else{return}
         do{
             _=try begin(.generate,target){[self] original in
-                let helper=try await prepareHelper(original.id,{[weak self,weak original] in guard let self,let original else{return false};return self.current(original)})
+                let helper:HelperTransport
+                original.preparingHelper=true
+                do{
+                    helper=try await prepareHelper(original.id,{[weak self,weak original] in guard let self,let original else{return false};return self.current(original)})
+                    original.preparingHelper=false
+                }catch{original.preparingHelper=false;throw error}
                 try check(original)
                 guard let id=target.recordID,let revision=target.recordRevision else{throw HistoryError.stale}
                 let source=try await history.prepareNotesSource(recordID:id,expectedRevision:revision,selection:selection,intentID:original.id,

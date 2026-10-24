@@ -1,0 +1,41 @@
+{
+  "derived_actual_bytes": 223779,
+  "derived_cap": 262144,
+  "derived_conservative_upper_bytes": 244515,
+  "empty_row_metadata_bytes": 165,
+  "fixtures": {
+    "astral": {
+      "chunks": 53,
+      "json_bytes": 432767,
+      "raw_text_bytes": 262144
+    },
+    "control_u0001": {
+      "chunks": 213,
+      "json_bytes": 1743487,
+      "raw_text_bytes": 262144
+    },
+    "ordinary": {
+      "chunks": 53,
+      "json_bytes": 432767,
+      "raw_text_bytes": 262144
+    },
+    "quote_backslash": {
+      "chunks": 85,
+      "json_bytes": 694911,
+      "raw_text_bytes": 262144
+    }
+  },
+  "full_chunk_frame_body_bytes": 11179,
+  "full_chunk_framed_bytes": 11183,
+  "header_bytes": 640,
+  "max_cap_chunks": 256,
+  "max_composite_id_bytes": 101,
+  "output_bytes": 8192,
+  "queue_limit_bytes": 262144,
+  "queue_limit_frames": 32,
+  "raw_text_bytes": 262144,
+  "rows": 1024,
+  "source_cap": 2097152,
+  "source_upper_bytes": 1743487,
+  "source_upper_chunks": 213
+}

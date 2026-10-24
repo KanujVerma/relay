@@ -46,3 +46,8 @@ A separate native notes work scope is necessary because saved-document revision/
 ## Evidence limits and next gate
 
 This is architectural source research, not a runtime spike. Existing unchanged contextual-scenarios baseline4tests passed0.047s in the isolated e846 clone; no notes implementation exists. No new dependency/model download is needed for the proposal. Exact wire/source/output/lifecycle and schema2 tradeoffs are submitted for root approval in the companion spec. Only after approval and accepted History/account join will implementation use fake keys/temp vaults, actual framed synthetic children and MockTransport. Actual UI, account/device/capture and model usefulness remain separate root/user gates.
+
+
+## Full-record coverage correction and bounded proof
+
+Root review rejected the initial128row/32KiB interview limit. The revised proposal defaults to all admitted History rows (1,024rows/256KiB raw text). Actual HistoryFinal/SessionTranscriptStore allows non-NUL controls, so a universal768KiB encoded-source estimate is insufficient: U+0001 requires six JSON bytes per raw byte. The [small fictional calculation](../evidence/2026-10-24-notes-bounds/README.md) models all fixed metadata and max-width UInt64 composite IDs. Encoded source upper bound1,743,487bytes fits2MiB; full chunk11,183bytes including prefix fits16KiB; sequential transfer leaves32frame/256KiB queue unchanged. Full1,024row membership, source proofs,8KiB typed output and provenance conservatively fit244,515bytes under256KiB persisted cap. It is a projection/resource proof, not native authenticity, provider context, latency or encrypted-migration acceptance. No new SDK/library/format authority was imported to obtain these numbers.

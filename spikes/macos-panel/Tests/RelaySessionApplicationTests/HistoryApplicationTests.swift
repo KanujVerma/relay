@@ -119,6 +119,33 @@ private final class AppHistoryStorage:HistoryOwnedSnapshotStorage,@unchecked Sen
         XCTAssertFalse(model.running);XCTAssertEqual(starts.count,0);XCTAssertFalse(prefs.savingEnabled)
         await model.start();XCTAssertTrue(model.running);XCTAssertEqual(starts.count,1)
     }
+    func testActualFinalHistorySubscriberEndCannotRepublishRetiredEphemeralTranscript()async throws{
+        let(model,_,_,_,_,_)=try rig();try await model.history.enableSaving()
+        var startedPending=false,startDrained=false,ended=false,republished=false,clearedInsideEnd=false
+        let transient=model.assistant.transcript.$snapshot.sink{incoming in
+            if ended && !incoming.rows.isEmpty{republished=true}
+        }
+        let retention=model.history.$snapshot.sink{incoming in
+            // This fixture has one native start observation, then one original
+            // actual final. Handle both valid writer schedules: start still
+            // queued, or start already drained before that final arrives.
+            if incoming.pendingCount>0 && !startedPending{startedPending=true;return}
+            if startedPending && incoming.pendingCount==0{startDrained=true}
+            guard !ended,model.running,incoming.pendingCount>0,
+                  startDrained || incoming.pendingCount>1 else{return}
+            ended=true;model.beginRetirement(end:true)
+            clearedInsideEnd=model.assistant.transcript.snapshot.rows.isEmpty
+        }
+        await model.start();try await until{ended && !model.stopping}
+        retention.cancel();transient.cancel()
+        XCTAssertTrue(clearedInsideEnd)
+        XCTAssertFalse(republished,"The original consume must not append its final after the History callback synchronously Ends")
+        XCTAssertTrue(model.assistant.transcript.snapshot.rows.isEmpty);XCTAssertFalse(model.running)
+        await model.history.waitForQuiescence()
+        let record=try XCTUnwrap(model.history.snapshot.records.first)
+        try await model.history.openRecord(record.id)
+        XCTAssertEqual(model.history.snapshot.selected?.rows.map(\.text),["Write a Python function that returns the first item or None for an empty list."])
+    }
     func testActualPauseResumeUsesFreshCaptureAndOneLogicalHistoryRecord()async throws{
         let(model,_,prefs,_,_,starts)=try rig();try await model.history.enableSaving()
         await model.start();try await until{!model.assistant.transcript.snapshot.rows.isEmpty}

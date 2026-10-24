@@ -74,8 +74,14 @@ private final class LearningPaintFinished:@unchecked Sendable {
 }
 
 @MainActor final class LearningApplicationTests:XCTestCase {
+    private static var finishedCocoaLaunch=false
     private weak var diagnosticModel:SessionApplicationModel?
     private weak var diagnosticSurface:NSWindow?
+    private static func pumpCocoaEvents(){
+        guard let application=NSApp else{return}
+        for _ in 0..<32{guard let event=application.nextEvent(matching:.any,until:Date(),inMode:.default,dequeue:true) else{break};application.sendEvent(event)}
+        application.updateWindows()
+    }
     private var root:URL{URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()}
     private func quote(_ text:String)->String{"'"+text.replacingOccurrences(of:"'",with:"'\\''")+"'"}
     private func rig(learning:Bool=true,question:String=LearningAppConversation.question)throws->(SessionApplicationModel,LearningAppConversation,URL,AppLearningKey){
@@ -83,7 +89,11 @@ private final class LearningPaintFinished:@unchecked Sendable {
         try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:false,attributes:[.posixPermissions:0o700])
         let python=ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"] ?? "/usr/bin/python3"
         let launcher=directory.appendingPathComponent("synthetic-helper"),helper=root.appendingPathComponent("tests/support/learning_memory_helper.py"),log=directory.appendingPathComponent("calls.jsonl")
-        try Data("#!/bin/sh\nexec \(quote(python)) \(quote(helper.path)) --synthetic-learning-test --log \(quote(log.path)) \"$@\"\n".utf8).write(to:launcher)
+        let command="exec \(quote(python)) \(quote(helper.path)) --synthetic-learning-test --log "
+        // End really terminates the child. Preserve the first exclusive log
+        // and give each later child a new owned file instead of reusing it.
+        let script="#!/bin/sh\nif [ -e \(quote(log.path)) ]; then\n\(command)\(quote(directory.appendingPathComponent("calls-").path))$$.jsonl \"$@\"\nfi\n\(command)\(quote(log.path)) \"$@\"\n"
+        try Data(script.utf8).write(to:launcher)
         try FileManager.default.setAttributes([.posixPermissions:0o700],ofItemAtPath:launcher.path)
         let key=AppLearningKey(),history=AppLearningHistoryPreferences(),controls=AppLearningPreferences(),conversation=LearningAppConversation(remoteQuestion:question)
         let storage=HistoryVaultStorage(directory:directory.appendingPathComponent("Relay/History"),keys:key)
@@ -95,10 +105,16 @@ private final class LearningPaintFinished:@unchecked Sendable {
     }
     private func until(file:StaticString=#filePath,line:UInt=#line,_ condition:()->Bool)async throws{
         let deadline=ContinuousClock.now+Duration.seconds(8)
-        while !condition(){
+        while true{
+            if diagnosticSurface != nil{
+                // XCTest's Foundation loop does not dispatch AppKit events.
+                // Serve the real owned app queue; never invent occlusion state.
+                Self.pumpCocoaEvents()
+            }
+            if condition(){return}
             guard ContinuousClock.now<deadline else{
                 let model=diagnosticModel,surface=diagnosticSurface,sample=model?.responseLatencySamples.last
-                let state="line=\(line) running=\(model?.running==true) card=\(model?.snapshot.card != nil) modelAvailable=\(sample?.modelAvailableAt != nil) windowVisible=\(sample?.windowVisibleAt != nil) surfaceVisible=\(surface?.isVisible==true) occlusion=\(surface?.occlusionState.contains(.visible)==true) appActive=\(NSApp.isActive) appRunning=\(NSApp.isRunning) key=\(NSApp.keyWindow === surface) rows=\(model?.assistant.transcript.snapshot.rows.count ?? -1) episodes=\(model?.learning.session.episodes.count ?? -1) retained=\(model?.learning.retainedEpisodes.count ?? -1)"
+                let state="line=\(line) running=\(model?.running==true) card=\(model?.snapshot.card != nil) modelAvailable=\(sample?.modelAvailableAt != nil) windowVisible=\(sample?.windowVisibleAt != nil) surfaceVisible=\(surface?.isVisible==true) occlusion=\(surface?.occlusionState.contains(.visible)==true) appActive=\(NSApp.isActive) appRunning=\(NSApp.isRunning) key=\(surface != nil && NSApp.keyWindow === surface) rows=\(model?.assistant.transcript.snapshot.rows.count ?? -1) episodes=\(model?.learning.session.episodes.count ?? -1) retained=\(model?.learning.retainedEpisodes.count ?? -1)"
                 XCTFail(state,file:file,line:line);throw HistoryError.unavailable
             }
             try await Task.sleep(for:.milliseconds(3))
@@ -107,6 +123,7 @@ private final class LearningPaintFinished:@unchecked Sendable {
     private func window(_ model:SessionApplicationModel)->NSWindow{
         let application=NSApplication.shared,originalPolicy=application.activationPolicy(),frontmost=NSWorkspace.shared.frontmostApplication
         _=application.setActivationPolicy(.regular)
+        if !Self.finishedCocoaLaunch{application.finishLaunching();Self.finishedCocoaLaunch=true}
         let window=NSWindow(contentRect:NSRect(x:80,y:80,width:706,height:600),styleMask:[.titled,.fullSizeContentView],backing:.buffered,defer:false)
         RelayWindowShell().attachLive(window)
         window.isReleasedWhenClosed=false;window.contentView=NSHostingView(rootView:LearningVisibleFixtureView(model:model))
@@ -115,7 +132,16 @@ private final class LearningPaintFinished:@unchecked Sendable {
         // Exercise the production own-window action, including app activation
         // and key-window presentation. A background XCTest window is occluded.
         model.performWindowAction(.showPanel)
-        addTeardownBlock{await MainActor.run{window.orderOut(nil);window.close();_=application.setActivationPolicy(originalPolicy);if let frontmost,!frontmost.isTerminated{_=frontmost.activate(options:[])}}}
+        addTeardownBlock{
+            await MainActor.run{window.orderOut(nil);window.close();_=application.setActivationPolicy(originalPolicy);if let frontmost,!frontmost.isTerminated{_=frontmost.activate(options:[])}}
+            // Settle the real close/deactivation/foreground notifications before
+            // another XCTest window requests activation in this same process.
+            for _ in 0..<50{await MainActor.run{Self.pumpCocoaEvents()};try? await Task.sleep(for:.milliseconds(8))}
+            await MainActor.run{
+                XCTAssertEqual(application.activationPolicy(),originalPolicy)
+                if let frontmost,!frontmost.isTerminated{XCTAssertEqual(NSWorkspace.shared.frontmostApplication?.processIdentifier,frontmost.processIdentifier)}
+            }
+        }
         return window
     }
     func testDefaultFixtureCannotEnableLearningOrReachProductionControlAndHistoryStorage()async throws{
@@ -209,6 +235,20 @@ private final class LearningPaintFinished:@unchecked Sendable {
         XCTAssertGreaterThanOrEqual(episode.reply.startUptimeNanoseconds.value,episode.suggestion.availableAt.value)
         XCTAssertTrue(episode.signal.eligibleForStyle,"Only the later original reply follows real lead/points exposure")
         XCTAssertEqual(model.learning.session.episodes.count,1)
+    }
+    func testOptionalLearningPreparationUsesReadyHistoryWithoutRetiringOriginalNotesSource()async throws{
+        let(model,conversation,_,_)=try rig();try await model.history.enableSaving();try await model.learning.enable()
+        await model.start();try await conversation.speak(.remoteAudio,through:model);try await until{model.snapshot.card != nil}
+        await model.stop();let record=try XCTUnwrap(model.history.snapshot.records.first)
+        try await model.history.openRecord(record.id)
+        let detail=try XCTUnwrap(model.history.snapshot.selected);var retired=false
+        let source=try await model.history.prepareNotesSource(recordID:record.id,expectedRevision:detail.record.revision,
+            selection:.fullSavedTranscript,intentID:UUID(),isCurrent:{true},onRetired:{_ in retired=true})
+        XCTAssertTrue(model.history.ownsNotesSource(source));let workspace=model.history.snapshot.epoch
+        model.assistant.draft="Explain bounded queues.";model.assistant.submitDraft()
+        try await until{model.snapshot.card != nil && model.assistantActive}
+        XCTAssertFalse(retired,"Optional Learning read must not reopen and retire an already ready original Notes source")
+        XCTAssertTrue(model.history.ownsNotesSource(source));XCTAssertEqual(model.history.snapshot.epoch,workspace)
     }
     func testActualModelPublicationReentrantLearningDisableHasOwnedWatchdogAndNoAvailability()async throws{
         let key="RELAY_LEARNING_MODEL_PAINT_CHILD"

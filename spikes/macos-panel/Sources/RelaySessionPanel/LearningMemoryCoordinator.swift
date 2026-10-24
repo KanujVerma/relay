@@ -221,6 +221,18 @@ public final class LearningProjectionSnapshot:Sendable {
             state.phase = .unavailable;state.message="Learning sources are unavailable. Reopen History before using retained adjustments.";publish()
         }else if !affected.isEmpty || !captures.isEmpty{_=retireProjection()}
     }
+    public func handleHistorySourceDenial(_ notice:HistorySourceDenial){
+        switch notice{
+        case .workspace(let epoch,let reason):
+            guard reason != .sessionStarting && reason != .recordChanged else{return}
+            retire(.workspace(workspaceEpoch:epoch))
+        case .record(let epoch,let id,let reason):
+            guard reason != .recordChanged && reason != .sessionStarting else{return}
+            retire(.record(workspaceEpoch:epoch,recordID:id))
+        case .source(let epoch,let id,let capture,let source):
+            retire(.source(workspaceEpoch:epoch,recordID:id,captureID:capture,source:source))
+        }
+    }
     public func pauseSession(){session.pause();_=retireProjection()}
     public func endSession(){session.end();finalAffiliations=[:];captureAffiliations=[:];_=retireProjection()}
     private func rememberAffiliation(_ observation:ValidatedTranscriptObservation){

@@ -12,11 +12,14 @@ import tempfile
 import time
 import unittest
 import uuid
+from types import SimpleNamespace
 from relay_spike import auth
 from relay_spike.account_store import AccountCredentialStore
 from relay_spike.panel_wire import encode_frame, FrameDecoder
 from tests.test_account_store import grant
 from tests.test_session_host import start, speech, end, final
+from tests.test_assistant_scope import control
+from tests.test_user_question import question
 
 @unittest.skipUnless(os.environ.get('RELAY_ACCOUNT_BUNDLED_HELPER'), 'Explicit newly built relocated account helper artifact required')
 class BundledAccountProductTests(unittest.TestCase):
@@ -62,6 +65,19 @@ class BundledAccountProductTests(unittest.TestCase):
         child=self.child(['relay_spike.session_host','--role','analytics','--oauth','--protected-account','--model','synthetic-model'])
         row=self.terminal(child,[self.bootstrap(),start(),speech(2),end(3),final(4,'What is the difference between WHERE and HAVING?')])
         self.assertEqual(row['answerKind'],'reviewed_reference');self.assertEqual(row['disposition'],'answer');self.finish(child)
+
+    def test_private_protected_idle_scope_answers_and_closes_without_any_capture_event(self):
+        child=self.child(['relay_spike.session_host','--role','analytics','--oauth','--protected-account','--model','synthetic-model'])
+        opening=control()
+        ready=self.terminal(child,[self.bootstrap(),opening],kind='assistant_scope_response')
+        self.assertEqual(ready['status'],'ready')
+        original=SimpleNamespace(session=(opening['assistantSessionID'],1),presentation=1,sequence=1)
+        request=question(original,'What is the difference between WHERE and HAVING?')
+        answer=self.terminal(child,[request])
+        self.assertEqual(answer['answerKind'],'reviewed_reference');self.assertEqual(answer['requestID'],request['requestID'])
+        self.assertEqual(answer['eventSequence'],1)
+        closed=self.terminal(child,[control('close',session=opening['assistantSessionID'],generation=3)],kind='assistant_scope_response')
+        self.assertEqual(closed['status'],'closed');self.assertIs(closed['quiesced'],True);self.finish(child)
 
     def test_protected_personal_request_stays_withheld_and_novel_request_has_no_usable_token(self):
         for question,reason in [('What did you personally do on your Atlas project?','personal_context_missing'),('Explain event loops.','answer_unavailable')]:

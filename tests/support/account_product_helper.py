@@ -54,6 +54,10 @@ def main():
             if rows[0]>128:raise ValueError('synthetic_log_bound')
             os.write(fd,json.dumps(dict(kind=kind,**fields),separators=(',',':')).encode()+b'\n')
         def response(request):
+            if request.method=='GET' and request.url.path=='/v1/models':
+                record('catalog')
+                catalog={'models':[dict(slug=args.model,display_name='Synthetic configured model',visibility='list')]}
+                return httpx.Response(200,stream=httpx.ByteStream(json.dumps(catalog).encode()))
             if str(request.url)==auth.TOKEN_URL:
                 record('refresh_waiting' if gate is not None else 'refresh')
                 while gate is not None and not gate.exists():time.sleep(.01)
@@ -64,10 +68,12 @@ def main():
                 body=json.loads(request.content)
                 if body.get('store') is not False or body.get('stream') is not True:raise ValueError('synthetic_payload_contract')
                 if body.get('instructions','').startswith('Relay synthetic visual check'):
-                    expected,_=read_probe_pixels(body);return httpx.Response(200,stream=httpx.ByteStream(completed_wire(expected)),headers={'content-type':'text/event-stream'})
+                    record('probe');expected,_=read_probe_pixels(body);return httpx.Response(200,stream=httpx.ByteStream(completed_wire(expected)),headers={'content-type':'text/event-stream'})
                 token=request.headers.get('Authorization','')
-                record('model',credential='rotated' if 'synthetic-product-rotated-' in token else 'original')
-                clock[0]+=4000
+                parts=body['input'][0]['content']
+                image=isinstance(parts,list) and any(isinstance(part,dict) and part.get('type')=='input_image' for part in parts)
+                record('image_model' if image else 'model',credential='rotated' if 'synthetic-product-rotated-' in token else 'original')
+                if not image:clock[0]+=4000
                 card=dict(lead='Explain how an event loop runs queued callbacks and resumes asynchronous work.',
                     points=['Use a separate worker or a nonblocking API for blocking operations.',
                         'Explain the callback queue and when suspended work can continue.'],detail=None,

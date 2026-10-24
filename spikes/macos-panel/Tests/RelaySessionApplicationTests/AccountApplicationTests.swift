@@ -4,6 +4,8 @@ import RelayAccount
 import RelayControls
 import RelayProfile
 import RelaySessionPanel
+import RelayScreenContext
+import RelayContextComposition
 @testable import RelayPanelSession
 
 @MainActor private final class AppPlanPreferences: ChatGPTPlanPreferences { var enabled = false }
@@ -53,7 +55,8 @@ private final class HeldAppAccountKey: ProfileKeyProvider, @unchecked Sendable {
     private func model(directory: URL, preferences: AppPlanPreferences, state: AccountRigState,
                        context: AppProfilePreferences = AppProfilePreferences(), holdRefresh: URL? = nil,
                        key: any ProfileKeyProvider = AppAccountKey(value: 43), response: HeldAppProfileResponse? = nil,
-                       holdAuthorization: URL? = nil) throws -> SessionApplicationModel {
+                       holdAuthorization: URL? = nil, screen: ScreenContextCoordinator? = nil,
+                       acknowledgment: IdleImageAcknowledgment? = nil) throws -> SessionApplicationModel {
         let interpreter = try XCTUnwrap(ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"]), repository = root
         let relay = directory.appendingPathComponent("Relay")
         let ports = AccountApplicationPorts(storage: AccountStorage(sharedDirectory: relay, keys: key), preferences: preferences,
@@ -71,6 +74,7 @@ private final class HeldAppAccountKey: ProfileKeyProvider, @unchecked Sendable {
                 if let holdRefresh { prefix += ["--hold-refresh", holdRefresh.path] }; return prefix
             })
         let model = SessionApplicationModel(arguments: ["Relay", "--fixture-suite", "reviewed", "--repository", repository.path, "--python", interpreter],
+            contextCoordinator: screen, contextWriteAcknowledged: { data, binding in await acknowledgment?.wrote(data, binding) },
             contextPreferences: context, profileVaultFactory: { ProfileVault(directory: relay, keys: AppAccountKey(value: 81)) },
             profileResponseObserved: { data in await response?.observe(data) }, accountPorts: ports)
         addTeardownBlock { await model.shutdown() }
@@ -313,5 +317,43 @@ private final class HeldAppAccountKey: ProfileKeyProvider, @unchecked Sendable {
         XCTAssertEqual(target.assistant.draft, "Explain event loops.")
         XCTAssertEqual(state.sessionModes.count, previousHelpers); XCTAssertEqual(try Data(contentsOf: vault), cipher)
         await target.shutdown()
+    }
+    func testProtectedAccountProbeAndIdleImageUseOriginalOwnerAndAccountDisableDeniesHeldImageBeforePost() async throws {
+        for held in [false, true] {
+            let directory = try directory(), preferences = AppPlanPreferences(), state = AccountRigState()
+            let screen = ScreenContextCoordinator(provider: IdlePixels(), recognizer: IdleOCR())
+            screen.enable(); screen.select(ScreenSource(windowID: 1, bundleID: "com.example.synthetic", processID: 42, label: "Synthetic task"))
+            let acknowledgment = held ? IdleImageAcknowledgment() : nil
+            let target = try model(directory: directory, preferences: preferences, state: state, screen: screen, acknowledgment: acknowledgment)
+            addTeardownBlock { await acknowledgment?.release() }
+            await target.account.connect(); let helper = try target.ensureHelper(), log = try XCTUnwrap(state.sessionLogs.last)
+            target.visual.beginVerification(using: { action, update in try await helper.requestVisualInput(action, onUpdate: update) })
+            await target.visual.waitForQuiescence(); XCTAssertTrue(target.visual.mayOfferImages)
+            XCTAssertEqual(metadata(log).filter { $0["kind"] == "probe" }.count, 1)
+            target.assistant.draft = "Explain event loops."; target.assistant.submitDraft()
+            if held {
+                try await waitUntil { acknowledgment?.held != nil }
+                let original = try XCTUnwrap(acknowledgment?.original)
+                await target.setAIEnabled(false)
+                XCTAssertTrue(helper.hasExited); XCTAssertFalse(target.visual.mayOfferImages)
+                XCTAssertFalse(target.assistantActive); XCTAssertNil(target.snapshot.card)
+                XCTAssertTrue(metadata(log).filter { ["model", "image_model"].contains($0["kind"]) }.isEmpty)
+                try await ask("What is the difference between WHERE and HAVING?", model: target)
+                XCTAssertNotEqual(target.currentSessionID, original.lease.captureSessionID)
+                let replacement = target.snapshot.replacement
+                acknowledgment?.release(); for _ in 0..<20 { await Task.yield() }
+                XCTAssertTrue(target.assistantActive); XCTAssertNotNil(target.snapshot.card)
+                XCTAssertEqual(target.snapshot.replacement, replacement)
+                XCTAssertTrue(metadata(log).filter { $0["kind"] == "image_model" }.isEmpty)
+            } else {
+                try await waitUntil { target.snapshot.card != nil }
+                XCTAssertEqual(metadata(log).filter { $0["kind"] == "image_model" }.count, 1)
+                XCTAssertTrue(metadata(log).filter { $0["kind"] == "model" }.isEmpty)
+                XCTAssertTrue(target.contextStatus.contains("image and local OCR"))
+                XCTAssertTrue(target.assistantActive); XCTAssertFalse(target.running)
+                XCTAssertTrue(target.assistant.transcript.snapshot.rows.isEmpty)
+            }
+            await target.shutdown()
+        }
     }
 }

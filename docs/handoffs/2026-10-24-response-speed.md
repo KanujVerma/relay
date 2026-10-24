@@ -1,8 +1,8 @@
 # Response speed continuation
 
 2026-10-24, Relay, branch `feature/response-latency-2026-10-24`.
-Verified source base at writing: `43f2c9985b9ac42f121d7b6fe1284788419d6fd4`.
-This handoff accompanies the following adapter checkpoint; verify live Git.
+Verified source base at writing: `7d5ebaddcae65cbcd323efb9acd90982b0614d05`.
+This handoff accompanies the following conditional-source checkpoint; verify Git.
 
 ## GOAL
 
@@ -42,14 +42,20 @@ answer denial and actual cleanup. Product timing targets remain unachieved.
   five new actual pinned/no-model VAD+prefix cases, three legacy Fluid cases and
   four lane cases: 12 / zero skips; 0.056 s capture + 0.022 s core, 8.543 s command.
   Receipt: `asr-prefix-fluid-first-green.log`. No actual model weights loaded.
+- Conditional source API-red exited 1 / 40.339 s on missing recognitionMode.
+  Full green: 85 collected / 83 passed / two explicit model/download skips;
+  native 47 pass / 0.977 s and capture 36/38 pass / 0.414 s, 13.937 s command.
+  Receipt: `asr-prefix-source-full-green.log`. Ten new native cases include actual
+  stop/join, two-source independence, original late-final identity, queue-pressure
+  local fallback and release of the retired recognizer graph.
 
 ## IN PROGRESS
 
 Active plan: [safe-prefix ASR](../superpowers/plans/2026-10-24-safe-prefix-asr.md).
 Approved [design](../superpowers/specs/2026-10-24-lagged-asr-preprocessing-design.md).
-Tasks 1/2 are source foundations. The wrapper/adapter and five prefix tests now
-compile/pass. Task 3 conditional SourcePipeline integration is next. Normal
-SourcePipeline/factory are still unchanged and there is no prefix activation.
+Tasks 1–3 are verified foundations. SourcePipeline has a conditional path;
+SourceComponents defaults to closedSpan and normal factory remains unchanged.
+Task 4 real paced public-WAVE comparison/RSS is next before any activation.
 
 ## AT RISK
 
@@ -90,10 +96,11 @@ the single Model observation hook outside the native publication lock.
 
 ## NEXT STEP
 
-Write SourcePipeline prefix integration fixtures and obtain root's next API-red
-lease, then implement the explicit default-off component capability and source
-branch with original identity/fallback/quiescence. Run unchanged Model fixtures
-when root supplies the separately accepted observation seam.
+Prepare matched paced public-WAVE baseline/prefix tests with two existing ASR
+managers, exact text/cutoffs, accepted input counts and actual RSS; request the
+next separate root lease/current cached inputs. Run unchanged Model fixtures
+when root supplies the separately accepted observation seam. Do not activate the
+normal source path before the measured gate and root approval.
 
 ## OPEN QUESTIONS
 

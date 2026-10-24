@@ -100,6 +100,7 @@ private final class PrefixLaneProbe:@unchecked Sendable {
         let replay=await backend.legacy,aborts=await backend.aborts,badReset=await backend.resetDuringAccept,finishes=await backend.finishes
         XCTAssertEqual(replay,[original]);XCTAssertEqual(aborts,1);XCTAssertFalse(badReset);XCTAssertTrue(finishes.isEmpty)
         XCTAssertEqual(probe.finals[0].1,"closed final");XCTAssertEqual(probe.finals[0].2.closedSpanFallbacks,1)
+        XCTAssertEqual(probe.finals[0].2.prefixAcceptedBeforeCloseSamples,0,"Held accept had not acknowledged its input at closure")
         XCTAssertEqual(probe.finals[0].2.closedReplaySamples,original.count);XCTAssertTrue(probe.failures.isEmpty)
     }
     func testCancelJoinsActualHeldAcceptBeforeResetAndCannotPublishOrReplay()async throws{

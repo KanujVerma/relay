@@ -1,7 +1,9 @@
 # Lagged ASR preprocessing with an exact native cutoff
 
 Status: root approved this architecture on 2026-10-24 with the mandatory
-optimization-backpressure fallback below. Not implemented yet. Existing
+optimization-backpressure fallback below. Core, adapter and conditional source
+foundations are implemented with an explicit default-off capability; actual
+paced-model/RSS and normal activation are not accepted yet. Existing
 response instrumentation/compact foundation is frozen at `23bf594`; native
 Model observation and account acceptance remain separate ongoing gates.
 
@@ -82,7 +84,9 @@ absolute indices. Submit complete contiguous 5,120-sample pieces, preserving
 the baseline adapter's exact `accept()` partition. At closure append the
 remaining `[submittedEnd, finalEnd)` once and call finish. Submitted end must
 never exceed final end, and acknowledged count must equal the closed span.
-No sample beyond final end enters the recognizer, so rollback is unnecessary.
+No captured source sample beyond final end enters the recognizer, so rollback
+is unnecessary. The backend's existing internal finish-time zero padding stays
+the same as baseline and is not attributed to captured source audio.
 
 ## Interfaces and sole owners
 

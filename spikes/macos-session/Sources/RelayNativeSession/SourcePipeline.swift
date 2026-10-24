@@ -26,8 +26,10 @@ public protocol ActivityRecognizer: Actor {
 public struct SourceComponents: Sendable {
     public let vad: any SpeechActivityDetector
     public let recognizer: any ActivityRecognizer
-    public init(vad: any SpeechActivityDetector, recognizer: any ActivityRecognizer) {
-        self.vad = vad; self.recognizer = recognizer
+    public let recognitionMode:ActivityRecognitionMode
+    public init(vad: any SpeechActivityDetector, recognizer: any ActivityRecognizer,
+                recognitionMode:ActivityRecognitionMode = .closedSpan) {
+        self.vad = vad; self.recognizer = recognizer;self.recognitionMode=recognitionMode
     }
 }
 public struct SessionAudioPacket: Sendable {
@@ -77,7 +79,7 @@ final class SourcePipeline: @unchecked Sendable {
          onFinal: @escaping @Sendable (ClosedActivity, String) -> Void,
          onFailure: @escaping @Sendable (SessionReason, UInt64) -> Void) {
         self.source = source; self.failure = onFailure
-        self.processor = ActivityProcessor(components: components, onStart: onStart, onEnd: onEnd,
+        self.processor = ActivityProcessor(source:source,components: components, onStart: onStart, onEnd: onEnd,
                                           onFinal: onFinal, onFailure: onFailure)
     }
     func enqueue(_ packet: SessionAudioPacket) {
@@ -145,7 +147,9 @@ final class SourcePipeline: @unchecked Sendable {
                 return packet
             }
             guard let next else { return }
-            await processor.accept(next, isActive: { self.isActive })
+            // The prefix lane retains this predicate beyond a single callback.
+            // Its source owner must not be kept alive by the stored predicate.
+            await processor.accept(next, isActive: { [weak self] in self?.isActive ?? false })
         }
     }
 }
@@ -153,6 +157,9 @@ final class SourcePipeline: @unchecked Sendable {
 private actor ActivityProcessor {
     private struct Span: Sendable { let first: UInt64; let end: UInt64; let packet: SessionAudioPacket }
     private let components: SourceComponents
+    private let source:PCMSource
+    private let prefixDetector:(any RecognitionWatermarkDetector)?
+    private let prefixRecognizer:(any IncrementalActivityRecognizer)?
     private let onStart: @Sendable (UInt64, UInt64, UInt64, NativeClockCalibration) -> PresentationLease?
     private let onEnd: @Sendable (ClosedActivity) -> Void
     private let onFinal: @Sendable (ClosedActivity, String) -> Void
@@ -169,14 +176,24 @@ private actor ActivityProcessor {
     private var recognitionTask: Task<Void, Never>?
     private var failed = false
     private var clock = NativeClockCalibration.now()
+    private var prefixLane:ActivityPreprocessingLane?
+    private var prefixKey:RecognitionActivityKey?
+    private var prefixCursor:UInt64=0
+    private var lastPrefixWatermark:UInt64?
+    private var prefixDisabled=false
 
-    init(components: SourceComponents,
+    init(source:PCMSource,components: SourceComponents,
          onStart: @escaping @Sendable (UInt64, UInt64, UInt64, NativeClockCalibration) -> PresentationLease?,
          onEnd: @escaping @Sendable (ClosedActivity) -> Void,
          onFinal: @escaping @Sendable (ClosedActivity, String) -> Void,
          onFailure: @escaping @Sendable (SessionReason, UInt64) -> Void) {
-        self.components = components; self.onStart = onStart; self.onEnd = onEnd
+        self.source=source;self.components = components; self.onStart = onStart; self.onEnd = onEnd
         self.onFinal = onFinal; self.onFailure = onFailure
+        if components.recognitionMode == .safePrefixes,
+           let detector=components.vad as? any RecognitionWatermarkDetector,
+           let recognizer=components.recognizer as? any IncrementalActivityRecognizer{
+            prefixDetector=detector;prefixRecognizer=recognizer
+        }else{prefixDetector=nil;prefixRecognizer=nil}
     }
     func accept(_ packet: SessionAudioPacket, isActive: @escaping @Sendable () -> Bool) async {
         guard isActive(), !failed else { return }
@@ -190,9 +207,23 @@ private actor ActivityProcessor {
         do {
             while pending.count >= chunkSize {
                 let chunk = Array(pending.prefix(chunkSize)); pending.removeFirst(chunkSize)
-                let events = try await components.vad.accept(chunk)
+                let events:[SpeechBoundary]
+                let observation:SpeechActivityObservation?
+                if let prefixDetector{
+                    let value=try await prefixDetector.observe(chunk)
+                    events=value.boundaries;observation=value
+                }else{
+                    events=try await components.vad.accept(chunk);observation=nil
+                }
                 guard isActive(), !failed else { return }
                 let processed = totalSamples - UInt64(pending.count)
+                if let observation{
+                    guard observation.processedSamples==processed,observation.boundaries.count<=2,
+                          observation.safePrefixEnd.map({$0<=processed}) ?? true,
+                          observation.safePrefixEnd==nil || !observation.boundaries.contains(where:{$0.kind == .end}) else{
+                        throw NativeSessionError.invalidFrame
+                    }
+                }
                 for boundary in events {
                     guard boundary.sampleIndex <= processed, boundary.sampleIndex >= historyBase else {
                         fail(.vadUnavailable, packet.streamGeneration); return
@@ -208,6 +239,24 @@ private actor ActivityProcessor {
                         let ticks = try clock.hostTicks(after: span.packet.hostTime,
                             sampleOffset: Int(boundary.sampleIndex - span.first), rate: 16_000)
                         activityLease = onStart(activityID, packet.streamGeneration, ticks, clock)
+                        if let prefixRecognizer,let lease=activityLease{
+                            if prefixLane==nil{
+                                let publishFinal=onFinal
+                                // The predicate describes the original live source, not
+                                // whether its older display lease is still current.
+                                prefixLane=ActivityPreprocessingLane(recognizer:prefixRecognizer,isActive:isActive,
+                                    onFinal:{activity,text,_ in publishFinal(activity,text.trimmingCharacters(in:.whitespacesAndNewlines))},
+                                    onFailure:onFailure)
+                            }
+                            let key=RecognitionActivityKey(sourceCode:source.rawValue,generation:packet.streamGeneration,
+                                activityID:activityID,startSample:boundary.sampleIndex,lease:lease)
+                            guard let lane=prefixLane else{throw NativeSessionError.invalidFrame}
+                            prefixKey=key;prefixCursor=key.startSample;lastPrefixWatermark=nil;prefixDisabled=false
+                            do{try await lane.begin(key)}catch{
+                                guard isActive(),!failed else{return};fail(.asrUnavailable,packet.streamGeneration);return
+                            }
+                            guard isActive(),!failed,prefixKey==key else{return}
+                        }
                     case .end:
                         guard let start = activityStart, let lease = activityLease,
                               boundary.sampleIndex > start,
@@ -224,16 +273,36 @@ private actor ActivityProcessor {
                             generation: packet.streamGeneration,
                             samples: Array(history[Int(start - historyBase)..<Int(boundary.sampleIndex - historyBase)]),
                             lease: lease, clock: clock)
-                        activityStart = nil; activityLease = nil
+                        let originalPrefix=prefixKey
+                        if originalPrefix != nil{
+                            guard prefixCursor<=boundary.sampleIndex,
+                                  lastPrefixWatermark.map({$0<=boundary.sampleIndex}) ?? true else{
+                                throw NativeSessionError.invalidFrame
+                            }
+                        }
+                        activityStart = nil; activityLease = nil;prefixKey=nil
+                        prefixCursor=0;lastPrefixWatermark=nil;prefixDisabled=false
                         onEnd(activity)
-                        guard !recognizing else { fail(.asrUnavailable, packet.streamGeneration); return }
-                        recognizing = true
-                        recognitionTask = Task { await recognize(activity, isActive: isActive) }
+                        if let originalPrefix{
+                            guard let lane=prefixLane else{throw NativeSessionError.invalidFrame}
+                            do{try await lane.close(activity,endSample:boundary.sampleIndex,for:originalPrefix)}catch{
+                                guard isActive(),!failed else{return};fail(.asrUnavailable,packet.streamGeneration);return
+                            }
+                            guard isActive(),!failed else{return}
+                        }else{
+                            guard !recognizing else { fail(.asrUnavailable, packet.streamGeneration); return }
+                            recognizing = true
+                            recognitionTask = Task { await recognize(activity, isActive: isActive) }
+                        }
                     }
                 }
                 if let start = activityStart, processed - start > UInt64(NativeSessionLimits.maximumActivitySamples) {
                     fail(.queueOverflow, packet.streamGeneration); return
                 }
+                if let observation{
+                    guard try await offerPrefixes(observation,isActive:isActive) else{return}
+                }
+                guard isActive(),!failed else{return}
                 // Retain 512 ms pre-roll while idle. A longer VAD lookback must
                 // fail provenance rather than invent earlier samples.
                 let keepFrom = activityStart ?? (processed > 8192 ? processed - 8192 : 0)
@@ -242,15 +311,36 @@ private actor ActivityProcessor {
                     spans.removeAll { $0.end <= historyBase }
                 }
             }
-        } catch { fail(.vadUnavailable, packet.streamGeneration) }
+        } catch { if isActive(),!failed{fail(.vadUnavailable, packet.streamGeneration)} }
     }
-    func cancel() {
+    private func offerPrefixes(_ observation:SpeechActivityObservation,isActive:@escaping @Sendable ()->Bool)async throws->Bool{
+        guard let key=prefixKey else{return true}
+        guard let prefixLane else{throw NativeSessionError.invalidFrame}
+        guard let rawSafe=observation.safePrefixEnd else{return true}
+        let safe=max(key.startSample,rawSafe)
+        guard safe>=prefixCursor,lastPrefixWatermark.map({safe >= $0}) ?? true else{throw NativeSessionError.invalidFrame}
+        lastPrefixWatermark=safe
+        while !prefixDisabled,safe-prefixCursor>=5120{
+            guard prefixCursor>=historyBase,prefixCursor-historyBase<=UInt64(history.count),
+                  UInt64(history.count)-(prefixCursor-historyBase)>=5120 else{throw NativeSessionError.invalidFrame}
+            let offset=Int(prefixCursor-historyBase)
+            let accepted=try await prefixLane.offer(Array(history[offset..<offset+5120]),firstSample:prefixCursor,for:key)
+            guard isActive(),!failed,prefixKey==key else{return false}
+            if accepted{prefixCursor+=5120}else{prefixDisabled=true}
+        }
+        return true
+    }
+    func cancel()async {
         failed = true
         recognitionTask?.cancel()
         history.removeAll(); pending.removeAll(); spans.removeAll()
-        activityStart = nil; activityLease = nil
+        activityStart = nil; activityLease = nil;prefixKey=nil
+        if let prefixLane{await prefixLane.cancel()}
     }
-    func waitForQuiescence() async { await recognitionTask?.value }
+    func waitForQuiescence() async {
+        await recognitionTask?.value
+        if let prefixLane{await prefixLane.waitForQuiescence()}
+    }
     private func span(at sample: UInt64) -> Span? { spans.first { $0.first <= sample && sample < $0.end } }
     private func recognize(_ activity: ClosedActivity, isActive: @escaping @Sendable () -> Bool) async {
         defer { recognizing = false; recognitionTask = nil }
@@ -268,7 +358,8 @@ private actor ActivityProcessor {
     private func fail(_ reason: SessionReason, _ generation: UInt64) {
         guard !failed else { return }
         failed = true; history.removeAll(); pending.removeAll(); spans.removeAll()
-        activityStart = nil; activityLease = nil
+        activityStart = nil; activityLease = nil;prefixKey=nil
+        if let prefixLane{Task{await prefixLane.cancel()}}
         onFailure(reason, generation)
     }
 }

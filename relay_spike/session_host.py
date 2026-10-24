@@ -344,8 +344,9 @@ class SessionHost:
             self._withhold_native(n,'manual_context_unavailable');return False
         try:bundle=self.provider.retrieve(previous.question,self.role) if self.provider else None
         except ValueError:bundle=None
-        req=Request(n,previous.token,uuid.uuid4().hex,previous.question,previous.display_question,bundle,time.monotonic())
-        self.active=req;self._route(req);return True
+        projection=self.context.fork()
+        req=Request(n,previous.token,uuid.uuid4().hex,previous.question,previous.display_question,bundle,time.monotonic(),projection=projection)
+        self.active=req;self.user.note_request(req,projection);self._route(req);return True
 
     def _queue_work(self,req,dialogue):
         self._pending_work=(req,dialogue)

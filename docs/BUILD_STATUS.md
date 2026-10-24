@@ -16,6 +16,12 @@ The new frozen **b270 standalone app and full relocation** are verified: 172,823
 
 The disk cleanup reclaimed 40.815 GiB. Work proceeds with [one heavy job, two compiler jobs and bounded reused caches](LOCAL_RESOURCE_BUDGET.md); independent source/research remains parallel. Full Cluely parity, long-meeting semantic continuity, broader coding/résumé coverage, real account/Keychain/audio/screen, useful-answer latency and installer/notarization remain open. No private material or paid inference was used.
 
+## Latest combined checkpoint, 2026-10-24
+
+Joined History82e plus manual editor463, Learning wire5e048eb, transport-close fix3f634c0 and native Notes source498abe5 through5531179. Root combined native gate:72collected/71pass/oneexisting opt-in render skip, zero failures,94.894seconds command. Independent source peer review is clean for the manual editor. Root scoped Python joins additionally passed40Learning/preferences/personal and41visual/transport cases without skips. The stock product builder now defaults to two compiler jobs; six packaging cases pass. No new dependency environment/model/archive was needed.
+
+The accepted Notes component reads the complete bounded original saved source rather than the64-row view page and validates native DATA/citations. It is not yet generation, schema2 saving or notes UI. Speed23bf native timing/compact and Learning matcher corrections/derivation are in progress in [PR101](https://github.com/KanujVerma/relay/pull/101) and[PR102](https://github.com/KanujVerma/relay/pull/102). All full-app, live account/device, useful-answer latency and final installer gates remain open. The persistent end-to-end goal remains active.
+
 ## Historical and preceding checkpoints
 
 ## New active product target

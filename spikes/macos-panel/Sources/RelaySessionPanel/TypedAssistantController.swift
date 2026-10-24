@@ -41,7 +41,7 @@ public struct TypedAssistantSnapshot:Sendable {
     private var chosen:TypedQuestionBasis?;private var missing:Set<UUID>=[]
     private var draftRevision:UInt64=0;private var restoring=false
     private var pending:UUID?;private var cancelling:Set<UUID>=[]
-    private struct Submitted {let text:String;let basis:TypedQuestionBasis?;let clearedRevision:UInt64}
+    private struct Submitted {let binding:PanelRequestBinding;let text:String;let basis:TypedQuestionBasis?;let clearedRevision:UInt64}
     private var submitted:[UUID:Submitted]=[:];private var submittedOrder:[UUID]=[]
     public init(session:@escaping()->PresentationLease?,currentRequest:@escaping()->PanelRequestBinding?,
                 issue:@escaping(UserQuestionIntent,String?,UUID?)throws->NativeUserQuestionRequest,
@@ -96,10 +96,11 @@ public struct TypedAssistantSnapshot:Sendable {
         do {
             let request=try issue(.ask,text,basis?.requestID)
             if revision==draftRevision{draft=""}
-            submitted[request.requestID]=Submitted(text:text,basis:basis,clearedRevision:draftRevision)
+            let binding=PanelRequestBinding(lease:request.lease,requestID:request.requestID,eventSequence:request.anchorEventSequence)
+            submitted[request.requestID]=Submitted(binding:binding,text:text,basis:basis,clearedRevision:draftRevision)
             submittedOrder.append(request.requestID)
             while submittedOrder.count>8{submitted.removeValue(forKey:submittedOrder.removeFirst())}
-            observeRequest(PanelRequestBinding(lease:request.lease,requestID:request.requestID,eventSequence:request.anchorEventSequence))
+            observeRequest(binding)
         } catch {snapshot.status="The question could not be sent. Your draft was kept.";refresh()}
     }
     public func useLatestQuestionForDraft(){
@@ -118,20 +119,31 @@ public struct TypedAssistantSnapshot:Sendable {
         }catch{snapshot.status="The current question changed. Try Help again.";refresh()}
     }
     public func observeDecision(_ decision:SessionAnswerDecision) {
-        guard let lease=synchronize(),let current=currentRequest(),current.lease==lease,
-              decision.sessionID==lease.captureSessionID,decision.epoch==lease.sessionEpoch,
-              decision.generation==lease.presentationGeneration,decision.requestID==current.requestID,
-              decision.eventSequence==current.eventSequence else{return}
+        guard let lease=synchronize() else{return}
+        let recovered=recoverUnavailableDraft(decision)
+        guard let current=currentRequest(),current.lease==lease,matches(decision,current) else{
+            if recovered{refresh()};return
+        }
         if !decision.question.isEmpty{recordQuestion(current,question:decision.question)}
         if decision.disposition != "pending"{if pending==decision.requestID{pending=nil}}
-        if decision.reason=="user_request_context_unavailable",let sent=submitted.removeValue(forKey:decision.requestID) {
-            if let basis=sent.basis{missing.insert(basis.requestID)}
-            if draft.isEmpty,draftRevision==sent.clearedRevision {
-                restoring=true;chosen=sent.basis;draft=sent.text;restoring=false
-            }
-            snapshot.status="The original context is unavailable. Your draft was kept."
-        }else{snapshot.status=decision.disposition == "pending" ? "Thinking":decision.disposition == "answer" ? "Ready":"Answer unavailable"}
+        if !recovered{snapshot.status=decision.disposition == "pending" ? "Thinking":decision.disposition == "answer" ? "Ready":"Answer unavailable"}
         refresh()
+    }
+    private func matches(_ decision:SessionAnswerDecision,_ binding:PanelRequestBinding)->Bool {
+        decision.sessionID==binding.lease.captureSessionID && decision.epoch==binding.lease.sessionEpoch
+            && decision.generation==binding.lease.presentationGeneration && decision.requestID==binding.requestID
+            && decision.eventSequence==binding.eventSequence
+    }
+    private func recoverUnavailableDraft(_ decision:SessionAnswerDecision)->Bool {
+        guard decision.disposition=="abstain",decision.reason=="user_request_context_unavailable",
+              let sent=submitted[decision.requestID],matches(decision,sent.binding) else{return false}
+        submitted.removeValue(forKey:decision.requestID)
+        if let basis=sent.basis{missing.insert(basis.requestID)}
+        if draft.isEmpty,draftRevision==sent.clearedRevision {
+            restoring=true;chosen=sent.basis;draft=sent.text;restoring=false
+        }
+        snapshot.status="The original context is unavailable. Your draft was kept."
+        return true
     }
     public func cancelCurrentResponse()async {
         refresh();guard snapshot.canStop,let target=currentRequest() else{return}

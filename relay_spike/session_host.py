@@ -326,6 +326,7 @@ class SessionHost:
     def _route(self,req):
         if self._personal_question(req.question):
             self.response_preferences.discard(req.native)
+            self.learning_memory.discard(req.native)
             discard=getattr(self.supplemental_provider,'discard_staged',None)
             if callable(discard):discard()
             self._personal(req);return
@@ -334,6 +335,7 @@ class SessionHost:
             route=publish_reference(PolicyInput(req.question,self.role,'sql',source_channel=req.origin,question_status='final',host_authorized=True),turns=self.machine.turns,token=req.token,consent=self.permission,on_present=lambda _:None)
             if route.card:
                 self.response_preferences.discard(req.native)
+                self.learning_memory.discard(req.native)
                 authorized=[]
                 render_queued_card(route.card,turns=self.machine.turns,consent=self.permission,on_paint=authorized.append)
                 if authorized:
@@ -342,13 +344,16 @@ class SessionHost:
                 return
             if route.reason_code=='reviewed_fixture_changed':
                 self.response_preferences.discard(req.native)
+                self.learning_memory.discard(req.native)
                 self._result(req,'abstain','reference_unavailable');return
         dialogue=(req.projection or self.context).snapshot()
         if dialogue.task.state!='ready':
             self.response_preferences.discard(req.native)
+            self.learning_memory.discard(req.native)
             self._result(req,'clarify','task_context_'+('overflow' if dialogue.task.state=='overflow' else 'unresolved'));return
         if self.complete is None:
             self.response_preferences.discard(req.native)
+            self.learning_memory.discard(req.native)
             self._result(req,'abstain','inference_disabled');return
         self.response_preferences.claim(req.native)
         self.learning_memory.claim(req.native)

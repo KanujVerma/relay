@@ -100,6 +100,15 @@ class LearningHostTests(unittest.IsolatedAsyncioTestCase):
         for text in ('What did you personally build on Atlas?','What is the difference between WHERE and HAVING?'):
             n=question(h,text);h.handle_learning_memory(offer(n));await h.handle_user_question(n);await h.drain()
         self.assertEqual(h.model_requests,0);self.assertEqual(self.prompts,[])
+        self.assertEqual(len(h.learning_memory._staged),0)
+
+    async def test_ai_off_drops_original_optional_bytes_without_starting_work(self):
+        out=[];h=SessionHost(emit=out.append);h.handle_assistant_scope(control())
+        self.addCleanup(h.close);self.addAsyncCleanup(h.drain)
+        n=question(h,'Explain event loops.');h.handle_learning_memory(offer(n))
+        await h.handle_user_question(n);await h.drain()
+        self.assertEqual(h.model_requests,0);self.assertEqual(out[-1]['reasonCode'],'inference_disabled')
+        self.assertEqual(len(h.learning_memory._staged),0)
 
     async def test_source_quotes_never_replace_current_constraints_and_model_cannot_forge_use(self):
         h=await self.host();n=question(h,'Implement a cache. Capacity is 2.');value=offer(n)

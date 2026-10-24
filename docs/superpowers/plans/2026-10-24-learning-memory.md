@@ -55,7 +55,7 @@
 
 **Files:** new app-only `LearningMemoryRequestBridge.swift`, `LearningMemorySettingsView.swift`; narrow `SessionApplicationModel.swift`, `SessionDecision.swift`, `SessionPanelController.swift`, `ConversationOwner.swift` and existing settings/answer surfaces.
 
-**Interfaces:** one app-only post-drain observation with original owner/binding/card replacement/question/card/guide+learning revision/monotonic time/actual attached-window visibility. `LearningMemoryRequestBridge.freeze/sendOffer/permits/retire/close` retains exact native request identity. Final `learningMemoryRevision` is separately decoded and rechecked before publication.
+**Interfaces:** one app-only observation after outer `panel.accept` returns outside the authority lock and after its Model publication drain, with original owner/binding/card replacement/question/card/guide+learning revision/monotonic time/actual attached-window visibility. `LearningMemoryRequestBridge.freeze/sendOffer/permits/retire/close` retains exact native request identity. Final `learningMemoryRevision` is separately decoded and rechecked before publication.
 
 - [ ] Red actual Model reentrant retirement and hidden/attached surface fixtures before hook implementation.
 - [ ] Wire validated original observer fan-out; preserve same logical meeting quotes across Pause, clear on End/source retirement; no native authority revival.

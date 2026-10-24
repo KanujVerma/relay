@@ -13,6 +13,12 @@ final class HistoryStore:@unchecked Sendable {
     private var queue:DatabaseQueue?
     private var retiringQueue:DatabaseQueue?
     private var ownsStorage=false
+    // One bounded destructive-mutation receipt, consumed by the sole workspace
+    // flight after this store's lock is released; never a persistent registry.
+    private var expiredRecordIDs:Set<UUID>?=[]
+    func takeExpiredRecordIDs()->Set<UUID>?{lock.withLock{
+        let result=expiredRecordIDs;expiredRecordIDs=[];return result
+    }}
     init(storage:any ProtectedSnapshotStorage,clock:@escaping @Sendable()->Date={Date()},contentLimitBytes:Int=HistoryBounds.softSnapshot){
         self.storage=storage;self.clock=clock;self.contentLimitBytes=contentLimitBytes
     }
@@ -162,7 +168,13 @@ final class HistoryStore:@unchecked Sendable {
         let now=clock().timeIntervalSince1970
         guard now.isFinite else{throw HistoryError.invalid}
         let ids=try required().read{try String.fetchAll($0,sql:"SELECT id FROM history_record WHERE expires_at<=?",arguments:[now])}
-        if !ids.isEmpty{try remove(records:Set(ids),admission:admission)}
+        if !ids.isEmpty{
+            try remove(records:Set(ids),admission:admission)
+            if let previous=expiredRecordIDs{
+                let removed=Set(ids.compactMap(UUID.init(uuidString:))),combined=previous.union(removed)
+                expiredRecordIDs=combined.count<=HistoryBounds.records ? combined:nil
+            }
+        }
     }
     func createRecord(id:UUID=UUID(),admission:@Sendable()->Bool={true})throws->HistoryRecord{
         try lock.withLock{

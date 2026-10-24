@@ -27,6 +27,7 @@ CASES = (
     ('P00', 'Tell me about yourself and the project you led.',
      ('missing confirmed personal evidence must avoid a model request',)),
 )
+_NO_REPORT = object()
 
 
 def plan():
@@ -44,30 +45,36 @@ def _require_dedicated_stream(stream):
         raise ValueError('benchmark_stream_busy')
 
 
-async def compare_prompt_variants(stream, baseline_instructions, *, include_answers=False):
+async def compare_prompt_variants(stream, baseline_instructions, *, include_answers=False, report=_NO_REPORT):
     _require_dedicated_stream(stream)
     if not isinstance(baseline_instructions, str) or not baseline_instructions:
         raise ValueError('baseline_instructions_required')
     variants={'baseline':(baseline_instructions,stream.effort),'compact':(INSTRUCTIONS,stream.effort)}
-    return await _compare(stream,variants,comparison='prompt',include_answers=include_answers)
+    return await _compare(stream,variants,comparison='prompt',include_answers=include_answers,report=report)
 
 
-async def compare_effort_variants(stream, *, include_answers=False):
+async def compare_effort_variants(stream, *, include_answers=False, report=_NO_REPORT):
     """Evaluation only: an isolated caller-owned product stream, never a session.
 
     Validate every requested combination before token/client access. Both paths
     use the same compact prompt; literal none is distinct from field omission.
-    Original per-instance configuration is restored even on cancellation.
+    Original per-instance configuration is restored even on cancellation. Pass
+    an empty report dict to retain partial evidence when CancelledError escapes.
     """
     _require_dedicated_stream(stream)
     validated_reasoning_effort(stream.model,'none')
     if stream.model!='gpt-6-luna':raise ValueError('explicit_luna_stream_required')
     variants={'default':(INSTRUCTIONS,None),'none':(INSTRUCTIONS,'none')}
-    return await _compare(stream,variants,comparison='reasoning_effort',include_answers=include_answers)
+    return await _compare(stream,variants,comparison='reasoning_effort',include_answers=include_answers,report=report)
 
 
-async def _compare(stream, variants, *, comparison, include_answers):
+async def _compare(stream, variants, *, comparison, include_answers, report):
+    if report is _NO_REPORT:report={}
+    elif type(report) is not dict or report:raise ValueError('empty_report_required')
     results = []
+    report.update(schemaVersion=1,syntheticOnly=True,comparison=comparison,status='running',
+        maximumModelAttempts=6,declaredModelAttempts=0,results=results,
+        scope='model transport plus deterministic format checks; excludes native audio, capture and display')
     original_effort=stream.effort
     attempts=0
     try:
@@ -90,7 +97,7 @@ async def _compare(stream, variants, *, comparison, include_answers):
                 prompt = make_prompt(question, context.snapshot(), None)
                 previous = stream.last_timing
                 # This counts complete() attempts, never claims provider receipt.
-                attempts+=1;row['modelAttempts'] = 1;stream.effort=effort
+                attempts+=1;report['declaredModelAttempts']=attempts;row['modelAttempts'] = 1;stream.effort=effort
                 try:
                     raw = await stream.complete(prompt, instructions)
                     code_required = bool(re.search(r'\b(?:write|show|provide)\b.{0,30}\b(?:code|function|query|sql)\b', question, re.I))
@@ -100,6 +107,8 @@ async def _compare(stream, variants, *, comparison, include_answers):
                         detailBytes=len(card.detail.text.encode()) if card.detail else 0)
                     if include_answers: row['card'] = card.as_dict()
                 except asyncio.CancelledError:
+                    row.update(outcome='cancelled',qa='request_cancelled')
+                    results.append(row)
                     raise
                 except CardError:
                     row.update(outcome='withheld', qa='card_rejected')
@@ -110,11 +119,17 @@ async def _compare(stream, variants, *, comparison, include_answers):
                     if timing is not previous and timing is not None:
                         row['transport'] = asdict(timing)
                 results.append(row)
+    except asyncio.CancelledError:
+        report['status']='cancelled'
+        raise
+    except BaseException:
+        report['status']='interrupted'
+        raise
+    else:
+        report['status']='finished'
     finally:
         stream.effort=original_effort
-    return {'schemaVersion': 1, 'syntheticOnly': True, 'comparison':comparison,
-            'maximumModelAttempts':6,'declaredModelAttempts':attempts,'results': results,
-            'scope': 'model transport plus deterministic format checks; excludes native audio, capture and display'}
+    return report
 
 
 if __name__ == '__main__':

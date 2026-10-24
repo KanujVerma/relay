@@ -56,6 +56,7 @@ struct LiveSessionView:View {
             Image(systemName:message.symbol).font(.system(size:26,weight:.light)).foregroundStyle(RelayTheme.muted)
             Text(message.title).font(.system(size:19,weight:.medium))
             Text(message.detail).font(.system(size:13)).lineSpacing(5).foregroundStyle(RelayTheme.muted)
+            if let action=message.recoveryAction{Button("Connect ChatGPT"){onAction(action)}.buttonStyle(RelayPrimaryButtonStyle())}
         }.padding(.vertical,26).frame(maxWidth:.infinity,alignment:.leading)
     }
 }

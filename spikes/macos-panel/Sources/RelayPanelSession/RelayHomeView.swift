@@ -11,6 +11,10 @@ struct RelayHomeView<SourceControls:View>:View {
     var assistant:TypedAssistantController?
     let onAction:(RelayUIAction)->Void
     @ViewBuilder let sourceControls:()->SourceControls
+    private var offersChatGPTSetup:Bool{!aiEnabled && !fixture}
+    private var headline:String {
+        state.stopping ? "Finishing the session…":state.paused ? "Take your time.":state.running ? "Your session is live.":state.visualBusy ? "Updating image settings…":offersChatGPTSetup ? "Connect ChatGPT for live answers.":"Ready when you are."
+    }
     var body:some View {
         HStack(spacing:0){
             VStack(alignment:.leading,spacing:assistant == nil ? 24:16){
@@ -25,8 +29,15 @@ struct RelayHomeView<SourceControls:View>:View {
                 HStack{Text("SESSION").font(.system(size:11,weight:.semibold)).tracking(1.5).foregroundStyle(RelayTheme.muted);Spacer();Label(aiEnabled ? "AI suggestions":"Local reference cards",systemImage:aiEnabled ? "sparkles":"book.closed").font(.system(size:11)).foregroundStyle(RelayTheme.muted)}
                 Spacer(minLength:0)
                 VStack(alignment:.leading,spacing:12){
-                    Text(state.stopping ? "Finishing the session…":state.paused ? "Take your time.":state.running ? "Your session is live.":state.visualBusy ? "Updating image settings…":"Ready when you are.").font(.system(size:30,weight:.semibold)).tracking(-0.7)
-                    Text("Listen to the conversation. Get clear talking points, with your own experience close at hand.").font(.system(size:14)).lineSpacing(5).foregroundStyle(RelayTheme.secondary).fixedSize(horizontal:false,vertical:true)
+                    Text(headline).font(.system(size:30,weight:.semibold)).tracking(-0.7)
+                    if offersChatGPTSetup {
+                        HStack(spacing:16){
+                            Text("Use your ChatGPT plan, or continue with limited local reference cards.").font(.system(size:14)).lineSpacing(5).foregroundStyle(RelayTheme.secondary).fixedSize(horizontal:false,vertical:true)
+                            Button("Connect ChatGPT"){onAction(.connectChatGPT)}.buttonStyle(RelayPrimaryButtonStyle()).fixedSize()
+                        }
+                    }else{
+                        Text("Listen to the conversation. Get clear talking points, with your own experience close at hand.").font(.system(size:14)).lineSpacing(5).foregroundStyle(RelayTheme.secondary).fixedSize(horizontal:false,vertical:true)
+                    }
                 }
                 if let assistant{
                     VStack(alignment:.leading,spacing:8){

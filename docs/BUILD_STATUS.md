@@ -1,5 +1,7 @@
 # Relay build status
 
+Active goal: finish speed, Learning Memory and meeting notes end to end under the [current acceptance plan](superpowers/plans/2026-10-24-finish-live-copilot.md). Canonical codef6f2fa9 now joins actual helper-owned transport lifetime/timing and strict Learning request projections. Root combined Python:773collected/741pass/32optional skips, zero failures,9.049seconds. These are accepted components; native Learning/Notes storage/UI and full live latency remain unfinished. Root independently accepted History82e manual-edit receipts/retirement notifications with34native passes/zero skips; not yet assembled here. User approved automatic tentative style changes with visible why/undo. Current exact status is the top HANDOFF override; older checkpoints below retain their historical scope.
+
 Canonical code checkpoint **24b5285** includes the accepted pure generated-notes DATA validator on runtime **3de0419**, whose app/preferences source matches independently reviewed **b270297**. Later documentation can advance HEAD. Draft [PR71](https://github.com/KanujVerma/relay/pull/71); main remains unmerged eb28d15. [HANDOFF](../HANDOFF.md) owns exact refs, owners and continuation.
 
 Joined features include Home/live/Settings/My Context, automatic local speech, automatic question/follow-up routing, typed questions/Help/Stop, selected screen/text/optional-image context, confirmed résumé memory, protected account restore and automatic General with optional response guides. Root b270 gate: 734 Python collected, 702 passed/32 optional skips; native panel/application/state 227 collected, 220 passed/seven opt-in skips. Both original response-guide publication findings are closed by unchanged reproductions. [Preferences review](evidence/reviews-2026-10-23/review-preferences-b270297.md).
@@ -13,6 +15,16 @@ The new frozen **b270 standalone app and full relocation** are verified: 172,823
 **Learning Memory remains unfinished.** Existing recent dialogue, task state, confirmed personal facts and explicit guides are foundations. The required available-suggestion → original spoken-reply → remote-continuation learning loop, persistent reversible adaptation and held-out improvement proof are pending. [Requirement](MEMORY_AND_EVALUATION.md#tracked-cross-meeting-improvement-milestone), [pinned research](research/LEARNING_MEMORY_DESIGN_INPUT.md), [user workflow and timing evidence](SESSION_EXPERIENCE.md). No LangMem/Graphiti framework or new dependency is adopted.
 
 The disk cleanup reclaimed 40.815 GiB. Work proceeds with [one heavy job, two compiler jobs and bounded reused caches](LOCAL_RESOURCE_BUDGET.md); independent source/research remains parallel. Full Cluely parity, long-meeting semantic continuity, broader coding/résumé coverage, real account/Keychain/audio/screen, useful-answer latency and installer/notarization remain open. No private material or paid inference was used.
+
+## Latest combined checkpoint, 2026-10-24
+
+Joined History82e plus manual editor463, Learning wire5e048eb, transport-close fix3f634c0 and native Notes source498abe5 through5531179. Root combined native gate:72collected/71pass/oneexisting opt-in render skip, zero failures,94.894seconds command. Independent source peer review is clean for the manual editor. Root scoped Python joins additionally passed40Learning/preferences/personal and41visual/transport cases without skips. The stock product builder now defaults to two compiler jobs; six packaging cases pass. No new dependency environment/model/archive was needed.
+
+The accepted Notes component reads the complete bounded original saved source rather than the64-row view page and validates native DATA/citations. It is not yet generation, schema2 saving or notes UI. Speed23bf native timing/compact and Learning matcher corrections/derivation are in progress in [PR101](https://github.com/KanujVerma/relay/pull/101) and[PR102](https://github.com/KanujVerma/relay/pull/102). All full-app, live account/device, useful-answer latency and final installer gates remain open. The persistent end-to-end goal remains active.
+
+## Accepted storage and timing foundation
+
+Source3b3ee29 includes accepted Notesv2 e19 and timing/compact23 plus canonical optional-wire documentation591. Root complete Python gate:786collected/754pass/32optional skips,9.340seconds. Root independent combined native gate:89collected/88pass/oneexisting opt-in render skip,98.315seconds. No failures. Actual protected notes saving, source CAS/restart/delete and indeterminate-versus-positive-save/cleanup outcomes are now verified as internal components. SourceCoordinator, protected generation and UI remain pending. Corrected Learning matching/derivation, schema3 and actualModel hooks also remain pending. The full active goal is still incomplete; no live latency improvement is established by these tests.
 
 ## Historical and preceding checkpoints
 

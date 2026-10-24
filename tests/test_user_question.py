@@ -206,6 +206,48 @@ class UserQuestionHostTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(mismatch['requestID'],host.user.bases)
         self.assertEqual(len(self.prompts),calls)
 
+    async def test_deny_first_help_consumes_only_former_current_context_with_fresh_token(self):
+        host=await self.prepared();first=question(host,'Explain event loops.')
+        await host.handle_user_question(first);await host.drain()
+        original=host.active;semantic=original.question
+        host.handle_answer_retirement(retirement(first));self.assertIsNone(host.active)
+        help_request=question(host,basis=first['requestID'],intent='help_current')
+        self.assertTrue(await host.handle_user_question(help_request));await host.drain()
+        self.assertEqual(self.out[-1]['disposition'],'answer')
+        self.assertEqual(host.active.question,semantic)
+        self.assertNotEqual(host.active.token,original.token)
+        self.assertEqual(self.out[-1]['question'],first['question'])
+        self.assertEqual(host.sequence,1)
+
+    async def test_help_cannot_restore_a_noncurrent_tombstone_or_skip_native_generation(self):
+        for kind in ('not_current','newer_request','skipped_generation'):
+            with self.subTest(kind=kind):
+                host=await self.prepared();first=question(host)
+                await host.handle_user_question(first);await host.drain()
+                if kind=='not_current':host._invalidate()
+                host.handle_answer_retirement(retirement(first))
+                if kind=='newer_request':
+                    await host.handle_user_question(question(host,'Explain a cache.'));await host.drain()
+                calls=host.model_requests
+                request=question(host,basis=first['requestID'],intent='help_current')
+                if kind=='skipped_generation':request['presentationGeneration']+=1
+                self.assertFalse(await host.handle_user_question(request));await host.drain()
+                self.assertEqual(self.out[-1]['reasonCode'],'user_request_context_unavailable')
+                self.assertEqual(host.model_requests,calls)
+
+    async def test_deny_first_help_refuses_changed_permission_or_source(self):
+        from tests.test_session_host import event
+        for change in ('permission','microphone_source'):
+            with self.subTest(change=change):
+                host=await self.prepared();first=question(host)
+                await host.handle_user_question(first);await host.drain()
+                host.handle_answer_retirement(retirement(first));calls=host.model_requests
+                if change=='permission':host.permission.revoke();host.permission.grant()
+                else:
+                    await host.handle(event('source_unavailable',2,host.presentation,1,{'reasonCode':'consent_revoked'}))
+                self.assertFalse(await host.handle_user_question(question(host,basis=first['requestID'],intent='help_current')))
+                await host.drain();self.assertEqual(host.model_requests,calls)
+
     async def test_evicted_basis_and_noncurrent_help_never_reactivate_old_permission(self):
         host=await self.prepared()
         first=question(host)

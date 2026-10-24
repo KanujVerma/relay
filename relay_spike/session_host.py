@@ -78,6 +78,7 @@ class SessionHost:
         self.visual=HostVisualInput(self,visual_transport)
 
     def _invalidate(self):
+        self.user.invalidate_retired_help()
         self.visual.retire_request()
         if self.active is not None:
             self.terminal.add(self.active.native['requestID'])
@@ -173,6 +174,7 @@ class SessionHost:
         previous_presentation=self.presentation
         self.sequence=n['eventSequence'];self.presentation=max(self.presentation,n['presentationGeneration'])
         if source==1 and kind in ('source_unavailable','discontinuity'):
+            self.user.invalidate_retired_help()
             self._microphone_available=False
             self.activities={k:v for k,v in self.activities.items() if k[0]!=1}
             self.context.mark_gap('microphone_unavailable' if kind=='source_unavailable' else 'microphone_discontinuity')

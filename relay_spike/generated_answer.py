@@ -118,6 +118,41 @@ _NEUTRAL_START = re.compile(r'^(?:Ask|Use|Explain|Discuss|Compare|Check|Clarify|
 _AUTHORITY = re.compile(r'\b(?:tests? (?:passed|executed)|(?:I|we) tested|independently (?:reviewed|verified)|verified source|reviewed_reference|source_id|fact_id)\b', re.I)
 
 
+def _query_has_individual_attribution(value):
+    """Present mechanism grammar permits coaching, never personal authority.
+
+    Ignore only the leading How/What-does relation. Any other attribution,
+    history, ownership or passive clause still uses the unchanged output guard.
+    No technology/person registry decides whether a name denotes a person.
+    """
+    guards=(_ATTRIBUTION,_HISTORY_REQUEST,_CONTRIBUTION_ASSERTION)
+    for clause in re.split(r'(?<=[.!?])\s+|\n',value):
+        clause=re.sub(r'^(?:(?:Current|Latest|Superseded|Original|Previous) (?:interviewer|question|accepted)[^:]{0,160}|Current user question \(verbatim\)|Chosen earlier questions \(context only\)):\s*','',clause)
+        clause=_NEUTRAL_START.sub('',clause,count=1).lstrip()
+        prefix=re.match(r'^(?:how|what)\s+(?P<aux>does)\s+',clause,re.I)
+        if prefix is None:
+            if _has_individual_attribution(clause): return True
+            continue
+        main=_HISTORY_REQUEST.match(clause,prefix.start('aux'))
+        if main is None:
+            candidates=[match for guard in guards for match in guard.finditer(clause,prefix.end())]
+            if candidates:
+                first=min(candidates,key=lambda match:match.start())
+                gap=clause[prefix.end():first.start()].strip()
+                if not gap or re.fullmatch(r'a|an|the|this|that',gap,re.I): main=first
+        end=prefix.end()
+        if main is not None:
+            action=main.group().split()[-1].casefold()
+            if (action.endswith('ed') or action in {'built','made','led','wrote','did','was','were','has','had','responsible'}
+                    or re.search(r"['’]s\b",main.group())): return True
+            end=main.end()
+        # A passive/employment assertion can overlap the grammatical relation;
+        # do not lose that authority-requiring suffix when scanning the tail.
+        if any(match.start()<end<match.end() for guard in guards for match in guard.finditer(clause)): return True
+        if _has_individual_attribution(clause[end:]): return True
+    return False
+
+
 def requires_personal_evidence(question):
     """Ambiguous addressed/biographical requests fail toward approved facts.
 
@@ -125,8 +160,8 @@ def requires_personal_evidence(question):
     intent label, pronoun score or generated fact ID establishes personal scope.
     """
     text=' '.join(question.split())
-    if _has_individual_attribution(text): return True
-    if re.search(r'\b(?:your|yourself|yours|my (?:resume|résumé|project|experience|background)|tell me about (?:yourself|a time)|describe a time|did you|have you|were you|are you|do you hold)\b',text,re.I): return True
+    if _query_has_individual_attribution(question): return True
+    if re.search(r'\b(?:your|yourself|yours|my (?:resume|résumé|project|experience|background)|(?:my|our) team|tell me about (?:yourself|a time)|describe a time|did you|have you|were you|are you|do you hold)\b',text,re.I): return True
     if re.search(r'\byou (?:[a-z]+ed|built|made|led|did|spent|taught|were|was|have|had|hold|own)\b',text,re.I): return True
     addressed=bool(re.search(r"\byou(?:'re|'ve|'d)?\b",text,re.I))
     if not addressed:

@@ -16,18 +16,44 @@ private final class UseKey:ProfileKeyProvider,@unchecked Sendable {
     }
     var calls:(creates:Int,reads:Int){lock.withLock{(created,read)}}
 }
+private actor HeldUsePort:ProfilePort {
+    let helper:PipeProfilePort
+    let command:String
+    private var response:Data?
+    private var pending:CheckedContinuation<Data,any Error>?
+    private var released=false
+    private(set) var retired=false
+    var waiting:Bool{pending != nil}
+    init(helper:PipeProfilePort,command:String){self.helper=helper;self.command=command}
+    func request(_ data:Data)async throws->Data {
+        guard !retired else{throw ProfileError.unavailable}
+        let message=try JSONSerialization.jsonObject(with:data) as? [String:Any]
+        let result=try await helper.request(data)
+        if message?["command"] as? String == command && !released {
+            response=result
+            return try await withCheckedThrowingContinuation{pending=$0}
+        }
+        return result
+    }
+    func release(){released=true;if let pending,let response{self.pending=nil;self.response=nil;pending.resume(returning:response)}}
+    func close()async{await helper.close()}
+    func emergencyShutdown()async{retired=true;await helper.emergencyShutdown()}
+}
 @MainActor private final class UseRig {
     let directory:URL
     let key=UseKey()
     let helper:PipeProfilePort
     let client:ProfileClient
     let controller:ProfileController
+    let held:HeldUsePort?
     let bindingID=UUID()
     var current=true
-    init(root:URL,directory:URL)throws {
+    init(root:URL,directory:URL,holdCommand:String?=nil)throws {
         self.directory=directory
-        helper=PipeProfilePort(python:try ProfileTestEnvironment.python(),repository:root)
-        client=ProfileClient(port:helper)
+        let child=PipeProfilePort(python:try ProfileTestEnvironment.python(),repository:root)
+        helper=child
+        held=holdCommand.map{HeldUsePort(helper:child,command:$0)}
+        if let held{client=ProfileClient(port:held)}else{client=ProfileClient(port:child)}
         controller=ProfileController(client:client,vault:ProfileVault(directory:directory,keys:key))
     }
     var target:ProfileUseTarget{ProfileUseTarget(controller:controller,bindingID:bindingID,isCurrent:{[weak self] in self?.current==true})}
@@ -35,12 +61,21 @@ private final class UseKey:ProfileKeyProvider,@unchecked Sendable {
 
 @MainActor final class SessionContextUseTests:XCTestCase {
     private var root:URL{URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()}
-    private func rig(directory:URL?=nil)throws->UseRig {
+    private func rig(directory:URL?=nil,holdCommand:String?=nil)throws->UseRig {
         let owned=directory==nil
         let directory=directory ?? FileManager.default.temporaryDirectory.appendingPathComponent("relay-context-use-"+UUID().uuidString)
-        let rig=try UseRig(root:root,directory:directory),helper=rig.helper
-        addTeardownBlock{await helper.emergencyShutdown();if owned{try? FileManager.default.removeItem(at:directory)}}
+        let rig=try UseRig(root:root,directory:directory,holdCommand:holdCommand),helper=rig.helper,held=rig.held
+        addTeardownBlock{await held?.release();await helper.emergencyShutdown();if owned{try? FileManager.default.removeItem(at:directory)}}
         return rig
+    }
+    private func waitUntil(_ condition:()async->Bool)async throws {
+        for _ in 0..<2000{if await condition(){return};try await Task.sleep(for:.milliseconds(2))}
+        throw NSError(domain:"actual synthetic context operation did not reach boundary",code:1)
+    }
+    private func savedContext()async throws->UseRig {
+        let seed=try rig();await seed.controller.openProfile()
+        try await approveFictionalFact(seed.controller);await seed.controller.close()
+        return seed
     }
     private func approveFictionalFact(_ controller:ProfileController)async throws {
         await controller.stageEnteredText("I implemented validation tests for Fictional Northstar.",purpose:"project",label:"Fictional project notes",role:"developer",project:"Fictional Northstar")
@@ -155,5 +190,134 @@ private final class UseKey:ProfileKeyProvider,@unchecked Sendable {
         use.openFromUserAction(target:fresh.target);await use.waitForQuiescence()
         XCTAssertEqual(use.snapshot.status,.ready);XCTAssertTrue(fresh.controller.opened)
         use.retireForHelperChange();await use.waitForQuiescence()
+    }
+    func testCancelledRestoreStaysBusyUntilTheActualLateDeliveryJoins()async throws {
+        let seed=try await savedContext(),fresh=try rig(directory:seed.directory,holdCommand:"load_commit")
+        let held=try XCTUnwrap(fresh.held),preferences=UsePreferences(true)
+        let use=SessionContextUseCoordinator(preferences:preferences,onInvalidate:{})
+        var finished=false
+        let restoring=Task{let result=await use.restoreBeforeSession(target:fresh.target,startIntentID:UUID(),isStartCurrent:{true});finished=true;return result}
+        try await waitUntil{await held.waiting}
+        restoring.cancel()
+        try await waitUntil{let retired=await held.retired,running=await fresh.helper.isRunning;return retired && !running}
+        XCTAssertTrue(use.isBusy);XCTAssertFalse(finished);XCTAssertFalse(fresh.controller.opened)
+        let replacement=try rig(directory:seed.directory)
+        let blocked=await use.restoreBeforeSession(target:replacement.target,startIntentID:UUID(),isStartCurrent:{true})
+        XCTAssertEqual(blocked,.busy);XCTAssertEqual(replacement.key.calls.reads,0)
+        await held.release();let old=await restoring.value
+        XCTAssertEqual(old,.stale);await use.waitForQuiescence();XCTAssertTrue(preferences.useInSessions)
+        let current=await use.restoreBeforeSession(target:replacement.target,startIntentID:UUID(),isStartCurrent:{true})
+        XCTAssertEqual(current,.ready);XCTAssertEqual(replacement.controller.memoryCount,1)
+        use.retireForHelperChange();await use.waitForQuiescence()
+    }
+    func testChangedNativeStartOrBindingRejectsAndClosesLateLoadedContext()async throws {
+        let seed=try await savedContext()
+        for changeBinding in [false,true] {
+            let fresh=try rig(directory:seed.directory,holdCommand:"load_commit"),held=try XCTUnwrap(fresh.held)
+            let preferences=UsePreferences(true),use=SessionContextUseCoordinator(preferences:preferences,onInvalidate:{})
+            var startCurrent=true
+            let restoring=Task{await use.restoreBeforeSession(target:fresh.target,startIntentID:UUID(),isStartCurrent:{startCurrent})}
+            try await waitUntil{await held.waiting}
+            if changeBinding{fresh.current=false}else{startCurrent=false}
+            await held.release();let result=await restoring.value;await use.waitForQuiescence()
+            XCTAssertEqual(result,.stale);XCTAssertFalse(fresh.controller.opened);XCTAssertTrue(preferences.useInSessions)
+            let running=await fresh.helper.isRunning;XCTAssertFalse(running)
+        }
+    }
+    func testExplicitLockDuringLoadStaysOffAndJoinsTheOriginalHelper()async throws {
+        let seed=try await savedContext(),fresh=try rig(directory:seed.directory,holdCommand:"load_commit")
+        let held=try XCTUnwrap(fresh.held),preferences=UsePreferences(true)
+        var invalidations=0
+        let use=SessionContextUseCoordinator(preferences:preferences,onInvalidate:{invalidations+=1})
+        let restoring=Task{await use.restoreBeforeSession(target:fresh.target,startIntentID:UUID(),isStartCurrent:{true})}
+        try await waitUntil{await held.waiting}
+        let actions=ProfilePreparationActions(controller:fresh.controller,onLock:{use.lockFromUserAction(target:fresh.target)})
+        XCTAssertTrue(actions.canLock(sessionUse:use.snapshot))
+        actions.lock();actions.lock()
+        XCTAssertFalse(preferences.useInSessions);XCTAssertFalse(fresh.controller.opened)
+        XCTAssertTrue(use.isBusy);XCTAssertEqual(invalidations,1)
+        try await waitUntil{let retired=await held.retired,running=await fresh.helper.isRunning;return retired && !running}
+        XCTAssertTrue(use.isBusy,"actual late delivery must still join after the original child has retired")
+        await held.release();let result=await restoring.value;await use.waitForQuiescence()
+        XCTAssertEqual(result,.stale);XCTAssertEqual(use.snapshot.status,.off)
+        let replacement=try rig(directory:seed.directory)
+        let next=await use.restoreBeforeSession(target:replacement.target,startIntentID:UUID(),isStartCurrent:{true})
+        XCTAssertEqual(next,.disabled);XCTAssertEqual(replacement.key.calls.reads,0)
+        let running=await replacement.helper.isRunning;XCTAssertFalse(running)
+    }
+    func testCorruptExistingVaultRemainsUnchangedAndReportsFixedUnavailable()async throws {
+        let seed=try await savedContext(),file=seed.directory.appendingPathComponent("profile.relayvault")
+        let corrupt=Data("fictional-corrupt-payload-must-not-appear-in-status".utf8)
+        try corrupt.write(to:file)
+        let fresh=try rig(directory:seed.directory),preferences=UsePreferences(true)
+        let use=SessionContextUseCoordinator(preferences:preferences,onInvalidate:{})
+        let result=await use.restoreBeforeSession(target:fresh.target,startIntentID:UUID(),isStartCurrent:{true})
+        XCTAssertEqual(result,.unavailable);XCTAssertEqual(use.snapshot.status,.unavailable)
+        XCTAssertEqual(try Data(contentsOf:file),corrupt);XCTAssertEqual(fresh.key.calls.creates,0)
+        XCTAssertFalse(use.snapshot.message.contains("fictional-corrupt"));XCTAssertTrue(preferences.useInSessions)
+        use.lockFromUserAction(target:fresh.target);await use.waitForQuiescence();XCTAssertFalse(use.useInSessions)
+    }
+    func testEachCoalescedCallerStillRequiresItsOwnNativeStartGuard()async throws {
+        let seed=try await savedContext()
+        for revokeAfterJoining in [false,true] {
+            let fresh=try rig(directory:seed.directory,holdCommand:"load_commit"),held=try XCTUnwrap(fresh.held)
+            let use=SessionContextUseCoordinator(preferences:UsePreferences(true),onInvalidate:{}),id=UUID()
+            let first=Task{await use.restoreBeforeSession(target:fresh.target,startIntentID:id,isStartCurrent:{true})}
+            try await waitUntil{await held.waiting}
+            var callerCurrent=revokeAfterJoining
+            let stale=Task{await use.restoreBeforeSession(target:fresh.target,startIntentID:id,isStartCurrent:{callerCurrent})}
+            for _ in 0..<10{await Task.yield()}
+            callerCurrent=false
+            await held.release();let current=await first.value,invalid=await stale.value
+            XCTAssertEqual(current,.ready);XCTAssertEqual(invalid,.stale)
+            XCTAssertTrue(fresh.controller.opened);XCTAssertEqual(fresh.key.calls.reads,1)
+            use.retireForHelperChange();await use.waitForQuiescence()
+        }
+    }
+    func testObsoleteCoalescedCancellationCannotRetireAReplacementReadyUse()async throws {
+        let seed=try await savedContext(),fresh=try rig(directory:seed.directory,holdCommand:"load_commit")
+        let held=try XCTUnwrap(fresh.held),use=SessionContextUseCoordinator(preferences:UsePreferences(true),onInvalidate:{}),id=UUID()
+        var oldWaiter:Task<SessionContextRestoreResult,Never>?
+        var replacement:Task<SessionContextRestoreResult,Never>?
+        var launched=false
+        let observer=use.$snapshot.sink{snapshot in
+            if snapshot.status == .ready && !launched {
+                launched=true
+                replacement=Task(priority:.high){await use.restoreBeforeSession(target:fresh.target,startIntentID:UUID(),isStartCurrent:{true})}
+                oldWaiter?.cancel()
+            }
+        }
+        let first=Task(priority:.high){await use.restoreBeforeSession(target:fresh.target,startIntentID:id,isStartCurrent:{true})}
+        oldWaiter=Task(priority:.background){await use.restoreBeforeSession(target:fresh.target,startIntentID:id,isStartCurrent:{true})}
+        try await waitUntil{await held.waiting};for _ in 0..<10{await Task.yield()}
+        await held.release();_=await first.value;_=await oldWaiter?.value
+        let current=await replacement?.value
+        for _ in 0..<20{await Task.yield()}
+        XCTAssertEqual(current,.ready);XCTAssertTrue(fresh.controller.opened);XCTAssertEqual(use.snapshot.status,.ready)
+        observer.cancel()
+        use.retireForHelperChange();await use.waitForQuiescence()
+    }
+    func testPreparationActionsUseTheRememberedOpenAndSynchronousLockPorts()async throws {
+        let rig=try rig(),preferences=UsePreferences()
+        let use=SessionContextUseCoordinator(preferences:preferences,onInvalidate:{})
+        let actions=ProfilePreparationActions(controller:rig.controller,onOpen:{use.openFromUserAction(target:rig.target)},onLock:{use.lockFromUserAction(target:rig.target)})
+        actions.open();XCTAssertTrue(preferences.useInSessions)
+        await use.waitForQuiescence();XCTAssertTrue(rig.controller.opened)
+        actions.lock()
+        XCTAssertFalse(preferences.useInSessions);XCTAssertFalse(rig.controller.opened);XCTAssertTrue(use.isBusy)
+        await use.waitForQuiescence()
+        let running=await rig.helper.isRunning;XCTAssertFalse(running)
+    }
+    func testDefaultPreparationLockRetiresImmediatelyAndUnavailableUseCanBeLocked()async throws {
+        let rig=try rig();await rig.controller.openProfile()
+        let defaults=ProfilePreparationActions(controller:rig.controller)
+        defaults.lock();XCTAssertFalse(rig.controller.opened);XCTAssertTrue(rig.controller.busy)
+        await rig.controller.close()
+        let missing=try self.rig(),use=SessionContextUseCoordinator(preferences:UsePreferences(true),onInvalidate:{})
+        _=await use.restoreBeforeSession(target:missing.target,startIntentID:UUID(),isStartCurrent:{true})
+        let actions=ProfilePreparationActions(controller:missing.controller,onLock:{use.lockFromUserAction(target:missing.target)})
+        XCTAssertTrue(actions.canLock(sessionUse:use.snapshot),"enabled unavailable context must retain its opt-out")
+        actions.lock();XCTAssertFalse(use.useInSessions)
+        await use.waitForQuiescence()
     }
 }

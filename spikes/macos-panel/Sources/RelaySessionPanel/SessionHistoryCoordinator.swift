@@ -38,6 +38,7 @@ private final class HistoryAdmission:@unchecked Sendable {
 /// before await and joins the original actual task, including native writes.
 @MainActor public final class SessionHistoryCoordinator:ObservableObject {
     @Published public private(set) var snapshot=HistoryWorkspaceSnapshot()
+    public var onRecordsUnavailable:(@MainActor (HistoryRecordsUnavailable)->Void)?
     private var state=HistoryWorkspaceSnapshot()
     private let factory:@Sendable ()throws->any ProtectedSnapshotStorage
     private let preferences:any HistorySavingPreferences
@@ -95,14 +96,36 @@ private final class HistoryAdmission:@unchecked Sendable {
     }
     private func run<T:Sendable>(gate:HistoryAdmission,_ body:@escaping @Sendable (HistoryStore)throws->T)async throws->T{
         guard flight==nil,gate.allowed else{throw HistoryError.stale}
-        let store=try ownedStore(),id=UUID()
-        let actual=Task.detached(priority:.utility){guard gate.allowed else{throw HistoryError.stale};return try body(store)}
-        let joined=Task.detached{_=await actual.result}
+        let store=try ownedStore(),id=UUID(),originalEpoch=epoch
+        let actual=Task.detached(priority:.utility){
+            let result=Result{guard gate.allowed else{throw HistoryError.stale};return try body(store)}
+            return(result,store.takeExpiredRecordIDs())
+        }
+        let joined=Task.detached{_=await actual.value}
         flight=Flight(id:id,gate:gate,join:joined);publish()
-        let result=await actual.result;await joined.value
-        if flight?.id==id{flight=nil};publish()
-        startWriter()
+        let(result,expired)=await actual.value;await joined.value
+        if flight?.id==id{flight=nil}
+        if epoch==originalEpoch,self.store === store,expired?.isEmpty != true{
+            applyExpiredRecords(expired,epoch:originalEpoch)
+        }
+        publish();startWriter()
         return try result.get()
+    }
+    private func notifyUnavailable(_ ids:Set<UUID>?,epoch:UUID){
+        guard ids?.isEmpty != true else{return}
+        onRecordsUnavailable?(HistoryRecordsUnavailable(retiredEpoch:epoch,recordIDs:ids))
+    }
+    private func applyExpiredRecords(_ ids:Set<UUID>?,epoch original:UUID){
+        visibilityEpoch=UUID()
+        state.records.removeAll{ids?.contains($0.id) ?? true}
+        if let selected=state.selected,ids?.contains(selected.record.id) ?? true{state.selected=nil;selectionEpoch=UUID()}
+        if let current,ids?.contains(current.recordID) ?? true{
+            current.acceptsNew=false;current.failed=true;current.gate.retire()
+            pending=[];pendingBytes=0;terminalStop=nil;terminalGap=nil;state.recordingID=nil
+        }
+        // The detached operation and receipt drain have returned; no store or
+        // native/session lock is held while the owned observer clears its data.
+        notifyUnavailable(ids,epoch:original)
     }
     private func join(_ original:Flight?)async{
         guard let original else{return};await original.join.value
@@ -290,10 +313,11 @@ private final class HistoryAdmission:@unchecked Sendable {
         // Snapshot observers may repeat either action while its original owner
         // publishes. Only a new Lock escalation or preference change publishes.
         if retirement != nil,(!lock || closeRequested),state.savingEnabled==preferences.savingEnabled{return}
+        let retiredEpoch=epoch
         if lock{closeRequested=true;epoch=UUID();selectionEpoch=UUID();state.records=[];state.selected=nil;state.phase = .closing;state.message="Closing history…"}
         let permit=current;permit?.acceptsNew=false;permit?.gate.retire();flight?.gate.retire()
         pending=[];pendingBytes=0;terminalStop=nil;terminalGap=nil;pauseWriter=true
-        guard retirement==nil else{publish();return}
+        guard retirement==nil else{if lock{notifyUnavailable(nil,epoch:retiredEpoch)};publish();return}
         exportGate?.retire()
         let oldWriter=writer,oldFlight=flight,oldExclusive=exclusive,oldExport=exportTask,id=UUID()
         retirementID=id
@@ -318,6 +342,7 @@ private final class HistoryAdmission:@unchecked Sendable {
             else{self.state.phase = self.opened ? .ready:.unavailable;self.state.message="Saving is off. Open History to view previously saved sessions."}
             self.publish()
         }
+        if lock{notifyUnavailable(nil,epoch:retiredEpoch)}
         publish()
     }
     public func closeForOwnerRetirement()async{
@@ -359,10 +384,10 @@ private final class HistoryAdmission:@unchecked Sendable {
         guard epoch==original,selectionEpoch==selected,gate.allowed,!Task.isCancelled,page.record.revision==before.record.revision,!tombstones.contains(id) else{throw HistoryError.stale}
         state.selected=HistoryDetail(record:page.record,captures:page.captures,rows:before.rows+page.rows,nextOffset:page.nextOffset,totalRows:page.totalRows);publish()
     }
-    public func saveNotes(_ id:UUID,expectedRevision:Int64,title:String,note:String)async throws{
+    @discardableResult public func saveNotes(_ id:UUID,expectedRevision:Int64,title:String,note:String)async throws->HistoryNoteSaveReceipt{
         try Task.checkCancellation()
         guard !isBusy,state.phase == .ready,!tombstones.contains(id),state.selected?.record.id==id else{throw HistoryError.stale}
-        let original=epoch,selected=selectionEpoch,gate=HistoryAdmission()
+        let original=epoch,selected=selectionEpoch,gate=HistoryAdmission(),originalStore=store
         let result=try await withTaskCancellationHandler(operation:{try await run(gate:gate){store in
             _=try store.edit(id,expectedRevision:expectedRevision,title:title,note:note,admission:{gate.allowed})
             return(try store.detail(id),try store.list())
@@ -370,6 +395,9 @@ private final class HistoryAdmission:@unchecked Sendable {
         guard epoch==original,selectionEpoch==selected,gate.allowed,!Task.isCancelled,!tombstones.contains(id) else{throw HistoryError.stale}
         state.selected=result.0;state.records=result.1.records;state.nextOffset=result.1.nextOffset
         state.message="Your notes were saved locally. They are not approved personal facts.";publish()
+        guard epoch==original,selectionEpoch==selected,store === originalStore,gate.allowed,!Task.isCancelled,
+              !tombstones.contains(id),state.selected?.record.id==id else{throw HistoryError.stale}
+        return HistoryNoteSaveReceipt(epoch:original,record:result.0.record)
     }
     public func export(_ id:UUID,expectedRevision:Int64,format:HistoryExportFormat,to destination:any HistoryExportDestination)->Task<Void,Error>{
         guard !isBusy,state.phase == .ready,state.selected?.record.id==id,!tombstones.contains(id) else{return Task{throw HistoryError.stale}}
@@ -430,7 +458,7 @@ private final class HistoryAdmission:@unchecked Sendable {
             }
             if self.exclusiveID==operationID{self.exclusive=nil;self.exclusiveID=nil};self.pauseWriter=false;self.publish();self.startWriter()
         }
-        exclusive=task;publish();return task
+        exclusive=task;notifyUnavailable([id],epoch:original);publish();return task
     }
     /// Delete one recorded capture/source and block future saved text from that
     /// logical source for this record. Other sources and user notes remain.
@@ -466,6 +494,7 @@ private final class HistoryAdmission:@unchecked Sendable {
     }
     public func deleteAll()->Task<Void,Error>{
         guard retirement==nil,exclusive==nil,state.phase == .ready else{return Task{throw HistoryError.stale}}
+        let retiredEpoch=epoch
         preferences.savingEnabled=false;exportGate?.retire();epoch=UUID();selectionEpoch=UUID();visibilityEpoch=UUID()
         state.records=[];state.selected=nil;state.nextOffset=nil
         current?.acceptsNew=false;current?.gate.retire();pending=[];pendingBytes=0;terminalStop=nil;terminalGap=nil;pauseWriter=true
@@ -485,7 +514,7 @@ private final class HistoryAdmission:@unchecked Sendable {
             }
             self.endExclusive(operationID)
         }
-        exclusive=task;publish();return task
+        exclusive=task;notifyUnavailable(nil,epoch:retiredEpoch);publish();return task
     }
     private func endExclusive(_ id:UUID){
         if exclusiveID==id{exclusive=nil;exclusiveID=nil}

@@ -134,8 +134,8 @@ Obtain the accepted shared Model observation seam and run the unchanged four
 actual Model cases plus original publication/held-image/watchdog controls under
 root's lease. Include broader actual normal-assembly speech in final acceptance.
 Keep generic injected fixtures on closedSpan. Run the protected account gate only
-after root coordinates current setup/authorization. The separately accepted shared
-observation seam arrives. Keep normal factory closedSpan until measured approval.
+after root coordinates current setup/authorization. The normal local factory
+selection has passed its approved activation check; full app acceptance has not.
 
 ## OPEN QUESTIONS
 

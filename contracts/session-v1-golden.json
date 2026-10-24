@@ -1,0 +1,325 @@
+{
+  "fixtureVersion": 1,
+  "synthetic": true,
+  "cases": [
+    {
+      "name": "reviewed_question",
+      "events": [
+        {
+          "schemaVersion": 1,
+          "captureSessionID": "11111111-1111-4111-8111-111111111111",
+          "sessionEpoch": 1,
+          "eventSequence": 1,
+          "presentationGeneration": 1,
+          "requestID": null,
+          "kind": "session_started",
+          "sourceCode": null,
+          "streamGeneration": null,
+          "emittedUptimeNanoseconds": 1000000000,
+          "payload": {
+            "selectedBundleID": "com.example.MockInterview",
+            "microphoneEnabled": true
+          }
+        },
+        {
+          "schemaVersion": 1,
+          "captureSessionID": "11111111-1111-4111-8111-111111111111",
+          "sessionEpoch": 1,
+          "eventSequence": 2,
+          "presentationGeneration": 2,
+          "requestID": null,
+          "kind": "speech_started",
+          "sourceCode": 2,
+          "streamGeneration": 1,
+          "emittedUptimeNanoseconds": 1010000000,
+          "payload": {
+            "activityID": 100,
+            "startHostTime": 1010000000,
+            "detectedUptimeNanoseconds": 1010000000,
+            "timebase": {
+              "hostTicksAtAnchor": 1000000000,
+              "uptimeNsAtAnchor": 1000000000,
+              "nsNumer": 1,
+              "nsDenom": 1
+            }
+          }
+        },
+        {
+          "schemaVersion": 1,
+          "captureSessionID": "11111111-1111-4111-8111-111111111111",
+          "sessionEpoch": 1,
+          "eventSequence": 3,
+          "presentationGeneration": 2,
+          "requestID": null,
+          "kind": "speech_ended",
+          "sourceCode": 2,
+          "streamGeneration": 1,
+          "emittedUptimeNanoseconds": 2010000000,
+          "payload": {
+            "activityID": 100,
+            "endHostTime": 2010000000,
+            "lastSpeechInputSequence": 32,
+            "timebase": {
+              "hostTicksAtAnchor": 1000000000,
+              "uptimeNsAtAnchor": 1000000000,
+              "nsNumer": 1,
+              "nsDenom": 1
+            }
+          }
+        },
+        {
+          "schemaVersion": 1,
+          "captureSessionID": "11111111-1111-4111-8111-111111111111",
+          "sessionEpoch": 1,
+          "eventSequence": 4,
+          "presentationGeneration": 2,
+          "requestID": "22222222-2222-4222-8222-222222222222",
+          "kind": "eou",
+          "sourceCode": 2,
+          "streamGeneration": 1,
+          "emittedUptimeNanoseconds": 2061000000,
+          "payload": {
+            "event": {
+              "version": 1,
+              "status": "final",
+              "sourceCode": 2,
+              "streamGeneration": 1,
+              "segmentID": 1,
+              "revision": 1,
+              "startHostTime": 1010000000,
+              "endHostTime": 2010000000,
+              "finalizedUptimeNanoseconds": 2050000000,
+              "receivedUptimeNanoseconds": 2060000000,
+              "text": "What is the difference between WHERE and HAVING?",
+              "confidence": null,
+              "timebase": {
+                "hostTicksAtAnchor": 1000000000,
+                "uptimeNsAtAnchor": 1000000000,
+                "nsNumer": 1,
+                "nsDenom": 1
+              }
+            },
+            "activityID": 100,
+            "firstInputSequence": 1,
+            "lastInputSequence": 32,
+            "activityClosed": true,
+            "lastSpeechInputSequence": 32
+          }
+        }
+      ],
+      "expectation": "Only the current closed remote final may route. Null ASR confidence stays null."
+    },
+    {
+      "name": "microphone_context",
+      "events": [
+        {
+          "schemaVersion": 1,
+          "captureSessionID": "11111111-1111-4111-8111-111111111111",
+          "sessionEpoch": 1,
+          "eventSequence": 7,
+          "presentationGeneration": 2,
+          "requestID": null,
+          "kind": "eou",
+          "sourceCode": 1,
+          "streamGeneration": 1,
+          "emittedUptimeNanoseconds": 2061000000,
+          "payload": {
+            "event": {
+              "version": 1,
+              "status": "final",
+              "sourceCode": 1,
+              "streamGeneration": 1,
+              "segmentID": 1,
+              "revision": 1,
+              "startHostTime": 1010000000,
+              "endHostTime": 2010000000,
+              "finalizedUptimeNanoseconds": 2050000000,
+              "receivedUptimeNanoseconds": 2060000000,
+              "text": "I would filter rows before grouping.",
+              "confidence": null,
+              "timebase": {
+                "hostTicksAtAnchor": 1000000000,
+                "uptimeNsAtAnchor": 1000000000,
+                "nsNumer": 1,
+                "nsDenom": 1
+              }
+            },
+            "activityID": 200,
+            "firstInputSequence": 1,
+            "lastInputSequence": 32,
+            "activityClosed": true,
+            "lastSpeechInputSequence": 32
+          }
+        }
+      ],
+      "expectation": "Schema-valid microphone final is context only, never a model request or remote-card invalidation."
+    },
+    {
+      "name": "late_final_after_new_onset",
+      "events": [
+        {
+          "schemaVersion": 1,
+          "captureSessionID": "11111111-1111-4111-8111-111111111111",
+          "sessionEpoch": 1,
+          "eventSequence": 1,
+          "presentationGeneration": 1,
+          "requestID": null,
+          "kind": "session_started",
+          "sourceCode": null,
+          "streamGeneration": null,
+          "emittedUptimeNanoseconds": 1000000000,
+          "payload": {
+            "selectedBundleID": "com.example.MockInterview",
+            "microphoneEnabled": true
+          }
+        },
+        {
+          "schemaVersion": 1,
+          "captureSessionID": "11111111-1111-4111-8111-111111111111",
+          "sessionEpoch": 1,
+          "eventSequence": 2,
+          "presentationGeneration": 2,
+          "requestID": null,
+          "kind": "speech_started",
+          "sourceCode": 2,
+          "streamGeneration": 1,
+          "emittedUptimeNanoseconds": 1010000000,
+          "payload": {
+            "activityID": 100,
+            "startHostTime": 1010000000,
+            "detectedUptimeNanoseconds": 1010000000,
+            "timebase": {
+              "hostTicksAtAnchor": 1000000000,
+              "uptimeNsAtAnchor": 1000000000,
+              "nsNumer": 1,
+              "nsDenom": 1
+            }
+          }
+        },
+        {
+          "schemaVersion": 1,
+          "captureSessionID": "11111111-1111-4111-8111-111111111111",
+          "sessionEpoch": 1,
+          "eventSequence": 3,
+          "presentationGeneration": 2,
+          "requestID": null,
+          "kind": "speech_ended",
+          "sourceCode": 2,
+          "streamGeneration": 1,
+          "emittedUptimeNanoseconds": 2010000000,
+          "payload": {
+            "activityID": 100,
+            "endHostTime": 2010000000,
+            "lastSpeechInputSequence": 32,
+            "timebase": {
+              "hostTicksAtAnchor": 1000000000,
+              "uptimeNsAtAnchor": 1000000000,
+              "nsNumer": 1,
+              "nsDenom": 1
+            }
+          }
+        },
+        {
+          "schemaVersion": 1,
+          "captureSessionID": "11111111-1111-4111-8111-111111111111",
+          "sessionEpoch": 1,
+          "eventSequence": 4,
+          "presentationGeneration": 3,
+          "requestID": null,
+          "kind": "speech_started",
+          "sourceCode": 2,
+          "streamGeneration": 1,
+          "emittedUptimeNanoseconds": 2020000000,
+          "payload": {
+            "activityID": 101,
+            "startHostTime": 2020000000,
+            "detectedUptimeNanoseconds": 2020000000,
+            "timebase": {
+              "hostTicksAtAnchor": 1000000000,
+              "uptimeNsAtAnchor": 1000000000,
+              "nsNumer": 1,
+              "nsDenom": 1
+            }
+          }
+        },
+        {
+          "schemaVersion": 1,
+          "captureSessionID": "11111111-1111-4111-8111-111111111111",
+          "sessionEpoch": 1,
+          "eventSequence": 5,
+          "presentationGeneration": 2,
+          "requestID": "22222222-2222-4222-8222-222222222222",
+          "kind": "eou",
+          "sourceCode": 2,
+          "streamGeneration": 1,
+          "emittedUptimeNanoseconds": 2061000000,
+          "payload": {
+            "event": {
+              "version": 1,
+              "status": "final",
+              "sourceCode": 2,
+              "streamGeneration": 1,
+              "segmentID": 1,
+              "revision": 1,
+              "startHostTime": 1010000000,
+              "endHostTime": 2010000000,
+              "finalizedUptimeNanoseconds": 2050000000,
+              "receivedUptimeNanoseconds": 2060000000,
+              "text": "What is the difference between WHERE and HAVING?",
+              "confidence": null,
+              "timebase": {
+                "hostTicksAtAnchor": 1000000000,
+                "uptimeNsAtAnchor": 1000000000,
+                "nsNumer": 1,
+                "nsDenom": 1
+              }
+            },
+            "activityID": 100,
+            "firstInputSequence": 1,
+            "lastInputSequence": 32,
+            "activityClosed": true,
+            "lastSpeechInputSequence": 32
+          }
+        }
+      ],
+      "expectation": "Late A retains presentationGeneration2 and may enter bounded history only; B generation3 remains authoritative."
+    },
+    {
+      "name": "stop",
+      "events": [
+        {
+          "schemaVersion": 1,
+          "captureSessionID": "11111111-1111-4111-8111-111111111111",
+          "sessionEpoch": 1,
+          "eventSequence": 8,
+          "presentationGeneration": 3,
+          "requestID": null,
+          "kind": "stopping",
+          "sourceCode": null,
+          "streamGeneration": null,
+          "emittedUptimeNanoseconds": 3000000000,
+          "payload": {
+            "reasonCode": "user_stop"
+          }
+        },
+        {
+          "schemaVersion": 1,
+          "captureSessionID": "11111111-1111-4111-8111-111111111111",
+          "sessionEpoch": 1,
+          "eventSequence": 9,
+          "presentationGeneration": 3,
+          "requestID": null,
+          "kind": "stopped",
+          "sourceCode": null,
+          "streamGeneration": null,
+          "emittedUptimeNanoseconds": 3010000000,
+          "payload": {
+            "reasonCode": "user_stop",
+            "quiesced": true
+          }
+        }
+      ],
+      "expectation": "Retire admission immediately; stopped/quiesced is a separate producer-lifetime observation."
+    }
+  ]
+}

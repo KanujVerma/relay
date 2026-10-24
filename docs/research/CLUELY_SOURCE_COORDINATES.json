@@ -1,0 +1,242 @@
+[
+  {
+    "id": "S01",
+    "path": "dist-electron/main.js",
+    "sha256": "e4f94c34baf217795b4c961bbf3d919ae4b698a78796740f045a1c84708460e3",
+    "bytes": 545096,
+    "coordinate": "lines15368,15425-15728",
+    "claim": "Window geometry and surface roles",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S02",
+    "path": "dist/assets/control-gAeWfF8s.js",
+    "sha256": "01001c8b2085c8d04f8a8872cd90579300452395fe9e2e1c709ddc2f9b667d4d",
+    "bytes": 7977,
+    "coordinate": "bytes1533..7905",
+    "claim": "Drag, Ask/Hide, create/end session controls",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S03",
+    "path": "dist/assets/index-DTminr0K.css",
+    "sha256": "e40f543237590e5efede33aa3b6b4bb13e4165218b10204646983f030c64cb2b",
+    "bytes": 201416,
+    "coordinate": "bytes10042..10497,14453..14508,189287..194356",
+    "claim": "Font, prose sizing, transparent root and theme",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S04",
+    "path": "dist/assets/chat-DIvku-qQ.js",
+    "sha256": "805ede5bfe6f1ec47678f9f814534c727427f71bd9fd2a95d4eab13a0804b137",
+    "bytes": 787376,
+    "coordinate": "bytes763855..776049",
+    "claim": "Top input, footer, modes and view actions",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S05",
+    "path": "dist/assets/chat-DIvku-qQ.js",
+    "sha256": "805ede5bfe6f1ec47678f9f814534c727427f71bd9fd2a95d4eab13a0804b137",
+    "bytes": 787376,
+    "coordinate": "bytes289381..297621",
+    "claim": "Open assistant content, user bubble, provenance and preview",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S06",
+    "path": "dist/assets/chat-DIvku-qQ.js",
+    "sha256": "805ede5bfe6f1ec47678f9f814534c727427f71bd9fd2a95d4eab13a0804b137",
+    "bytes": 787376,
+    "coordinate": "bytes776049..779200",
+    "claim": "Transcript geometry and empty/live states",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S07",
+    "path": "dist/assets/chat-DIvku-qQ.js",
+    "sha256": "805ede5bfe6f1ec47678f9f814534c727427f71bd9fd2a95d4eab13a0804b137",
+    "bytes": 787376,
+    "coordinate": "bytes694043..746382",
+    "claim": "Dashboard, meeting details, editable notes, calendar and history",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S08",
+    "path": "dist/assets/use-create-session-RFobYZRn.js",
+    "sha256": "eca0e3233ff45414631944ba11c768e096fccd11ed53a81b5e0623457505d797",
+    "bytes": 1881,
+    "coordinate": "bytes667..1729",
+    "claim": "Actual create mutation, quota path, fresh chat and session state",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S09",
+    "path": "dist/assets/use-end-session-B3brV6MJ.js",
+    "sha256": "a20a58831162768f2d039120dc1090fa291cc76b9387c72c861e492105480b2e",
+    "bytes": 1476,
+    "coordinate": "bytes632..1308",
+    "claim": "End mutation with ready transcript, dashboard transition",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S10",
+    "path": "dist/assets/onboarding-CgGe0lf_.js",
+    "sha256": "d80266123c50f0e8be9bd2c5d0c6fce8761e19d17475f44ff9c50ad47a8c36a3",
+    "bytes": 1115,
+    "coordinate": "bytes548..1048",
+    "claim": "Sign-in, permission and mode routing",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S11",
+    "path": "dist/assets/permissions-CJUBDt_U.js",
+    "sha256": "e25ef2c15bddcfee5f772695521386b560977b51899a1f625f3505ae2e171249",
+    "bytes": 18428,
+    "coordinate": "bytes6020..15750",
+    "claim": "Permission steps, grant/denial, restart and mode transition",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S12",
+    "path": "dist/assets/settings-BgaBVBD_.js",
+    "sha256": "02fd9a84b165010e1f12ac6aac38837c992e2bfa1d1cd5b889947cbc494ec4f6",
+    "bytes": 208427,
+    "coordinate": "bytes151898..153199,166438..190788",
+    "claim": "20 MB labeled upload, processing, prompt editing and active mode",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S13",
+    "path": "dist/assets/settings-BgaBVBD_.js",
+    "sha256": "02fd9a84b165010e1f12ac6aac38837c992e2bfa1d1cd5b889947cbc494ec4f6",
+    "bytes": 208427,
+    "coordinate": "bytes204539..207683",
+    "claim": "Settings top tabs and content hierarchy",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S14",
+    "path": "dist/assets/settings-B6FV2ZqQ.js",
+    "sha256": "6aa34a47059bedfd58de0d322e7e553e5efbc1f8fa71a771a44e72c3738c0f69",
+    "bytes": 10868,
+    "coordinate": "bytes9867..10408",
+    "claim": "Nine setting tab identities",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S15",
+    "path": "dist/assets/settings-BgaBVBD_.js",
+    "sha256": "02fd9a84b165010e1f12ac6aac38837c992e2bfa1d1cd5b889947cbc494ec4f6",
+    "bytes": 208427,
+    "coordinate": "bytes26476..28902,37708..42230,77454..84900",
+    "claim": "About, calendar, audio test, language, general/update UI",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S16",
+    "path": "dist-electron/main.js",
+    "sha256": "e4f94c34baf217795b4c961bbf3d919ae4b698a78796740f045a1c84708460e3",
+    "bytes": 545096,
+    "coordinate": "lines16743-16857",
+    "claim": "Single display screenshot and request IPC",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S17",
+    "path": "dist-electron/main.js",
+    "sha256": "e4f94c34baf217795b4c961bbf3d919ae4b698a78796740f045a1c84708460e3",
+    "bytes": 545096,
+    "coordinate": "lines10134-10149,16159-16275",
+    "claim": "Default shortcut schema and native dispatch/focus",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S18",
+    "path": "dist/assets/chat-DIvku-qQ.js",
+    "sha256": "805ede5bfe6f1ec47678f9f814534c727427f71bd9fd2a95d4eab13a0804b137",
+    "bytes": 787376,
+    "coordinate": "bytes273400..279153,752229..752947,758098..758576",
+    "claim": "WSS agent, one message context, screenshot and audio uploads, busy replacement",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S19",
+    "path": "dist/assets/chat-DIvku-qQ.js",
+    "sha256": "805ede5bfe6f1ec47678f9f814534c727427f71bd9fd2a95d4eab13a0804b137",
+    "bytes": 787376,
+    "coordinate": "bytes751864..753014,763464..763818",
+    "claim": "Transcript inclusion and paused-duration state",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S20",
+    "path": "dist-electron/main.js",
+    "sha256": "e4f94c34baf217795b4c961bbf3d919ae4b698a78796740f045a1c84708460e3",
+    "bytes": 545096,
+    "coordinate": "lines16586-16604,16802-16825",
+    "claim": "Updater events and update/restart IPC",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S21",
+    "path": "dist-electron/main.js",
+    "sha256": "e4f94c34baf217795b4c961bbf3d919ae4b698a78796740f045a1c84708460e3",
+    "bytes": 545096,
+    "coordinate": "line16882 and adjacent menu construction",
+    "claim": "Devtools menu in nonproduction branch",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S22",
+    "path": "dist/assets/sign-in-B0nA9S4C.js",
+    "sha256": "e212f48c5f5c18b8d465c7c2874154fd22f126e7d408ba56432e0ec2eef182de",
+    "bytes": 3438,
+    "coordinate": "bytes994..3366",
+    "claim": "Sign-in surface and external browser action",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S23",
+    "path": "dist/assets/route-DYzQSKMO.js",
+    "sha256": "8828adad038af2cf45f96b02d0446b7897f1ac446706a0defb0ab0c9150c01d9",
+    "bytes": 8872,
+    "coordinate": "bytes2899..3790",
+    "claim": "Inactivity continue modal and five-minute label",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  },
+  {
+    "id": "S24",
+    "path": "dist/assets/streamdown-text-DPIKw8YW.js",
+    "sha256": "45dc99ee1e5acbbdf18ea452bb69943b7155ea88e10d7342d57c983ca095b73a",
+    "bytes": 257351,
+    "coordinate": "byte257065 prose-sm class",
+    "claim": "Actual assistant rich-text size class",
+    "authority": "shipped-source-static",
+    "runtime_observed": false
+  }
+]

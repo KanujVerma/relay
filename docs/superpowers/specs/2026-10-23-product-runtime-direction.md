@@ -1,0 +1,11 @@
+# Self-contained app runtime and startup
+
+Owner direction requires an app that launches without repository paths, Python selection or terminal setup. The current prototype build only copies the native binary/plist and defaults helper startup to the working directory/system Python. This remains a P0 product gap even after automatic speech provisioning.
+
+Investigate an embedded frozen Python helper using licensed open-source tooling (prefer a well-supported packager over a home-grown interpreter distribution). The app should resolve its own bundled helper/data/resources while keeping explicit developer/test overrides. Include actual production TXT/PDF/DOCX conversion dependencies rather than shipping UI affordances whose optional imports are absent. Reuse the current helper/module/stdio/auth/source review contracts and exact pinned production converters; no new inference or memory stack.
+
+Packaging worker owns new packaging/build scripts, frozen helper entry/manifest/notices, Bundle runtime resolver and focused build/relocation/helper smoke tests. Root owns the later narrow SessionApplicationModel default-location hook; no concurrent model edits. Preserve existing flags for synthetic tests and standalone development. Do not publish weights, private data, credentials or local caches. Package all required native/resource bundles and verify actual nested signatures/library paths. Research exact upstream versions/licenses/source/tests before implementation; no global Python/Homebrew/client reconfiguration or paid certificate/notarization purchase.
+
+Read-only design comes first, with exact runtime/dependency/data inclusion, executable-argument compatibility, code-signing/resource plan, relocation/cache behavior, size and test boundaries. Root freezes the API and ownership before implementation. The source app first needs the accepted automatic/native/UI joins; scripts should package the current checkout instead of a fixed peer snapshot.
+
+After accepted runtime/provisioning source, a separately labelled offline synthetic ASR/model-load smoke using public prepared assets can verify resource completeness without microphone/screen/account access. No real capture, user documents, Keychain or external model inference is authorized by the packaging test. Actual UI/account/privacy/resource acceptance remains distinct.

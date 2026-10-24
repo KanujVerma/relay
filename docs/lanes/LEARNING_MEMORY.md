@@ -20,6 +20,12 @@ The native API-red failed because LearningSessionMemory did not exist. The green
 
 Independent root review found that a replacement card currently loses pending-card ambiguity and zero-overlap quotes can enter unrelated requests. b010 remains unaccepted. Original regression fixtures are written before fixes and queued for the serial native lease, together with separate actual fresh-capture and exact duplicate-binding tests. The Model availability hook will run after the outer panel.accept return; its onChange/drain is still inside the native authority lock and cannot host the observer.
 
+## Personal presentation component
+
+The controller approved a deterministic personal-route adaptation. The actual approved-fact renderer now changes only its fixed neutral coaching lead for concise/stepwise wording. Complete points, actor labels, qualifiers and selected fact IDs stay byte-exact. Raw learning examples never supply personal card text. Explicit current wording/length requests and any staged explicit guide suppress inferred style. Only an actually applied fixed lead reports learningMemoryRevision. Source retirement makes that claimed use noncurrent, and no model is called.
+
+The new actual approved-résumé baseline/adapted fixture first failed on the unchanged lead, then60 focused learning/preferences/résumé/personal/query cases passed in0.671s. The paired native learningMemoryRevision decoder/currentness join remains required before enabling this path in the app; this Python component alone is not product acceptance.
+
 ## Next exact action
 
 Obtain accepted Notesv2 storage ref, then complete pure deterministic derivation and schema3 with exact source support validation/deletion/expiry/undo/restart tests. Wire one after-drain actual Model availability seam shared with descriptive latency, request bridge/currentness, and inspectable opt-in/why/undo controls. No store/schema/current Model integration or later-session end-to-end claim is made at this checkpoint.

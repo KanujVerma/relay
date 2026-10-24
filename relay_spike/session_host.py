@@ -325,8 +325,6 @@ class SessionHost:
 
     def _route(self,req):
         if self._personal_question(req.question):
-            self.response_preferences.discard(req.native)
-            self.learning_memory.discard(req.native)
             discard=getattr(self.supplemental_provider,'discard_staged',None)
             if callable(discard):discard()
             self._personal(req);return
@@ -457,12 +455,22 @@ class SessionHost:
 
     def _personal(self,req):
         bundle=req.bundle
+        explicit_guide=self.response_preferences.has_offer(req.native)
+        self.response_preferences.discard(req.native)
         if bundle is None or not bundle.facts or bundle.status=='conflict':
+            self.learning_memory.discard(req.native)
             self._result(req,'clarify','personal_context_missing');return
         try:
-            from .resume_personal import render_personal
-            facts,card=render_personal(bundle)
-            self._result(req,'answer','grounded_personal',card,kind='generated_suggestion',provenance={'personal':True,'contextRevision':bundle.revision,'facts':[{'factID':f.fact_id,'sourceID':f.source_id,'actor':f.actor,'revision':f.revision} for f in facts],'checks':['host_exact_approved_facts']})
+            from .resume_personal import render_personal, inferred_personal_presentation
+            self.learning_memory.claim(req.native)
+            learning=self.learning_memory.prompt_for(req,has_explicit_guide=explicit_guide)
+            presentation=inferred_personal_presentation(req.display_question,learning['adjustments'] if learning else (),explicit_guide=explicit_guide)
+            facts,card=render_personal(bundle,presentation=presentation)
+            if presentation is None:self.learning_memory.omitted(req)
+            provenance={'personal':True,'contextRevision':bundle.revision,'facts':[{'factID':f.fact_id,'sourceID':f.source_id,'actor':f.actor,'revision':f.revision} for f in facts],'checks':['host_exact_approved_facts']}
+            revision=self.learning_memory.used_revision(req)
+            if revision is not None:provenance['learningMemoryRevision']=revision
+            self._result(req,'answer','grounded_personal',card,kind='generated_suggestion',provenance=provenance)
         except (CardError,WireError): self._result(req,'abstain','personal_detail_budget')
 
     async def _generate(self,req,dialogue):

@@ -89,7 +89,14 @@ def resolve_entry_mentions(question, aliases):
     return {owner for name in names for owner in owners[name]}, names, ambiguous
 
 
-def render_personal(bundle):
+def inferred_personal_presentation(question, adjustments, *, explicit_guide=False):
+    """Fixed organization only; current wording/length choices always win."""
+    if explicit_guide or re.search(r"\b(?:short(?:er)?|long(?:er)?|detail(?:ed)?|brief(?:ly)?|concise|quick(?:ly)?|steps?|bullets?|wording|phrase|tone|examples?|sentences?|paragraphs?|exactly|verbatim|only|overview|formal|informal|casual|star)\b",question,re.I):
+        return None
+    return next((value for value in adjustments if value in ('concise_lead','stepwise')),None)
+
+
+def render_personal(bundle, *, presentation=None):
     """Choose complete fitting units, retaining every reviewed qualifier."""
     facts, points, kinds = [], [], set()
     labels = {'self': 'Your contribution', 'team': 'Team contribution', 'teammate': 'Teammate contribution'}
@@ -114,4 +121,6 @@ def render_personal(bundle):
         if len(points) == 2: break
     if not points: raise CardError('personal_detail_budget')
     lead = 'Start with these confirmed details.' if bundle.intent == 'overview' else 'Use these confirmed details; add only what you can personally support.'
+    if presentation == 'concise_lead':lead='Use confirmed details only.'
+    elif presentation == 'stepwise':lead='Explain each confirmed detail in a short step.'
     return tuple(facts), {'lead': lead, 'points': points, 'detail': None}

@@ -14,6 +14,7 @@ from tests.test_user_question import question, card
 from tests.test_response_preferences import offer as guide_offer
 from tests.test_session_host import run_interactive_child
 from relay_spike.panel_wire import encode_frame
+import tests.test_resume_personal_answers as resume_fixture
 
 
 def offer(native, **changes):
@@ -134,3 +135,31 @@ class LearningChildTests(unittest.TestCase):
         self.assertEqual(code,0,errors);self.assertEqual(errors,b'')
         answer=next(row for row in rows if row.get('disposition')=='answer')
         self.assertEqual(answer['requestID'],native['requestID']);self.assertEqual(answer['provenance']['learningMemoryRevision'],value['memoryRevision'])
+
+
+class LearningPersonalHostTests(unittest.IsolatedAsyncioTestCase):
+    async def test_actual_confirmed_personal_renderer_adapts_only_fixed_lead_with_zero_model_calls(self):
+        host,out,_,_=await resume_fixture.ResumePersonalAnswers.prepared(self)
+        first=question(host,'Tell me about yourself.');await host.handle_user_question(first);await host.drain()
+        baseline=copy.deepcopy(out[-1]);native=question(host,'Tell me about yourself.')
+        value=offer(native,scope='recruiter',continuity=[],examples=[{'sourceID':'original-mic-7','text':'I invented a credential that is not approved.'}])
+        host.handle_learning_memory(value);await host.handle_user_question(native);await host.drain();adapted=out[-1]
+        self.assertEqual(adapted['card']['lead'],'Use confirmed details only.')
+        self.assertEqual(adapted['card']['points'],baseline['card']['points'])
+        self.assertEqual(adapted['provenance']['facts'],baseline['provenance']['facts'])
+        self.assertEqual(adapted['provenance']['learningMemoryRevision'],value['memoryRevision'])
+        self.assertNotIn('invented',str(adapted['card']));self.assertEqual(host.model_requests,0)
+        host.handle_learning_memory_retirement(retire(value))
+        self.assertFalse(host.learning_memory.current_for(host.active))
+
+    async def test_current_explicit_length_and_saved_guide_suppress_inferred_personal_lead(self):
+        host,out,_,_=await resume_fixture.ResumePersonalAnswers.prepared(self)
+        for text,guide in [('Tell me about yourself in detail.',False),('Tell me about yourself.',True)]:
+            with self.subTest(text=text,guide=guide):
+                native=question(host,text);value=offer(native,scope='recruiter',continuity=[])
+                host.handle_learning_memory(value)
+                if guide:host.handle_response_preferences(guide_offer(native,guidance='Use a detailed explanation.'))
+                await host.handle_user_question(native);await host.drain()
+                self.assertEqual(out[-1]['card']['lead'],'Start with these confirmed details.')
+                self.assertNotIn('learningMemoryRevision',out[-1]['provenance'])
+        self.assertEqual(host.model_requests,0)

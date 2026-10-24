@@ -46,3 +46,5 @@ Current accepted heads, hosted checks and remaining integration gates live in [B
 - [review-saved-context-app-2b73674.md](review-saved-context-app-2b73674.md)
 
 These are local scoped independent reviews, not GitHub approval or a main merge. The b431 report preserves its original P2; d969 closes it. Joined root source db768fd independently passes129 panel/app cases collected,124pass/5opt-in skips.
+
+- [Protected account storage/key checkpoint728](review-account-storage-728e929.md): accepted at storage boundary; actual account control/bootstrap/product UI remains separate.

@@ -141,6 +141,20 @@ private final class AppHistoryStorage:ProtectedSnapshotStorage,@unchecked Sendab
         XCTAssertNil(model.snapshot.card);XCTAssertEqual(starts.count,1)
         XCTAssertNil(model.history.snapshot.recordingID);XCTAssertEqual(model.history.snapshot.records.count,count)
     }
+    func testWarmMissingOrCorruptVaultCannotBeRecreatedByAnotherRememberedStart()async throws{
+        for corrupt in [false,true]{
+            let(model,directory,_,_,_,starts)=try rig();try await model.history.enableSaving()
+            await model.start();try await until{!model.assistant.transcript.snapshot.rows.isEmpty};await model.stop()
+            let path=directory.appendingPathComponent("Relay/History/history.relayvault")
+            if corrupt{try Data("synthetic-invalid-history-ciphertext".utf8).write(to:path)}else{try FileManager.default.removeItem(at:path)}
+            await model.start()
+            XCTAssertFalse(model.running,"An open memory queue cannot replace actual existing-vault validation")
+            XCTAssertEqual(starts.count,1)
+            if corrupt{XCTAssertEqual(try Data(contentsOf:path),Data("synthetic-invalid-history-ciphertext".utf8))}
+            else{XCTAssertFalse(FileManager.default.fileExists(atPath:path.path))}
+            await model.shutdown()
+        }
+    }
     func testOptInSyntheticHistoryRendersNeverOrderAWindowOnScreen()async throws{
         guard let path=ProcessInfo.processInfo.environment["RELAY_HISTORY_RENDER_DIRECTORY"] else{throw XCTSkip("Explicit synthetic offscreen History exports only.")}
         let directory=URL(fileURLWithPath:path,isDirectory:true)

@@ -98,8 +98,18 @@ final class HistoryStore:@unchecked Sendable {
     func open(create:Bool,admission:@Sendable()->Bool={true})throws{
         try lock.withLock{
             guard (16_384...HistoryBounds.softSnapshot).contains(contentLimitBytes) else{throw HistoryError.invalid}
-            guard queue==nil else{_=try required();return}
             guard admission() else{throw HistoryError.stale}
+            if queue != nil{
+                // A warm private queue is not proof that its existing vault is
+                // still available/current. Start must not overwrite corruption
+                // or a different owner's snapshot using cached plaintext.
+                let current=try required()
+                guard try storage.exists() else{throw HistoryError.missing}
+                let actual=try storage.load()
+                guard try actual==HistorySnapshotCodec.encode(current) else{throw HistoryError.invalid}
+                guard admission() else{throw HistoryError.stale}
+                return
+            }
             let candidate:DatabaseQueue
             if try storage.exists(){candidate=try HistorySnapshotCodec.decode(storage.load())}
             else{

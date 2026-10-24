@@ -14,11 +14,47 @@ public struct ProfileReviewCard: Decodable, Sendable, Identifiable, Equatable {
     public let actorHint: String
     public let fingerprint: String
     public let locator: String?
+    public let schemaVersion: Int?
+    public let claimKind: String?
+    public let reviewContext: ProfileResumeContext?
+    public let contextSHA256: String?
+    public let snippetSHA256: String?
     enum CodingKeys: String, CodingKey {
         case factID = "fact_id", sourceID = "source_id", snippet
         case sourceSHA256 = "source_sha256", spanStart = "span_start", spanEnd = "span_end"
         case reviewRevision = "review_revision", actorHint = "actor_hint", fingerprint = "card_fingerprint"
-        case locator
+        case locator, schemaVersion = "schema_version", claimKind = "claim_kind"
+        case reviewContext = "review_context", contextSHA256 = "context_sha256", snippetSHA256 = "snippet_sha256"
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        factID = try c.decode(String.self, forKey: .factID); sourceID = try c.decode(String.self, forKey: .sourceID)
+        snippet = try c.decode(String.self, forKey: .snippet); sourceSHA256 = try c.decode(String.self, forKey: .sourceSHA256)
+        spanStart = try c.decode(Int.self, forKey: .spanStart); spanEnd = try c.decode(Int.self, forKey: .spanEnd)
+        reviewRevision = try c.decode(Int.self, forKey: .reviewRevision); actorHint = try c.decode(String.self, forKey: .actorHint)
+        fingerprint = try c.decode(String.self, forKey: .fingerprint); locator = try c.decodeIfPresent(String.self, forKey: .locator)
+        schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion)
+        claimKind = try c.decodeIfPresent(String.self, forKey: .claimKind)
+        reviewContext = try c.decodeIfPresent(ProfileResumeContext.self, forKey: .reviewContext)
+        contextSHA256 = try c.decodeIfPresent(String.self, forKey: .contextSHA256)
+        snippetSHA256 = try c.decodeIfPresent(String.self, forKey: .snippetSHA256)
+        guard let schemaVersion else {
+            guard !c.contains(.claimKind), !c.contains(.reviewContext), !c.contains(.contextSHA256) else { throw ProfileError.invalidPayload }
+            return
+        }
+        try ProfileResumeValidation.keys(decoder, ["schema_version","fact_id","source_id","source_sha256","snippet",
+            "snippet_sha256","span_start","span_end","review_revision","actor_hint","card_fingerprint","locator",
+            "claim_kind","review_context","context_sha256"])
+        guard schemaVersion == 2, let claimKind, let reviewContext, let contextSHA256, let snippetSHA256, let locator,
+              ["contribution","education","employment","project","listed_skill","certification","summary"].contains(claimKind),
+              !factID.isEmpty, factID.unicodeScalars.count <= 80, !sourceID.isEmpty, sourceID.unicodeScalars.count <= 80,
+              ProfileResumeValidation.text(snippet, scalars: 600, bytes: 2400),
+              ProfileResumeValidation.span(spanStart, spanEnd, text: snippet), reviewRevision > 0,
+              ["unknown","self","team","teammate"].contains(actorHint),
+              [sourceSHA256,fingerprint,contextSHA256].allSatisfy({ ProfileResumeValidation.hex($0) }),
+              snippetSHA256 == ProfileResumeValidation.hash(snippet), ProfileResumeValidation.location(locator),
+              !reviewContext.fields.contains(where: { $0.spanStart == spanStart && $0.spanEnd == spanEnd })
+        else { throw ProfileError.invalidPayload }
     }
 }
 
@@ -27,7 +63,8 @@ public struct ProfileSourceSummary: Decodable, Sendable, Identifiable {
     public let sourceID: String
     public let label: String
     public let purpose: String
-    enum CodingKeys: String, CodingKey { case sourceID = "source_id", label, purpose }
+    public let resumeCoverage: ProfileResumeCoverage?
+    enum CodingKeys: String, CodingKey { case sourceID = "source_id", label, purpose, resumeCoverage = "resume_coverage" }
 }
 
 public struct ProfileJobCard: Decodable, Sendable {
@@ -207,13 +244,26 @@ public struct ProfileExistingFact: Decodable, Sendable {
             var request: [String: Any] = ["command": "decide", "fact_id": displayed.factID,
                 "fingerprint": displayed.fingerprint, "decision": "approve", "actor": actor, "claim_key": claimKey]
             if let replaces { request["replaces_fact_id"] = replaces.factID }
+            if displayed.schemaVersion == 2 {
+                request["command"] = "decide_v2"; request["card_version"] = 2
+                request["context_sha256"] = displayed.contextSHA256
+                request["replaces_fact_id"] = replaces?.factID as Any? ?? NSNull()
+            }
             return try await self.client.command(request)
         }
     }
     public func reject(_ displayed: ProfileReviewCard) async {
         guard displayed == card else { return }
-        await mutate { try await self.client.command(["command": "decide", "fact_id": displayed.factID,
-            "fingerprint": displayed.fingerprint, "decision": "reject"]) }
+        await mutate {
+            var request: [String: Any] = ["command": "decide", "fact_id": displayed.factID,
+                "fingerprint": displayed.fingerprint, "decision": "reject"]
+            if displayed.schemaVersion == 2 {
+                request["command"] = "decide_v2"; request["card_version"] = 2
+                request["context_sha256"] = displayed.contextSHA256
+                request["actor"] = NSNull(); request["claim_key"] = NSNull(); request["replaces_fact_id"] = NSNull()
+            }
+            return try await self.client.command(request)
+        }
     }
     public func lookupExisting(claimKey: String) async {
         guard opened, !busy else { return }

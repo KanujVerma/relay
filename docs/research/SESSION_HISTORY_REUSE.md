@@ -2,6 +2,8 @@
 
 Research date: 2026-10-23. Proposal baseline: `5575b184a081450308b88b622ec5fcb5eb81318a`. This is a read-only source comparison plus an isolated, fictional-data storage probe. No production dependency, history schema, capture observer, credential or storage policy has been adopted. [Proposed design and approval seams](../superpowers/specs/2026-10-23-local-session-history-design.md).
 
+Implementation update after controller approval: the separate `feature/local-session-history-2026-10-23` lane at baseac70 now actually invokes the exact GRDB pin for its new in-memory ledger, unmodified `DatabaseQueue`/`DatabaseReader.backup`, owned read/write transactions, throwing `Row.decode` and real close. Its own capped serialization adapter and inherited CryptoKit snapshot primitive are used. The native bundle/full MIT notice are retained by product assembly. The earlier "no adoption" statement describes frozen designe242; no VoiceInk/Anarlog/competitor code, assets or tests are copied. Complete app/coordinator exposure remains a later reviewed checkpoint.
+
 ## Recommended reusable component: GRDB
 
 Pin [GRDB.swift v7.11.1](https://github.com/groue/GRDB.swift/tree/b83108d10f42680d78f23fe4d4d80fc88dab3212), commit `b83108d10f42680d78f23fe4d4d80fc88dab3212`. The release was published June 18, 2026; the exact commit, not a mutable branch or range, is the proposed adoption identity. [MIT license](https://github.com/groue/GRDB.swift/blob/b83108d10f42680d78f23fe4d4d80fc88dab3212/LICENSE), license blob `550890c8912ca08ff000249777b9eeb46411f189`.

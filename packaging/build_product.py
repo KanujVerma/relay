@@ -23,7 +23,7 @@ import urllib.request
 ROOT=Path(__file__).resolve().parents[1]
 MAGIC={b"\xcf\xfa\xed\xfe",b"\xfe\xed\xfa\xcf",b"\xce\xfa\xed\xfe",b"\xfe\xed\xfa\xce",b"\xca\xfe\xba\xbe",b"\xbe\xba\xfe\xca"}
 SYSTEM=("/System/Library/","/usr/lib/")
-RESOURCE_BUNDLES=("KeyboardShortcuts_KeyboardShortcuts.bundle","FluidAudio_LuxTtsG2pResources.bundle")
+RESOURCE_BUNDLES=("KeyboardShortcuts_KeyboardShortcuts.bundle","FluidAudio_LuxTtsG2pResources.bundle","GRDB_GRDB.bundle")
 
 
 def build_environment(work,parent):
@@ -204,6 +204,11 @@ def smoke(helper,python,environment):
     run([python,"-m","unittest","discover","-s","tests","-p","test_product_runtime_bundle.py","-v"],env=child)
 
 
+def copy_native_resources(binary_directory,resources):
+    for name in RESOURCE_BUNDLES: shutil.copytree(binary_directory/name,resources/name,symlinks=True)
+    shutil.copy2(ROOT/"spikes/macos-panel/THIRD_PARTY_NOTICES.md",resources/"RelayNativeNotices.txt")
+
+
 def assemble(work,helper,native_scratch,environment,output,configuration):
     arguments=["swift","build","--disable-sandbox","--disable-automatic-resolution","--configuration",configuration,"--jobs","4","--package-path",ROOT/"spikes/macos-panel","--scratch-path",native_scratch,"--cache-path",work/"swift-cache","--product","relay-panel-session"]
     run(arguments,env=environment)
@@ -218,7 +223,7 @@ def assemble(work,helper,native_scratch,environment,output,configuration):
     shutil.copy2(binary_directory/"relay-panel-session",stage/"Contents/MacOS/relay-panel-session")
     shutil.copy2(ROOT/"spikes/macos-panel/Packaging/Info.plist",stage/"Contents/Info.plist")
     shutil.copytree(helper,stage/"Contents/Helpers/RelayRuntime.app",symlinks=True)
-    for name in RESOURCE_BUNDLES: shutil.copytree(binary_directory/name,stage/"Contents/Resources"/name,symlinks=True)
+    copy_native_resources(binary_directory,stage/"Contents/Resources")
     frameworks=binary_directory/"PackageFrameworks"
     if frameworks.exists(): shutil.copytree(frameworks,stage/"Contents/Frameworks",dirs_exist_ok=True,symlinks=True)
     native=stage/"Contents/MacOS/relay-panel-session"

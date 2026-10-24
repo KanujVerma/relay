@@ -6,6 +6,7 @@ on:
       - 'spikes/macos-panel/**'
       - 'spikes/macos-session/**'
       - 'spikes/macos-profile/**'
+      - 'spikes/macos-account/**'
       - 'spikes/macos-context/**'
       - 'spikes/macos-controls/**'
       - 'spikes/macos-composition/**'
@@ -42,8 +43,8 @@ jobs:
           python-version: '3.12'
       - name: Show Swift version
         run: swift --version
-      - name: Install pinned HTTP transport dependency (no models)
-        run: python -m pip install httpx==0.28.1
+      - name: Install pinned protocol and protected-storage test dependencies (no models)
+        run: python -m pip install httpx==0.28.1 PyJWT==2.15.1 cryptography==50.0.2
       - name: Test Python transport and image ports with synthetic inputs
         run: python -m unittest discover -s tests -q
       - name: Test native packages with synthetic inputs only
@@ -51,7 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           export RELAY_TEST_PYTHON="$(command -v python3)"
-          for package in macos-session macos-profile macos-context macos-controls macos-composition macos-panel; do
+          for package in macos-session macos-profile macos-account macos-context macos-controls macos-composition macos-panel; do
             if [[ -f "spikes/$package/Package.swift" ]]; then
               swift test --package-path "spikes/$package"
             else

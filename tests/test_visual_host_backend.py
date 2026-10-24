@@ -406,6 +406,26 @@ class VisualBackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((self.out[-1]['status'],self.out[-1]['reasonCode']),('unavailable','inference_disabled'))
 
 
+    async def test_response_preferences_compose_with_actual_original_image_use(self):
+        from tests.test_response_preferences import offer
+        await self.verify()
+        await self.host.handle(start());await self.host.handle(speech(2));await self.host.handle(end(3))
+        event=final(4,'Explain dictionary lookups.');text,images=screen_frames(event)
+        self.assertTrue(self.provider.stage(wire(text)))
+        for image in images:self.assertTrue(self.provider.stage_image(wire(image)))
+        preference=offer(event);self.assertTrue(self.host.handle_response_preferences(preference))
+        await self.host.handle(event);await self.host.drain()
+        answer=self.out[-1];self.assertEqual(answer['disposition'],'answer')
+        self.assertEqual(answer['provenance']['responsePreferencesRevision'],preference['preferencesRevision'])
+        self.assertEqual(answer['provenance']['taskContext']['imageDigest'],'b'*64)
+        self.assertEqual(answer['provenance']['taskContext']['provenance'],'local_ocr')
+        posts=[body for method,body in self.calls if method=='POST']
+        self.assertEqual(len(posts),2)  # One explicit probe, one original image answer.
+        parts=posts[-1]['input'][0]['content'];prompt=json.loads(parts[0]['text'])
+        self.assertEqual(prompt['response_preferences']['guidance'],preference['guidance'])
+        self.assertEqual(parts[1]['type'],'input_image');self.assertEqual(self.host.model_requests,1)
+
+
 class NoInferenceVisualTests(unittest.TestCase):
     def test_default_helper_control_is_inert_and_strict(self):
         out = []; host = SessionHost(emit=out.append)

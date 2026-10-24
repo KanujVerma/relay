@@ -14,6 +14,8 @@ struct LiveSessionView:View {
     var elapsed:String?
     var fixture=false
     var assistant:TypedAssistantController?
+    var guideLabel:String?
+    var onResponsePreferences:(()->Void)?
     var attachScroll:(@MainActor (NSWindow,NSScrollView?)->Void)?
     @Binding var expanded:Bool
     @Binding var detailExpanded:Bool
@@ -23,7 +25,7 @@ struct LiveSessionView:View {
             SessionToolbar(state:state,elapsed:elapsed,expanded:expanded,onExpand:{expanded.toggle();if !expanded{detailExpanded=false}},onAction:onAction)
             if expanded {
                 VStack(spacing:0){
-                    HStack(spacing:8){Image(systemName:"sparkles").foregroundStyle(RelayTheme.muted);Text("Live assistance").font(.system(size:13,weight:.semibold));Spacer();if fixture{Text("SYNTHETIC DEMO").font(.system(size:10,weight:.medium)).foregroundStyle(RelayTheme.muted)};RelayIconButton(title:"My Context",symbol:"person.text.rectangle",enabled:!fixture){onAction(.context)};RelayIconButton(title:"Settings",symbol:"gearshape"){onAction(.settings)};RelayIconButton(title:"Hide Relay window",symbol:"minus"){onAction(.hide)}}.padding(.horizontal,12).frame(height:56)
+                    HStack(spacing:8){Image(systemName:"sparkles").foregroundStyle(RelayTheme.muted);Text("Live assistance").font(.system(size:13,weight:.semibold));Spacer();if let guideLabel,let onResponsePreferences{ResponseGuideButton(name:guideLabel,action:onResponsePreferences)};if fixture{Text("SYNTHETIC DEMO").font(.system(size:10,weight:.medium)).foregroundStyle(RelayTheme.muted)};RelayIconButton(title:"My Context",symbol:"person.text.rectangle",enabled:!fixture){onAction(.context)};RelayIconButton(title:"Settings",symbol:"gearshape"){onAction(.settings)};RelayIconButton(title:"Hide Relay window",symbol:"minus"){onAction(.hide)}}.padding(.horizontal,12).frame(height:56)
                     Divider().overlay(RelayTheme.line)
                     if let assistant{AssistantComposerView(assistant:assistant);Divider().overlay(RelayTheme.line)}
                     ScrollView{
@@ -51,10 +53,12 @@ struct LiveSessionView:View {
         }.padding(8).foregroundStyle(.white).preferredColorScheme(.dark).frame(width:706)
     }
     @ViewBuilder private var emptyContent:some View {
+        let message=RelayEmptyAnswerPresentation(state:state,status:status,hasQuestion:question != nil)
         VStack(alignment:.leading,spacing:12){
-            Image(systemName:state.paused ? "pause.circle":state.stopping ? "stop.circle":"waveform").font(.system(size:26,weight:.light)).foregroundStyle(RelayTheme.muted)
-            Text(state.paused ? "Take your time.":state.stopping || state.assistantClosing ? "Finishing the session…":question != nil ? "Thinking it through…":state.running ? "Listening for the next question.":"Ask Relay a question.").font(.system(size:19,weight:.medium))
-            Text(state.paused ? "Resume starts a fresh conversation. Your saved context stays available.":state.stopping || state.assistantClosing ? "Relay is waiting for active work to finish.":state.running ? "Talking points appear automatically as the conversation develops.":"Audio recording is off. Type a question or follow-up above.").font(.system(size:13)).lineSpacing(5).foregroundStyle(RelayTheme.muted)
+            Image(systemName:message.symbol).font(.system(size:26,weight:.light)).foregroundStyle(RelayTheme.muted)
+            Text(message.title).font(.system(size:19,weight:.medium))
+            Text(message.detail).font(.system(size:13)).lineSpacing(5).foregroundStyle(RelayTheme.muted)
+            if let action=message.recoveryAction{Button("Connect ChatGPT"){onAction(action)}.buttonStyle(RelayPrimaryButtonStyle())}
         }.padding(.vertical,26).frame(maxWidth:.infinity,alignment:.leading)
     }
 }

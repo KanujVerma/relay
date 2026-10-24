@@ -1,0 +1,5 @@
+SQLite 3.54.0; OMIT_DESERIALIZE=0
+direct SQLite: bounded serialize/deserialize + integrity + memory temp + actual size-limit rollback PASS (8192 bytes)
+GRDB pinned v7.11.1: abort backup preserves prior + successful backup + bounded serializer bridge + writable restore PASS
+GRDB actual close: waits for held writer; read after close rejects PASS
+owned working directory + TMPDIR: zero database/WAL/journal/temp files PASS

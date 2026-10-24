@@ -2,7 +2,7 @@ import Combine
 import Foundation
 import RelayNativeSession
 
-public enum TranscriptSource:UInt32,Sendable {case microphone=1,selectedAppAudio=2
+public enum TranscriptSource:UInt32,Sendable,Codable {case microphone=1,selectedAppAudio=2
     public var label:String{self == .microphone ? "Microphone":"Selected app audio"}
 }
 public enum SessionActivityPhase:Sendable {case idle,listening,paused,unavailable}
@@ -33,6 +33,9 @@ public struct SessionActivitySnapshot:Sendable,Equatable {
     private var activities:[String:Activity]=[:]
     private var epoch:UInt64=0;private var sequence:UInt64=0;private var sealed=true
     private var bytes=0
+    /// Read-only, synchronous and default nil. The receiver may only enqueue
+    /// bounded optional work; it never modifies the original native event.
+    public var onHistoryObservation:(@MainActor (ValidatedTranscriptObservation)->Void)?
     public init(){}
     public func pause(){sealed=true;activities.removeAll();snapshot.phase = .paused;changed()}
     public func end(){sealed=true;activities.removeAll();snapshot.rows=[];bytes=0;snapshot.omittedRowCount=0;snapshot.phase = .idle;changed()}
@@ -47,26 +50,31 @@ public struct SessionActivitySnapshot:Sendable,Equatable {
         if event.kind == .sessionStarted {
             guard event.eventSequence==1,event.sessionEpoch>0,event.captureSessionID != snapshot.sessionID else{return}
             snapshot=SessionActivitySnapshot(sessionID:event.captureSessionID,phase:.listening)
-            epoch=event.sessionEpoch;sequence=1;sealed=false;activities.removeAll();bytes=0;changed();return
+            epoch=event.sessionEpoch;sequence=1;sealed=false;activities.removeAll();bytes=0
+            onHistoryObservation?(ValidatedTranscriptObservation(event:event));changed();return
         }
         guard snapshot.sessionID==event.captureSessionID,epoch==event.sessionEpoch,event.eventSequence>sequence else{return}
         if sealed {
             // Preserve the original scope/high-water mark while ignoring late
             // additions. Denial-only privacy removal still applies after Pause.
             sequence=event.eventSequence
+            if [.stopping,.stopped].contains(event.kind){onHistoryObservation?(ValidatedTranscriptObservation(event:event));return}
             guard [.sourceUnavailable,.discontinuity].contains(event.kind),
                   let code=event.sourceCode,let source=TranscriptSource(rawValue:code),event.streamGeneration != nil,
                   event.payload==["reasonCode":.string("consent_revoked")] else{return}
+            onHistoryObservation?(ValidatedTranscriptObservation(event:event))
             purge(source);activity(source,.unavailable);changed();return
         }
         guard sequence<UInt64.max,event.eventSequence==sequence+1 else{
-            activities.removeAll();snapshot.phase = .unavailable;sealed=true;changed();return
+            activities.removeAll();snapshot.phase = .unavailable;sealed=true
+            onHistoryObservation?(ValidatedTranscriptObservation(event:event,sequenceGap:true));changed();return
         }
         sequence=event.eventSequence
-        if [.stopping,.stopped].contains(event.kind){end();return}
+        if [.stopping,.stopped].contains(event.kind){onHistoryObservation?(ValidatedTranscriptObservation(event:event));end();return}
         guard let code=event.sourceCode,let source=TranscriptSource(rawValue:code),let generation=event.streamGeneration else{return}
         let p=event.payload
         if [.sourceUnavailable,.discontinuity].contains(event.kind){
+            onHistoryObservation?(ValidatedTranscriptObservation(event:event))
             activities=activities.filter{!$0.key.hasPrefix("\(code):")};activity(source,.unavailable)
             if p["reasonCode"] == .string("consent_revoked") {
                 purge(source)
@@ -86,6 +94,11 @@ public struct SessionActivitySnapshot:Sendable,Equatable {
             guard let original=activities.removeValue(forKey:key),let end=original.end,
                   let row=validated(event,source:source,generation:generation,id:id,original:original.start,end:end) else{return}
             guard !snapshot.rows.contains(where:{$0.id==row.id}) else{return}
+            if let observer=onHistoryObservation,let final=try? HistoryFinal(event,row:row){observer(ValidatedTranscriptObservation(event:event,final:final))}
+            // Optional observation may synchronously End or revoke this source.
+            // Its saved prefix is independent; this old consume cannot restore
+            // ephemeral text after the original scope/high-water was retired.
+            guard !sealed,snapshot.sessionID==event.captureSessionID,epoch==event.sessionEpoch,sequence==event.eventSequence else{return}
             snapshot.rows.append(row);snapshot.rows.sort{($0.startUptimeNanoseconds,$0.id)<($1.startUptimeNanoseconds,$1.id)}
             bytes+=row.text.utf8.count
             while snapshot.rows.count>64 || bytes>65_536 {

@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 import RelaySessionPanel
+import RelayControls
 @testable import RelayPanelSession
 
 @MainActor final class ProductRuntimeApplicationTests:XCTestCase {
@@ -50,6 +51,22 @@ import RelaySessionPanel
             try await Task.sleep(for:.milliseconds(2))
         }
         XCTAssertTrue(model.running);XCTAssertNotNil(model.snapshot.question);XCTAssertNotNil(model.snapshot.card)
+        let question="Write a Python function to get the first item or None when a list is empty."
+        model.assistant.draft=question;model.assistant.submitDraft()
+        for _ in 0..<5000{
+            if model.snapshot.question==question,model.snapshot.card != nil{break}
+            try await Task.sleep(for:.milliseconds(2))
+        }
+        XCTAssertEqual(model.snapshot.question,question);XCTAssertNotNil(model.snapshot.card)
+        let replacement=model.snapshot.replacement
+        try model.perform(.requestHelp)
+        for _ in 0..<5000{
+            if model.snapshot.replacement>replacement,model.snapshot.card != nil{break}
+            try await Task.sleep(for:.milliseconds(2))
+        }
+        XCTAssertGreaterThan(model.snapshot.replacement,replacement)
+        XCTAssertEqual(model.snapshot.question,question);XCTAssertNotNil(model.snapshot.card)
+        XCTAssertEqual(model.assistant.transcript.snapshot.rows.count,1,"typed questions must not become recognized speech")
         await model.stop()
         XCTAssertFalse(model.running);XCTAssertFalse(model.stopping);XCTAssertNil(model.snapshot.card)
     }

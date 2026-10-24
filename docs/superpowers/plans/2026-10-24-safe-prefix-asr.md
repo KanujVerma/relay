@@ -43,20 +43,22 @@ new `spikes/macos-session/Tests/RelayNativeSessionTests/ActivityPreprocessingTes
 lane with `begin`, `offer`, `close`, `cancel`, `waitForQuiescence` and a bounded
 fixed diagnostics value for synthetic test observations.
 
-- [ ] Write fake-actor cases proving original key, contiguous 5,120-piece order,
+- [x] Write fake-actor cases proving original key, contiguous 5,120-piece order,
   exact final suffix and one finish. Example assertion:
   `XCTAssertEqual(await backend.consumed, originalClosedSpan)`.
-- [ ] Write held accept + queue saturation case: before release assert zero reset
+- [x] Write held accept + queue saturation case: before release assert zero reset
   and zero final; after original closure/release assert one full legacy call,
   exactly one final and no second prefix restart for that key.
-- [ ] Obtain root lease and run `swift test --package-path spikes/macos-session
+- [x] Obtain root lease and run `swift test --package-path spikes/macos-session
   --filter ActivityPreprocessingTests` with the required existing-cache driver;
   retain expected missing-API output, then release the lease.
-- [ ] Implement bounded owned feeds with independently deliverable close/cancel
+- [x] Implement bounded owned feeds with independently deliverable close/cancel
   state, one fallback latch and one serial worker. Never await model work under
   its queue lock. Preserve original ClosedActivity until completion.
 - [ ] Obtain the next lease; run the same cases plus existing session-pipeline
-  cancellation/clock/late-source controls. Record results and commit inert core.
+  cancellation/clock/late-source controls. Four-case core green completed under
+  the granted lease; existing controls remain part of the affected integration
+  gate. The inert core checkpoint does not claim them or runtime activation.
 
 ## Task 2: Actual pinned VAD watermark and original single backend
 

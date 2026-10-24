@@ -22,3 +22,11 @@ Separate commit87af54e adds actions/setup-python@v5/Python3.12 to contract CI an
 - Actual Model+MockTransport rotating-bearer and stale/no-POST cases; relocated newly built frozen runtime account/bootstrap/fixture/reference checks; final hosted CI and independent precise-head review.
 
 Only generated keys/grants, public fixtures, mocked HTTP and owned temporary pipes/processes were used. No actual account/browser/Keychain, capture/permission, private content or paid/model network request was performed.
+
+## Owned explicit-action readiness
+
+The product adds `AccountPreparationController(account:)` with `prepare(intentID:isCurrent:) async throws` and `cancel(intentID:) async`. It is inert with AI off or an already current private selection. Otherwise one captured original caller owns restore/select/catalog, same-intent waiters coalesce without replacing that predicate, and competing intents cannot pass the pending owner. Stop cancellation denies the original caller before awaiting actual account cleanup; a wrong-intent cancellation has no effect. Model will inject this controller's `hasCurrentCaller` into its base account idle guard and expose the agreed explicit Start/Send hook. No typing/render path performs preparation, and no request authority or source pixels are created here.
+
+20 native tests pass3.677s (`/private/tmp/relay-account-readiness-final.log`). The positive coalesced-waiter case first exposed a completed-owner cleanup race, then passed while retaining its original issued selection check. Stale-original/duplicate predicate and held retirement cancellation cases prove zero key/child IO when the original caller retires. Actual Model/transport join remains pending.
+
+Source-entry portability follow-up5067392 gives only source-test children an explicit repository import fixture and temporary HOME. Product source never gained a repository/Python fallback. Clean `env -u PYTHONPATH` focused53 cases pass2.955s. Full657-case normal discovery had24 optional skips and only two existing sandbox-blocked loopback binds; those exact two owned-localhost tests pass0.236s with the scoped permitted retry. Final hosted product-head CI remains required.

@@ -35,6 +35,10 @@ private final class FailingHistoryStorage:ProtectedSnapshotStorage,@unchecked Se
     mutating func start(_ store:SessionTranscriptStore){
         store.observe(event(.sessionStarted,payload:["selectedBundleID":.string("com.example.fixture"),"microphoneEnabled":.bool(true)]))
     }
+    mutating func stop(quiesced:Bool=true,into store:SessionTranscriptStore){
+        store.observe(event(.stopping,payload:["reasonCode":.string("user_stop")]))
+        store.observe(event(.stopped,payload:["reasonCode":.string("user_stop"),"quiesced":.bool(quiesced)]))
+    }
     mutating func final(_ index:UInt64,text:String,source:UInt32=2,into store:SessionTranscriptStore){
         store.observe(event(.speechStarted,source:source,payload:["activityID":.uint(index),"startHostTime":.uint(index*100),"detectedUptimeNanoseconds":.uint(1000),"timebase":clock]))
         store.observe(event(.speechEnded,source:source,payload:["activityID":.uint(index),"endHostTime":.uint(index*100+50),"lastSpeechInputSequence":.uint(index*2),"timebase":clock]))
@@ -56,6 +60,7 @@ private final class FailingHistoryStorage:ProtectedSnapshotStorage,@unchecked Se
         var events=HistoryTestEvents();events.start(transcript)
         events.final(1,text:"A fictional C++ queue question. 👩🏽‍💻",into:transcript)
         events.final(2,text:"My fictional microphone reply.",source:1,into:transcript)
+        events.stop(into:transcript)
         return(transcript,observations)
     }
     func testActualIssuedFinalsAndManualNotesSurviveEncryptedRestartWithOriginalIdentities()async throws{

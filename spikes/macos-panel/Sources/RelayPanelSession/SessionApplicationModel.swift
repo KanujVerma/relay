@@ -232,7 +232,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
         }
         visual.retireForHelperChange();assistant.transcript.end()
         if let oldOwner{owners.remove(oldOwner)}
-        assistantActive=false;assistantClosing=false;paused=false
+        assistantActive=false;assistantClosing=false;paused = paused && hasHistory && history.hasPausedSession
         assistant.refresh() // Keeps CURRENT preparer's draft/basis and task.
         if hasContextUse{contextUse.retireForHelperChange()}
         if let oldProfile,oldProfile.opened || oldProfile.busy{await oldProfile.close()}
@@ -252,10 +252,13 @@ private actor FixtureRecognizer: ActivityRecognizer {
     lazy var history:SessionHistoryCoordinator = {
         hasHistory=true
         let preferences:any HistorySavingPreferences=historyPreferencesOverride ?? (fixture ? FixtureHistoryPreferences():UserDefaultsHistoryPreferences())
-        let factory:@Sendable ()throws->any ProtectedSnapshotStorage=historyStorageFactory ?? {
+        let factory:@Sendable ()throws->any ProtectedSnapshotStorage
+        if let historyStorageFactory{factory=historyStorageFactory}
+        else if fixture{factory={throw HistoryError.unavailable}}
+        else{factory={
             let directory=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("Relay/History",isDirectory:true)
             return HistoryVaultStorage(directory:directory,keys:KeychainProfileKey(purpose:.history))
-        }
+        }}
         let coordinator=SessionHistoryCoordinator(storageFactory:factory,preferences:preferences,canEnable:{[weak self] in
             self?.canEnableHistory==true
         })
@@ -1172,7 +1175,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
         return !running && !starting && !stopping && !assistantClosing && !assistant.snapshot.isPreparing && !accountMutationOwned && teardown==nil && !speechSetup.snapshot.isBusy && !visual.isBusy && visual.status != .busy && profileStorage?.busy != true && !(hasContextUse && contextUse.isBusy) && !(hasHistory && history.isBusy) && !(hasResponsePreferences && responsePreferences.isBusy) && (fixture || capture.phase == .idle)
     }
     var canResume:Bool { paused && canStartSession }
-    var canEnableHistory:Bool{!running && !starting && !stopping && !paused && !assistantActive && !assistantClosing && !assistant.snapshot.isPreparing && !accountMutationOwned && !speechSetup.snapshot.isBusy && !visual.isBusy}
+    var canEnableHistory:Bool{(!fixture || historyStorageFactory != nil) && !running && !starting && !stopping && !paused && !assistantActive && !assistantClosing && !assistant.snapshot.isPreparing && !accountMutationOwned && !speechSetup.snapshot.isBusy && !visual.isBusy && !(hasResponsePreferences && responsePreferences.isBusy)}
     func beginRetirement(end:Bool,historyGap:HistoryGap?=nil) {
         denyAccountStart()
         endRequested = endRequested || end
@@ -1224,7 +1227,16 @@ private actor FixtureRecognizer: ActivityRecognizer {
                 self.error="The old helper did not acknowledge shutdown. Its profile was retired; reopen background to recover."
             }
             if let oldHistory,let oldHistoryPermit{
-                do{try await oldHistory.finishSession(oldHistoryPermit,paused:!self.endRequested)}
+                do{
+                    try await oldHistory.finishSession(oldHistoryPermit,paused:!self.endRequested)
+                    // End may escalate a Pause while its actual history save is
+                    // in flight. Finish the SAME still-current private permit;
+                    // a concurrent Lock/replacement never regains ownership.
+                    if self.endRequested,oldHistory.owns(oldHistoryPermit),oldHistory.hasPausedSession{
+                        oldHistory.retireCurrentSession()
+                        try await oldHistory.finishSession(oldHistoryPermit,paused:false)
+                    }
+                }
                 catch{self.error="Local history could not finish saving. Open History to recover its saved prefix."}
                 if self.historyPermit === oldHistoryPermit{self.historyPermit=nil}
             }

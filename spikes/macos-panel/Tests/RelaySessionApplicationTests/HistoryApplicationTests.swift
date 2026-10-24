@@ -17,17 +17,17 @@ private final class AppHistoryKey:ProfileKeyProvider,@unchecked Sendable{
 private final class AppHistoryStorage:HistoryOwnedSnapshotStorage,@unchecked Sendable{
     private let real:any HistoryOwnedSnapshotStorage
     private let lock=NSLock(),releaseGate=DispatchSemaphore(value:0)
-    private var armed=false,held=false
+    private var armed=false,held=false,skip=0
     init(_ real:any HistoryOwnedSnapshotStorage){self.real=real}
     func beginAccess(create:Bool)throws{try real.beginAccess(create:create)}
     func endAccess()throws{try real.endAccess()}
-    func holdNextSave(){lock.withLock{armed=true}}
+    func holdNextSave(skipping:Int=0){lock.withLock{armed=true;skip=skipping}}
     var isHeld:Bool{lock.withLock{held}}
     func release(){releaseGate.signal()}
     func exists()throws->Bool{try real.exists()}
     func load()throws->Data{try real.load()}
     func save(_ data:Data,createKey:Bool)throws{
-        let wait=lock.withLock{if armed{armed=false;held=true;return true};return false}
+        let wait=lock.withLock{if armed{if skip>0{skip-=1;return false};armed=false;held=true;return true};return false}
         if wait{guard releaseGate.wait(timeout:.now()+8) == .success else{throw HistoryError.unavailable};lock.withLock{held=false}}
         try real.save(data,createKey:createKey)
     }
@@ -53,6 +53,30 @@ private final class AppHistoryStorage:HistoryOwnedSnapshotStorage,@unchecked Sen
         let deadline=ContinuousClock.now+Duration.seconds(6)
         while !condition(){guard ContinuousClock.now<deadline else{throw HistoryError.unavailable};try await Task.sleep(for:.milliseconds(3))}
     }
+    func testDefaultFixtureCannotEnableOrOpenProductionHistoryStorage()async throws{
+        let python=ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"] ?? "/usr/bin/python3"
+        let model=SessionApplicationModel(arguments:["relay","--fixture-suite","coding","--repository",root.path,"--python",python])
+        XCTAssertFalse(model.canEnableHistory,"A demo without explicit synthetic storage must not reach AppSupport or Keychain")
+        // On a predecessor failure, never call a potentially real storage path.
+        guard !model.canEnableHistory else{return}
+        do{try await model.history.enableSaving();XCTFail("Fixture production storage must stay unavailable")}catch{}
+        do{try await model.history.openExisting();XCTFail("Fixture must not read a real vault")}catch{}
+        XCTAssertFalse(model.history.savingEnabled);XCTAssertEqual(model.history.snapshot.phase,.unavailable)
+        await model.shutdown()
+    }
+    func testEndEscalatingAHeldPauseCannotLeaveAPausedHistoryRecord()async throws{
+        let(model,_,_,_,port,_)=try rig();try await model.history.enableSaving()
+        await model.start();try await until{!model.assistant.transcript.snapshot.rows.isEmpty};await model.history.waitForQuiescence()
+        let record=try XCTUnwrap(model.history.snapshot.recordingID)
+        port.holdNextSave(skipping:1);try model.perform(.pause);try await until{port.isHeld}
+        let end=Task{await model.stop()};for _ in 0..<10{await Task.yield()}
+        XCTAssertTrue(model.stopping);XCTAssertFalse(model.canResume)
+        port.release();await end.value
+        XCTAssertFalse(model.paused);XCTAssertFalse(model.history.hasPausedSession)
+        try await model.history.openRecord(record)
+        XCTAssertNotEqual(model.history.snapshot.selected?.record.state,.paused)
+        XCTAssertFalse(model.history.snapshot.selected?.captures.isEmpty ?? true)
+    }
     func testHistoryAppearanceAndDefaultFixtureAreInertThenActualFinalAndNotesReopen()async throws{
         let(model,directory,prefs,key,_,starts)=try rig()
         let view=NSHostingView(rootView:RelayHistoryWorkspace(model:model));view.layoutSubtreeIfNeeded()
@@ -68,6 +92,7 @@ private final class AppHistoryStorage:HistoryOwnedSnapshotStorage,@unchecked Sen
         XCTAssertEqual(detail.rows.map(\.text),["Write a Python function that returns the first item or None for an empty list."])
         XCTAssertEqual(detail.rows.map(\.source),[.selectedAppAudio]);XCTAssertEqual(detail.record.state,.completed)
         XCTAssertEqual(detail.rows[0].captureSessionID,detail.captures[0].captureSessionID)
+        XCTAssertTrue(detail.captures[0].stop?.quiesced==true);XCTAssertNotNil(detail.captures[0].observedEndUptimeNanoseconds)
         try await model.history.saveNotes(record.id,expectedRevision:detail.record.revision,title:"Fictional practice",note:"Review an empty-list case.")
         await model.shutdown();XCTAssertTrue(prefs.savingEnabled)
         let(fresh,_,_,_,_,_)=try rig(directory:directory,preferences:prefs)

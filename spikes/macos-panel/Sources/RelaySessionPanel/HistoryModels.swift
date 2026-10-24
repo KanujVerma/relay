@@ -23,7 +23,7 @@ public struct HistoryCounter:Sendable,Equatable,Codable,CustomStringConvertible 
 }
 public enum HistoryRecordState:String,Codable,Sendable{case recording,paused,completed,partial,interrupted}
 public enum HistoryGap:String,Codable,Sendable,CaseIterable{
-    case sourceUnavailable,sequenceGap,capacity,storageFailure,savingStopped,interrupted,captureFailure,sourceDeleted,invalidObservation,unfinishedSpeech
+    case sourceUnavailable,sequenceGap,capacity,storageFailure,savingStopped,interrupted,captureFailure,sourceDeleted,invalidObservation,unfinishedSpeech,captureEndUnknown
     public var label:String{switch self{
     case .sourceUnavailable:"An audio source became unavailable"
     case .sequenceGap:"Some audio events were missing"
@@ -35,6 +35,7 @@ public enum HistoryGap:String,Codable,Sendable,CaseIterable{
     case .sourceDeleted:"Source text was deleted"
     case .invalidObservation:"A transcript observation was rejected"
     case .unfinishedSpeech:"Speech was still being processed when audio stopped"
+    case .captureEndUnknown:"Capture cleanup end was not recorded"
     }}
 }
 public struct HistoryRecord:Sendable,Equatable,Codable,Identifiable {
@@ -68,6 +69,8 @@ public struct HistoryCapture:Sendable,Equatable,Codable,Identifiable {
     public private(set) var selectedBundleID:String?
     public private(set) var microphoneEnabled:Bool
     public private(set) var redactedSources:[TranscriptSource]
+    public internal(set) var stop:HistoryCaptureStop?
+    public var observedEndUptimeNanoseconds:HistoryCounter?{stop?.quiesced==true ? stop?.emittedUptimeNanoseconds:nil}
     init(_ event:NativeSessionEvent,now:TimeInterval)throws{
         guard event.kind == .sessionStarted,event.sessionEpoch>0,event.eventSequence==1,
               case .bool(let microphone)=event.payload["microphoneEnabled"] else{throw HistoryError.invalid}
@@ -80,7 +83,7 @@ public struct HistoryCapture:Sendable,Equatable,Codable,Identifiable {
         captureSessionID=event.captureSessionID;sessionEpoch=HistoryCounter(event.sessionEpoch)
         id=Self.identity(event.captureSessionID,event.sessionEpoch)
         startedEventSequence=HistoryCounter(event.eventSequence);startedUptimeNanoseconds=HistoryCounter(event.emittedUptimeNanoseconds)
-        observedWallTime=now;selectedBundleID=bundle;microphoneEnabled=microphone;redactedSources=[]
+        observedWallTime=now;selectedBundleID=bundle;microphoneEnabled=microphone;redactedSources=[];stop=nil
     }
     func redacting(_ sources:[TranscriptSource])->HistoryCapture{
         var c=self
@@ -98,6 +101,7 @@ public struct HistoryCapture:Sendable,Equatable,Codable,Identifiable {
               !redactedSources.contains(.microphone) || !microphoneEnabled,
               !redactedSources.contains(.selectedAppAudio) || selectedBundleID==nil,
               microphoneEnabled || selectedBundleID != nil || !redactedSources.isEmpty else{throw HistoryError.invalid}
+        try stop?.validate(for:self)
     }
 }
 public struct HistoryFinal:Sendable,Equatable,Codable,Identifiable {

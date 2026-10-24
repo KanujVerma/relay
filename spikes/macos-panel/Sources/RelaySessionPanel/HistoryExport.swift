@@ -13,6 +13,11 @@ public enum HistoryExport {
                        "Created: "+date(detail.record.createdAt),"Transcript text only. No audio recording is included."]
             if !detail.record.gaps.isEmpty{parts.append("History gaps: "+detail.record.gaps.map(\.label).joined(separator:"; "))}
             parts.append("## User notes\n\n"+quote(detail.record.note))
+            parts.append("## Audio captures")
+            for capture in detail.captures{
+                parts.append("Capture: `\(capture.captureSessionID.uuidString.lowercased())` · Epoch: `\(capture.sessionEpoch)`")
+                parts.append(capture.observedEndUptimeNanoseconds == nil ? "Capture cleanup end not recorded.":"Capture cleanup observed at original native uptime `\(capture.observedEndUptimeNanoseconds!)` ns. This is not a measured audio duration.")
+            }
             parts.append("## Audio transcript")
             for row in detail.rows{
                 parts.append("### "+row.source.label+"\n\n"+quote(row.text))
@@ -20,7 +25,16 @@ public enum HistoryExport {
             }
             data=Data((parts.joined(separator:"\n\n")+"\n").utf8)
         case .json:
-            let captures=try detail.captures.map{try object(StrictJSON.decode(HistoryJSON.encode($0)))}
+            let captures=try detail.captures.map{capture->[String:Any] in
+                guard var value=try object(StrictJSON.decode(HistoryJSON.encode(capture))) as? [String:Any] else{throw HistoryError.invalid}
+                value["cleanupEndStatus"]=capture.observedEndUptimeNanoseconds == nil ? "unknown":"observed"
+                value["observedEndUptimeNanoseconds"]=capture.observedEndUptimeNanoseconds?.description as Any? ?? NSNull()
+                if let stop=capture.stop{
+                    value["stop"]=["observedWallTime":date(stop.observedWallTime),"quiesced":stop.quiesced,
+                        "originalNativeEvidence":try object(StrictJSON.decode(stop.originalEventJSON))]
+                }
+                return value
+            }
             let rows=try detail.rows.map{row->[String:Any] in
                 ["id":row.id,"captureSessionID":row.captureSessionID.uuidString.lowercased(),
                  "sessionEpoch":row.sessionEpoch.description,"eventSequence":row.eventSequence.description,

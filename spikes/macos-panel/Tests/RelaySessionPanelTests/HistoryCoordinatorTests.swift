@@ -126,18 +126,33 @@ private final class HeldHistoryExport:HistoryExportDestination,@unchecked Sendab
         let fresh=HistoryStore(storage:port);try fresh.open(create:false)
         XCTAssertTrue(try fresh.list().records.isEmpty);try fresh.close()
     }
+    func testPausedReadViewRequiresCurrentActualPermitAndNeverSurvivesEndOrLock()async throws{
+        let(_,port,prefs)=try fixture(),history=coordinator(port,prefs)
+        let(permit,transcript,initial)=try await start(history);var events=initial
+        events.final(1,text:"Fictional paused passage",into:transcript)
+        XCTAssertFalse(history.hasPausedSession)
+        history.retireCurrentSession();events.stop(into:transcript)
+        try await history.finishSession(permit,paused:true);XCTAssertTrue(history.hasPausedSession)
+        history.retireCurrentSession();XCTAssertFalse(history.hasPausedSession,"An End prefix denies the paused read view immediately")
+        try await history.finishSession(permit,paused:false);XCTAssertFalse(history.hasPausedSession)
+        let(next,second,initial2)=try await start(history);var events2=initial2
+        events2.final(1,text:"Another fictional passage",into:second)
+        history.retireCurrentSession();events2.stop(into:second);try await history.finishSession(next,paused:true)
+        XCTAssertTrue(history.hasPausedSession);history.lock();XCTAssertFalse(history.hasPausedSession)
+        await history.waitForQuiescence()
+    }
     func testPauseFlushesAdmittedRowsAndResumeUsesFreshOriginalCaptureSegment()async throws{
         let(_,port,prefs)=try fixture(),history=coordinator(port,prefs)
         let(first,transcript,initial)=try await start(history);var events=initial
         events.final(1,text:"Before actual pause",into:transcript)
-        history.retireCurrentSession()
+        history.retireCurrentSession();events.stop(into:transcript)
         try await history.finishSession(first,paused:true)
         XCTAssertTrue(prefs.savingEnabled)
         let next=try await history.beginSession(intentID:UUID(),resuming:true,isCurrent:{true})!
         XCTAssertEqual(next.recordID,first.recordID)
         var resumed=HistoryTestEvents();resumed.start(transcript)
         resumed.final(1,text:"Fresh capture after resume",into:transcript)
-        history.retireCurrentSession();try await history.finishSession(next,paused:false)
+        history.retireCurrentSession();resumed.stop(into:transcript);try await history.finishSession(next,paused:false)
         try await history.openRecord(first.recordID)
         XCTAssertEqual(history.snapshot.selected?.captures.count,2)
         XCTAssertEqual(history.snapshot.selected?.rows.map(\.text),["Before actual pause","Fresh capture after resume"])
@@ -197,7 +212,7 @@ private final class HeldHistoryExport:HistoryExportDestination,@unchecked Sendab
         let(_,port,prefs)=try fixture(),history=coordinator(port,prefs)
         let(permit,transcript,initial)=try await start(history);var events=initial
         for n in 1...70{events.final(UInt64(n),text:"Fictional row \(n)",into:transcript);await history.waitForQuiescence()}
-        history.retireCurrentSession();try await history.finishSession(permit,paused:false)
+        history.retireCurrentSession();events.stop(into:transcript);try await history.finishSession(permit,paused:false)
         try await history.openRecord(permit.recordID)
         XCTAssertEqual(history.snapshot.selected?.rows.count,64)
         let first=history.snapshot.selected!
@@ -237,7 +252,7 @@ private final class HeldHistoryExport:HistoryExportDestination,@unchecked Sendab
         try await history.openRecord(permit.recordID)
         XCTAssertEqual(history.snapshot.selected?.rows.map(\.text),["Keep microphone","Keep later microphone"])
         XCTAssertTrue(history.snapshot.selected?.record.blockedSources.contains(.selectedAppAudio)==true)
-        history.retireCurrentSession();try await history.finishSession(permit,paused:false)
+        history.retireCurrentSession();events.stop(into:transcript);try await history.finishSession(permit,paused:false)
         XCTAssertEqual(history.snapshot.records.first?.state,.partial)
         history.lock();await history.waitForQuiescence()
     }
@@ -245,7 +260,7 @@ private final class HeldHistoryExport:HistoryExportDestination,@unchecked Sendab
         let(_,port,prefs)=try fixture(),history=coordinator(port,prefs)
         let(permit,transcript,initial)=try await start(history);var events=initial
         events.final(1,text:"Explicit exported copy",into:transcript);await history.waitForQuiescence()
-        history.retireCurrentSession();try await history.finishSession(permit,paused:false)
+        history.retireCurrentSession();events.stop(into:transcript);try await history.finishSession(permit,paused:false)
         try await history.openRecord(permit.recordID)
         let destination=HeldHistoryExport()
         let export=history.export(permit.recordID,expectedRevision:history.snapshot.selected!.record.revision,format:.markdown,to:destination)
@@ -258,6 +273,41 @@ private final class HeldHistoryExport:HistoryExportDestination,@unchecked Sendab
         try await purge.value;history.lock();await history.waitForQuiescence()
         try await history.openExisting();XCTAssertTrue(history.snapshot.records.isEmpty)
         history.lock();await history.waitForQuiescence()
+    }
+    func testReadyDetailSubscriberDeleteAndSourceDeleteStayHiddenBeforeActualReceipt()async throws{
+        for sourceOnly in [false,true]{
+            let(_,port,prefs)=try fixture(),history=coordinator(port,prefs)
+            let(permit,transcript,initial)=try await start(history);var events=initial
+            events.final(1,text:"Fictional selected app passage",into:transcript)
+            events.final(2,text:"Fictional microphone passage",source:1,into:transcript)
+            history.retireCurrentSession();events.stop(into:transcript);try await history.finishSession(permit,paused:false)
+            var deletion:Task<Void,Error>?,triggered=false
+            port.holdNextSave();defer{port.release()}
+            let observation=history.$snapshot.sink{incoming in
+                guard !triggered,let detail=incoming.selected,detail.record.id==permit.recordID else{return}
+                triggered=true
+                if sourceOnly{
+                    deletion=history.deleteSource(permit.recordID,expectedRevision:detail.record.revision,captureID:detail.captures[0].id,source:.selectedAppAudio)
+                }else{deletion=history.delete(permit.recordID,expectedRevision:detail.record.revision)}
+            }
+            try await history.openRecord(permit.recordID)
+            XCTAssertTrue(triggered)
+            // This assertion intentionally precedes any await/task scheduling:
+            // the outer @Published will-set must not restore nested-cleared data.
+            XCTAssertNil(history.snapshot.selected,"Reentrant deletion must stay hidden immediately")
+            if !sourceOnly{XCTAssertFalse(history.snapshot.records.contains{$0.id==permit.recordID})}
+            try await until{port.isHeld};XCTAssertTrue(history.isBusy);XCTAssertNil(history.snapshot.selected)
+            port.release();try await XCTUnwrap(deletion).value;observation.cancel()
+            if sourceOnly{
+                try await history.openRecord(permit.recordID)
+                XCTAssertEqual(history.snapshot.selected?.rows.map(\.text),["Fictional microphone passage"])
+                XCTAssertNil(history.snapshot.selected?.captures[0].selectedBundleID)
+            }else{
+                do{try await history.openRecord(permit.recordID);XCTFail("The actual deleted session cannot reopen")}catch{}
+                XCTAssertFalse(history.snapshot.records.contains{$0.id==permit.recordID})
+            }
+            history.lock();await history.waitForQuiescence()
+        }
     }
     func testReentrantLockObserverCannotRecursivelyRepublishTheSameClosingOwner()async throws{
         let(_,port,prefs)=try fixture(),history=coordinator(port,prefs)

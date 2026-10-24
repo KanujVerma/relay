@@ -137,12 +137,20 @@ final class HistoryStore:@unchecked Sendable {
             do{
                 try Self.validate(candidate);guard admission() else{throw HistoryError.stale};queue=candidate
                 try expire(admission:admission)
-                let active=try required().read{try Row.fetchAll($0,sql:"SELECT payload FROM history_record")}
-                    .map{try HistoryJSON.decode(HistoryRecord.self,$0.decode(Data.self,forColumn:"payload"))}
-                    .filter{$0.state == .recording || $0.state == .paused}
-                if !active.isEmpty{try commit(admission:admission){db in
-                    for r in active{var r=try Self.bumped(r);r.state = .interrupted;if !r.gaps.contains(.interrupted){r.gaps.append(.interrupted)};try Self.put(db,r)}
-                }}
+                let repairs=try required().read{db in
+                    try Data.fetchAll(db,sql:"SELECT payload FROM history_record").compactMap{data->HistoryRecord? in
+                        var r=try HistoryJSON.decode(HistoryRecord.self,data),changed=false
+                        if r.state == .recording || r.state == .paused{
+                            r.state = .interrupted;if !r.gaps.contains(.interrupted){r.gaps.append(.interrupted)};changed=true
+                        }
+                        if try Self.hasUnknownCaptureEnd(db,r.id){
+                            if !r.gaps.contains(.captureEndUnknown){r.gaps.append(.captureEndUnknown);changed=true}
+                            if r.state == .completed{r.state = .partial;changed=true}
+                        }
+                        if changed{return try Self.bumped(r)};return nil
+                    }
+                }
+                if !repairs.isEmpty{try commit(admission:admission){db in for r in repairs{try Self.put(db,r)}}}
             }catch{if let q=queue{try? q.close()};queue=nil;try? candidate.close();throw error}
     }
     func close()throws{try lock.withLock{
@@ -171,13 +179,16 @@ final class HistoryStore:@unchecked Sendable {
         try lock.withLock{
             try expire(admission:admission)
             try commit(content:observation.event.kind == .sessionStarted || observation.final != nil,admission:admission){db in
-                let r=try Self.record(db,id)
+                var r=try Self.record(db,id)
                 guard r.state == .recording || r.state == .paused else{throw HistoryError.stale}
                 if observation.event.kind != .sessionStarted{
                     let original=HistoryCapture.identity(observation.event.captureSessionID,observation.event.sessionEpoch)
                     guard try Int.fetchOne(db,sql:"SELECT count(*) FROM history_capture WHERE id=? AND record_id=?",arguments:[original,Self.key(id)])==1 else{throw HistoryError.stale}
                 }
-                if observation.sequenceGap{var r=try Self.bumped(r);if !r.gaps.contains(.sequenceGap){r.gaps.append(.sequenceGap)};try Self.put(db,r);return}
+                if observation.sequenceGap{
+                    if !r.gaps.contains(.sequenceGap){r.gaps.append(.sequenceGap)}
+                    if observation.event.kind != .stopped{try Self.put(db,Self.bumped(r));return}
+                }
                 if observation.event.kind == .sessionStarted{
                     let capture=try HistoryCapture(observation.event,now:clock().timeIntervalSince1970).redacting(r.blockedSources)
                     if let old=try Data.fetchOne(db,sql:"SELECT payload FROM history_capture WHERE id=? AND record_id=?",arguments:[capture.id,Self.key(id)]){
@@ -186,6 +197,14 @@ final class HistoryStore:@unchecked Sendable {
                     let count=try Int.fetchOne(db,sql:"SELECT count(*) FROM history_capture WHERE record_id=?",arguments:[Self.key(id)]) ?? 0
                     guard count<HistoryBounds.captures else{throw HistoryError.capacity}
                     try db.execute(sql:"INSERT INTO history_capture VALUES(?,?,?,?)",arguments:[capture.id,Self.key(id),count,try HistoryJSON.encode(capture)])
+                }else if observation.event.kind == .stopped{
+                    let captureID=HistoryCapture.identity(observation.event.captureSessionID,observation.event.sessionEpoch)
+                    guard let bytes=try Data.fetchOne(db,sql:"SELECT payload FROM history_capture WHERE id=? AND record_id=?",arguments:[captureID,Self.key(id)]) else{throw HistoryError.stale}
+                    var capture=try HistoryJSON.decode(HistoryCapture.self,bytes)
+                    let stop=try HistoryCaptureStop(observation.event,now:clock().timeIntervalSince1970)
+                    if let old=capture.stop{guard old.originalEventJSON==stop.originalEventJSON else{throw HistoryError.invalid};return}
+                    capture.stop=stop;try capture.validate()
+                    try db.execute(sql:"UPDATE history_capture SET payload=? WHERE id=? AND record_id=?",arguments:[try HistoryJSON.encode(capture),captureID,Self.key(id)])
                 }else if let final=observation.final{
                     guard r.state == .recording,!r.blockedSources.contains(final.source) else{throw HistoryError.stale};try final.validate()
                     if let old=try Data.fetchOne(db,sql:"SELECT payload FROM history_final WHERE id=?",arguments:[final.id]){
@@ -193,7 +212,7 @@ final class HistoryStore:@unchecked Sendable {
                     }
                     guard let bytes=try Data.fetchOne(db,sql:"SELECT payload FROM history_capture WHERE id=? AND record_id=?",arguments:[final.captureID,Self.key(id)]) else{throw HistoryError.stale}
                     let capture=try HistoryJSON.decode(HistoryCapture.self,bytes)
-                    guard final.source == .microphone ? capture.microphoneEnabled:capture.selectedBundleID != nil else{throw HistoryError.invalid}
+                    guard capture.stop==nil,(final.source == .microphone ? capture.microphoneEnabled:capture.selectedBundleID != nil) else{throw HistoryError.invalid}
                     let count=try Int.fetchOne(db,sql:"SELECT count(*) FROM history_final WHERE record_id=?",arguments:[Self.key(id)]) ?? 0
                     let text=try Int.fetchOne(db,sql:"SELECT coalesce(sum(text_bytes),0) FROM history_final WHERE record_id=?",arguments:[Self.key(id)]) ?? 0
                     guard count<HistoryBounds.rows,text+final.text.utf8.count<=HistoryBounds.text else{throw HistoryError.capacity}
@@ -204,6 +223,10 @@ final class HistoryStore:@unchecked Sendable {
                 try Self.put(db,Self.bumped(r))
             }
         }
+    }
+    private static func hasUnknownCaptureEnd(_ db:Database,_ id:UUID)throws->Bool{
+        try Data.fetchAll(db,sql:"SELECT payload FROM history_capture WHERE record_id=?",arguments:[key(id)])
+            .contains{try HistoryJSON.decode(HistoryCapture.self,$0).stop?.quiesced != true}
     }
     func finish(_ id:UUID,outcome:HistoryRecordState,gap:HistoryGap?=nil,admission:@Sendable()->Bool={true})throws{
         try lock.withLock{
@@ -216,6 +239,7 @@ final class HistoryStore:@unchecked Sendable {
                 if outcome == .recording{guard old.state == .paused else{throw HistoryError.stale}}
                 var r=try Self.bumped(old)
                 if let gap,!r.gaps.contains(gap){r.gaps.append(gap)}
+                if outcome != .recording,try Self.hasUnknownCaptureEnd(db,id),!r.gaps.contains(.captureEndUnknown){r.gaps.append(.captureEndUnknown)}
                 r.state=outcome == .completed && !r.gaps.isEmpty ? .partial:outcome
                 if outcome != .recording && outcome != .paused{r.endedAt=clock().timeIntervalSince1970}
                 try Self.put(db,r)
@@ -328,6 +352,7 @@ final class HistoryStore:@unchecked Sendable {
                       try row.decode(Data.self,forColumn:"sort_ticks")==f.startUptimeNanoseconds.sortBytes,
                       try row.decode(Int.self,forColumn:"text_bytes")==f.text.utf8.count,
                       f.source == .microphone ? capture.1.microphoneEnabled:capture.1.selectedBundleID != nil else{throw HistoryError.invalid}
+                try capture.1.stop?.follows(f)
                 rowCount[owner,default:0]+=1;textCount[owner,default:0]+=f.text.utf8.count
                 guard rowCount[owner]!<=HistoryBounds.rows,textCount[owner]!<=HistoryBounds.text else{throw HistoryError.capacity}
             }

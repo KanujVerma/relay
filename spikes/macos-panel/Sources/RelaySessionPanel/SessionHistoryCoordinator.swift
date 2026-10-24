@@ -25,7 +25,7 @@ private final class HistoryAdmission:@unchecked Sendable {
 @MainActor public final class HistorySessionPermit {
     public let id=UUID(),recordID:UUID,intentID:UUID
     fileprivate let gate=HistoryAdmission()
-    fileprivate var preparing=true,acceptsNew=false,paused=false,captureSeen=false,failed=false
+    fileprivate var preparing=true,acceptsNew=false,paused=false,captureSeen=false,failed=false,retiring=false
     fileprivate var captureID:String?
     fileprivate var blocked:Set<TranscriptSource>=[]
     fileprivate var finishGap:HistoryGap?
@@ -49,6 +49,8 @@ private final class HistoryAdmission:@unchecked Sendable {
     private var current:HistorySessionPermit?
     private var pending:[ValidatedTranscriptObservation]=[]
     private var pendingBytes=0
+    // One original stop receipt may outlive row admission; it never admits text.
+    private var terminalStop:ValidatedTranscriptObservation?
     private var terminalGap:HistoryGap?
     private var tombstones:Set<UUID>=[]
     private struct Flight {let id:UUID;let gate:HistoryAdmission;let join:Task<Void,Never>}
@@ -61,6 +63,12 @@ private final class HistoryAdmission:@unchecked Sendable {
     private var closeRequested=false
     public var isBusy:Bool{flight != nil || writer != nil || retirement != nil || exclusive != nil || exportTask != nil}
     public var savingEnabled:Bool{preferences.savingEnabled}
+    /// A read view of current private retention ownership, never capture or
+    /// request authority. End/Lock/failed storage deny it synchronously.
+    public var hasPausedSession:Bool{
+        guard let current else{return false}
+        return current.paused && !current.retiring && owns(current) && preferences.savingEnabled
+    }
     public init(storageFactory:@escaping @Sendable ()throws->any ProtectedSnapshotStorage,
                 preferences:any HistorySavingPreferences,canEnable:@escaping @MainActor ()->Bool,
                 clock:@escaping @Sendable ()->Date={Date()}){
@@ -68,11 +76,11 @@ private final class HistoryAdmission:@unchecked Sendable {
         state.epoch=epoch;state.savingEnabled=preferences.savingEnabled;snapshot=state
     }
     private func publish(){
-        state.epoch=epoch;state.isBusy=isBusy;state.pendingCount=pending.count;state.savingEnabled=preferences.savingEnabled
+        state.epoch=epoch;state.isBusy=isBusy;state.pendingCount=pending.count+(terminalStop==nil ? 0:1);state.savingEnabled=preferences.savingEnabled
         let original=epoch;snapshot=state
         // @Published observers may synchronously Lock. Never leave their
         // cleared private state overwritten by the older completion's setter.
-        if epoch != original{state.epoch=epoch;state.isBusy=isBusy;state.pendingCount=pending.count;snapshot=state}
+        if epoch != original{state.epoch=epoch;state.isBusy=isBusy;state.pendingCount=pending.count+(terminalStop==nil ? 0:1);snapshot=state}
     }
     private func ownedStore()throws->HistoryStore{
         if let store{return store}
@@ -103,7 +111,7 @@ private final class HistoryAdmission:@unchecked Sendable {
         }catch{}
     }
     private func fail(_ error:any Error){
-        current?.acceptsNew=false;current?.failed=true;current?.gate.retire();pending=[];pendingBytes=0
+        current?.acceptsNew=false;current?.failed=true;current?.gate.retire();pending=[];pendingBytes=0;terminalStop=nil
         state.phase = .unavailable;state.records=[];state.selected=nil
         if case HistoryError.capacity=error{state.message="History is full. Delete saved sessions or turn saving off."}
         else if case HistoryError.inUse=error{state.message="Local history is in use. Close or lock another Relay app, then retry, or turn saving off here."}
@@ -141,7 +149,7 @@ private final class HistoryAdmission:@unchecked Sendable {
         try Task.checkCancellation()
         guard !isBusy,isCurrent() else{throw HistoryError.stale}
         guard preferences.savingEnabled else{return nil}
-        if resuming{guard let current,current.paused,!current.failed else{throw HistoryError.unavailable}}
+        if resuming{guard let current,current.paused,!current.retiring,owns(current) else{throw HistoryError.unavailable}}
         let original=epoch,old=current
         let permit=HistorySessionPermit(recordID:resuming ? old!.recordID:UUID(),intentID:intentID,resuming:resuming)
         old?.gate.retire();current=permit;state.phase = .opening;publish()
@@ -175,8 +183,14 @@ private final class HistoryAdmission:@unchecked Sendable {
     }
     public func owns(_ permit:HistorySessionPermit)->Bool{current === permit && permit.gate.allowed && !permit.failed && !tombstones.contains(permit.recordID)}
     public func observe(_ observation:ValidatedTranscriptObservation){
-        guard let permit=current,!permit.preparing,permit.acceptsNew,owns(permit) else{return}
+        guard let permit=current,!permit.preparing,owns(permit) else{return}
         let event=observation.event
+        if event.kind == .stopped{
+            guard permit.captureID==HistoryCapture.identity(event.captureSessionID,event.sessionEpoch),
+                  terminalStop==nil,(try? HistoryCaptureStop(event,now:clock().timeIntervalSince1970)) != nil else{return}
+            terminalStop=observation;publish();startWriter();return
+        }
+        guard permit.acceptsNew else{return}
         if event.kind == .sessionStarted{
             guard permit.captureID==nil else{return}
             permit.captureID=HistoryCapture.identity(event.captureSessionID,event.sessionEpoch);permit.captureSeen=true
@@ -193,20 +207,23 @@ private final class HistoryAdmission:@unchecked Sendable {
         pending.append(observation);pendingBytes+=size;publish();startWriter()
     }
     private func startWriter(){
-        guard writer==nil,flight==nil,retirement==nil,!pauseWriter,!pending.isEmpty,let permit=current,permit.gate.allowed else{return}
+        guard writer==nil,flight==nil,retirement==nil,!pauseWriter,(!pending.isEmpty || terminalStop != nil),let permit=current,permit.gate.allowed else{return}
         let id=UUID();writerID=id
         writer=Task{[weak self,permit] in
             guard let self else{return}
-            while !self.pauseWriter,self.retirement==nil,self.current === permit,permit.gate.allowed,!self.pending.isEmpty{
-                let observation=self.pending.removeFirst()
-                self.pendingBytes=max(0,self.pendingBytes-((observation.final?.originalEventJSON.count ?? 1024)+(observation.final?.text.utf8.count ?? 0)+512))
+            while !self.pauseWriter,self.retirement==nil,self.current === permit,permit.gate.allowed,(!self.pending.isEmpty || self.terminalStop != nil){
+                let observation:ValidatedTranscriptObservation
+                if !self.pending.isEmpty{
+                    observation=self.pending.removeFirst()
+                    self.pendingBytes=max(0,self.pendingBytes-((observation.final?.originalEventJSON.count ?? 1024)+(observation.final?.text.utf8.count ?? 0)+512))
+                }else{observation=self.terminalStop!;self.terminalStop=nil}
                 let gate=permit.gate,recordID=permit.recordID
                 do{
                     try await self.run(gate:gate){store in try store.append(observation,to:recordID,admission:{gate.allowed})}
                 }catch{
                     if !gate.allowed || self.retirement != nil || self.tombstones.contains(recordID){break}
                     self.terminalGap=(error as? HistoryError).map{if case .capacity=$0{return .capacity};return .storageFailure} ?? .storageFailure
-                    permit.acceptsNew=false;self.pending=[];self.pendingBytes=0;break
+                    permit.acceptsNew=false;self.pending=[];self.pendingBytes=0;self.terminalStop=nil;break
                 }
             }
             if self.writerID==id{self.writer=nil;self.writerID=nil}
@@ -225,25 +242,25 @@ private final class HistoryAdmission:@unchecked Sendable {
         publish()
     }
     @discardableResult public func retireCurrentSession(gap:HistoryGap?=nil)->HistorySessionPermit?{
-        guard let permit=current else{return nil};permit.acceptsNew=false
+        guard let permit=current else{return nil};permit.acceptsNew=false;permit.retiring=true
         if let gap{permit.finishGap=gap}
         if permit.preparing{permit.gate.retire()};publish();return permit
     }
     public func finishSession(_ permit:HistorySessionPermit,paused:Bool)async throws{
-        permit.acceptsNew=false
+        permit.acceptsNew=false;permit.retiring=true
         await waitForQuiescence()
         guard current === permit,retirement==nil,!tombstones.contains(permit.recordID) else{return}
         if permit.preparing || !permit.captureSeen{
             await clean(permit,gap:nil);if current === permit{current=nil};state.recordingID=nil;publish();return
         }
         guard permit.gate.allowed,!permit.failed else{return}
-        if permit.paused && paused{return}
+        if permit.paused && paused{permit.retiring=false;return}
         let gate=permit.gate,id=permit.recordID
         do{
             let gap=permit.finishGap
             let page=try await run(gate:gate){store in try store.finish(id,outcome:paused ? .paused:.completed,gap:gap,admission:{gate.allowed});return try store.list()}
             guard current === permit,gate.allowed else{return}
-            permit.paused=paused;state.records=page.records;state.nextOffset=page.nextOffset
+            permit.paused=paused;permit.retiring=false;state.records=page.records;state.nextOffset=page.nextOffset
             if !paused{current=nil;gate.retire();state.recordingID=nil}
             state.message=paused ? "History paused. Resume uses a fresh audio segment.":"Session history saved locally.";publish()
         }catch{fail(error);throw error}
@@ -268,7 +285,7 @@ private final class HistoryAdmission:@unchecked Sendable {
         if retirement != nil,(!lock || closeRequested),state.savingEnabled==preferences.savingEnabled{return}
         if lock{closeRequested=true;epoch=UUID();selectionEpoch=UUID();state.records=[];state.selected=nil;state.phase = .closing;state.message="Closing history…"}
         let permit=current;permit?.acceptsNew=false;permit?.gate.retire();flight?.gate.retire()
-        pending=[];pendingBytes=0;terminalGap=nil;pauseWriter=true
+        pending=[];pendingBytes=0;terminalStop=nil;terminalGap=nil;pauseWriter=true
         guard retirement==nil else{publish();return}
         exportGate?.retire()
         let oldWriter=writer,oldFlight=flight,oldExclusive=exclusive,oldExport=exportTask,id=UUID()
@@ -382,7 +399,7 @@ private final class HistoryAdmission:@unchecked Sendable {
         exportGate?.retire()
         tombstones.insert(id);selectionEpoch=UUID();visibilityEpoch=UUID();state.records.removeAll{$0.id==id}
         if state.selected?.record.id==id{state.selected=nil}
-        if current?.recordID==id{current?.acceptsNew=false;current?.gate.retire();pending=[];pendingBytes=0}
+        if current?.recordID==id{current?.acceptsNew=false;current?.gate.retire();pending=[];pendingBytes=0;terminalStop=nil}
         pauseWriter=true
         let oldWriter=writer,oldFlight=flight,oldExport=exportTask,original=epoch,operationID=UUID(),gate=HistoryAdmission()
         exclusiveID=operationID
@@ -444,7 +461,7 @@ private final class HistoryAdmission:@unchecked Sendable {
         guard retirement==nil,exclusive==nil,state.phase == .ready else{return Task{throw HistoryError.stale}}
         preferences.savingEnabled=false;exportGate?.retire();epoch=UUID();selectionEpoch=UUID();visibilityEpoch=UUID()
         state.records=[];state.selected=nil;state.nextOffset=nil
-        current?.acceptsNew=false;current?.gate.retire();pending=[];pendingBytes=0;terminalGap=nil;pauseWriter=true
+        current?.acceptsNew=false;current?.gate.retire();pending=[];pendingBytes=0;terminalStop=nil;terminalGap=nil;pauseWriter=true
         let oldWriter=writer,oldFlight=flight,oldExport=exportTask,original=epoch,operationID=UUID(),gate=HistoryAdmission()
         exclusiveID=operationID
         let task=Task{[weak self] in

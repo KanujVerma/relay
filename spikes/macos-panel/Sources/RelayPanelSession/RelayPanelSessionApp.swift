@@ -38,7 +38,7 @@ private struct RelayAppCommands:Commands {
         Button("End session"){model.performWindowAction(.endSession)}.disabled(!model.relayPresentation.allows(.end))
         Divider()
         Button("My Context"){openWindow(id:"relay-context")}.disabled(model.fixture)
-        Button("History"){openWindow(id:"relay-history")}
+        Button("History"){openWindow(id:"relay-history")}.disabled(model.fixture)
         Button("Settings…"){openWindow(id:"relay-settings")}
         Divider()
         Button("Quit Relay"){Task{await model.shutdown();NSApplication.shared.terminate(nil)}}

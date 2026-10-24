@@ -24,7 +24,7 @@ struct RelayHomeView<SourceControls:View>:View {
                 RelayBrand().padding(.bottom,12)
                 Label("Session",systemImage:"waveform").font(.system(size:13,weight:.medium)).frame(maxWidth:.infinity,alignment:.leading).padding(10).background(.white.opacity(0.06),in:RoundedRectangle(cornerRadius:10))
                 Button{onAction(.context)}label:{Label("My Context",systemImage:"person.text.rectangle").frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).font(.system(size:13)).foregroundStyle(RelayTheme.secondary).padding(.horizontal,10).disabled(fixture)
-                if let openHistory{Button(action:openHistory){Label("History",systemImage:"clock.arrow.circlepath").frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).font(.system(size:13)).foregroundStyle(RelayTheme.secondary).padding(.horizontal,10)}
+                if let openHistory{Button(action:openHistory){Label("History",systemImage:"clock.arrow.circlepath").frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).font(.system(size:13)).foregroundStyle(RelayTheme.secondary).padding(.horizontal,10).disabled(fixture)}
                 Spacer()
                 Button{onAction(.settings)}label:{Label("Settings",systemImage:"gearshape").frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).font(.system(size:13)).foregroundStyle(RelayTheme.secondary).padding(.horizontal,10)
             }.padding(20).frame(width:188).background(.white.opacity(0.02))

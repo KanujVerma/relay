@@ -83,7 +83,7 @@ enum RelaySettingsSection:String,CaseIterable,Sendable {
     var body:some View{
         VStack(alignment:.leading,spacing:16){
             Text("Local session history").font(.system(size:18,weight:.semibold))
-            Text("Optional saving keeps final transcript text and your manual notes encrypted on this Mac for 30 days. No raw audio, screenshots or screen text is saved. Nothing is added to My Context automatically.").font(.system(size:13)).lineSpacing(4).foregroundStyle(RelayTheme.secondary)
+            Text("Optional saving keeps final audio-session transcript text and your manual notes encrypted on this Mac for 30 days. No raw audio, screenshots or screen text is saved. Typed chats and suggested answers are not saved here. Nothing is added to My Context automatically.").font(.system(size:13)).lineSpacing(4).foregroundStyle(RelayTheme.secondary)
             Toggle("Save session text locally",isOn:Binding(get:{history.savingEnabled},set:{enabled in if enabled{Task{try? await history.enableSaving()}}else{history.stopSaving()}})).disabled(!history.savingEnabled && (!model.canEnableHistory || history.isBusy))
             Text(history.snapshot.message).font(.system(size:12)).foregroundStyle(RelayTheme.muted)
             HStack{Button("Open History"){openWindow(id:"relay-history")}.buttonStyle(RelayQuietButtonStyle());Button("Lock history"){history.lock()}.buttonStyle(RelayQuietButtonStyle())}

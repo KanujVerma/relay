@@ -81,3 +81,13 @@ Controller approval2026-10-24 follows an actual two-independent-store lost-updat
 After narrow timing/lease checkpoints freeze, merge accepted canonical `e846c00012c73762fa4a599729a5c70b87e532be` into this isolated lane. Preserve194 ProfileVault compatibility/history purpose, accepted account domains, one ConversationOwnerBox/max4native profile flights, and account preparation outside the capture Start task. History logical records remain independent of helper/account lifetimes; idle account changes cannot create an audio history record. Root owns review, not a later serial manual Model join. First-launch160 shared Settings selection is a separately reviewed peer dependency; no unreviewed preference imports.
 
 Actual capture metadata is currently start-only. Record completion indicates the logical retention workflow, not a measured capture segment duration. Capture end receipt or explicit unknown-end/gap remains required before claiming complete segment timing; do not derive it from logical record endedAt or an elapsed UI timer. A later separate checkpoint will use only original native stop evidence/actual joins, retaining unknown when the native source has no qualifying end receipt.
+
+### Resource-limited source successor (2026-10-24)
+
+- [x] Preserve accepted account e846, first-launch160 and preferences b270 in one actual Model/Settings composition; no new purpose namespace.
+- [x] Prepare original-stop/unknown-end DTO/store/terminal-slot/export/UI source and synthetic tests; no invented capture duration.
+- [x] Prepare current private paused-permit/account refresh and End escalation changes with actual protected helper tests.
+- [x] Fence default fixture production History storage without relying only on disabled UI.
+- [ ] Execute new tests once the globally shared heavy slot is granted. No compile/pass claim from source preparation.
+- [ ] Reproduce the root's Combine subscriber deletion hypothesis before any publication correction.
+- [ ] Run affected gates using the two retained shared build roots only, <=2compiler jobs and the canonical resource floors. No automatic restart of removed lane caches.

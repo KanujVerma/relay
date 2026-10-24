@@ -51,8 +51,8 @@ import RelaySessionPanel
         VStack(alignment:.leading,spacing:18){
             Image(systemName:snapshot.phase == .unavailable ? "exclamationmark.lock":"lock").font(.system(size:32)).foregroundStyle(RelayTheme.muted)
             Text(snapshot.phase == .unavailable ? "History needs attention":"Keep only what you choose.").font(.system(size:26,weight:.semibold))
-            Text("Saving is optional and off by default. Enable it while idle to keep session transcript text and your notes on this Mac for 30 days. No raw audio, screenshots or screen text is saved.").font(.system(size:14)).lineSpacing(5).foregroundStyle(RelayTheme.secondary)
-            Text("Opening saved history never creates a missing vault. History and notes are not approved personal facts.").font(.system(size:12)).foregroundStyle(RelayTheme.muted)
+            Text("Saving is optional and off by default. Enable it while idle to keep audio-session transcript text and your notes on this Mac for 30 days. No raw audio, screenshots or screen text is saved.").font(.system(size:14)).lineSpacing(5).foregroundStyle(RelayTheme.secondary)
+            Text("Typed chats and suggested answers are not saved here. Opening saved history never creates a missing vault. History and notes are not approved personal facts.").font(.system(size:12)).foregroundStyle(RelayTheme.muted)
             HStack(spacing:12){
                 Button("Open saved history"){perform{try await history.openExisting()}}.buttonStyle(RelayQuietButtonStyle()).disabled(history.isBusy)
                 Button("Enable saving"){perform{try await history.enableSaving()}}.buttonStyle(RelayPrimaryButtonStyle()).disabled(!model.canEnableHistory || history.isBusy)
@@ -99,6 +99,7 @@ import RelaySessionPanel
                     ForEach(detail.captures){capture in
                         VStack(alignment:.leading,spacing:6){
                             Text("Audio segment · "+Date(timeIntervalSince1970:capture.observedWallTime).formatted(date:.abbreviated,time:.shortened)).font(.system(size:12)).foregroundStyle(RelayTheme.muted)
+                            Text(capture.observedEndUptimeNanoseconds == nil ? "Capture cleanup end not recorded":"Capture cleanup observed · original native receipt").font(.system(size:11)).foregroundStyle(RelayTheme.muted)
                             HStack{ForEach([TranscriptSource.microphone,.selectedAppAudio],id:\.rawValue){source in if detail.rows.contains(where:{$0.captureSessionID==capture.captureSessionID && $0.source==source}){Button("Delete "+source.label){perform{try await history.deleteSource(detail.record.id,expectedRevision:detail.record.revision,captureID:capture.id,source:source).value;loadEditor()}}.font(.system(size:11)).buttonStyle(.plain).foregroundStyle(.orange)}}}
                         }
                     }

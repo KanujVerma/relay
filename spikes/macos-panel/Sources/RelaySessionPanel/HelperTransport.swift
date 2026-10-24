@@ -125,6 +125,10 @@ public final class HelperTransport: @unchecked Sendable {
     private var cancellationReplies:[UUID:(NativeAnswerCancelRequest,AnswerCancellationResponse)]=[:]
     private var cancellationReplyOrder:[UUID]=[]
     private var cancellationCount=0
+    private var assistantScopes:[UUID:(NativeAssistantScopeRequest,PendingAssistantScopeResponse)]=[:]
+    private var assistantScopeReplies:[UUID:(NativeAssistantScopeRequest,AssistantScopeResponse)]=[:]
+    private var assistantScopeReplyOrder:[UUID]=[]
+    private var assistantScopeIssued:Set<UUID>=[]
     private var visualReplies:[UUID:VisualInputResponse]=[:]
     private var visualReplyOrder:[UUID]=[]
     private var visualRequestCount=0
@@ -233,6 +237,59 @@ public final class HelperTransport: @unchecked Sendable {
             answerCancellations.removeValue(forKey:reply.requestID)
             cancellationReplies[reply.requestID]=(pending.0,reply);cancellationReplyOrder.append(reply.requestID)
             while cancellationReplyOrder.count>8{cancellationReplies.removeValue(forKey:cancellationReplyOrder.removeFirst())}
+            return pending.1
+        }
+        response?.finish(.success(reply))
+    }
+    /// Only registers response ownership. The original action must subsequently
+    /// enter the one native ordered ingress; this method does not write a frame.
+    public func registerAssistantScope(_ request:NativeAssistantScopeRequest,
+        deadline:UInt64=DispatchTime.now().uptimeNanoseconds+15_000_000_000)throws->PendingAssistantScopeResponse {
+        let (response,registered)=try lock.withLock{()->(PendingAssistantScopeResponse,Bool) in
+            guard !failed,input != nil else{throw PanelBridgeError.closed}
+            if let pending=assistantScopes[request.requestID]{
+                guard pending.0==request else{throw PanelBridgeError.malformed};return(pending.1,false)
+            }
+            if let previous=assistantScopeReplies[request.requestID]{
+                guard previous.0==request else{throw PanelBridgeError.malformed}
+                let response=PendingAssistantScopeResponse();response.finish(.success(previous.1));return(response,false)
+            }
+            guard !assistantScopeIssued.contains(request.requestID) else{throw PanelBridgeError.malformed}
+            guard assistantScopes.count<8,assistantScopeIssued.count<512 else{throw PanelBridgeError.overflow}
+            let response=PendingAssistantScopeResponse()
+            assistantScopeIssued.insert(request.requestID);assistantScopes[request.requestID]=(request,response)
+            return(response,true)
+        }
+        if registered {
+            io.asyncAfter(deadline:DispatchTime(uptimeNanoseconds:deadline)){[weak self] in
+                guard let self else{return}
+                // Remove only this still-owned waiter under the same lock as
+                // acceptance. A duplicate registration never extends its timer.
+                let expired=self.lock.withLock{()->Bool in
+                    guard let pending=self.assistantScopes[request.requestID],pending.1 === response else{return false}
+                    self.assistantScopes.removeValue(forKey:request.requestID)
+                    pending.1.finish(.failure(PanelBridgeError.timedOut));return true
+                }
+                if expired{self.fail()}
+            }
+        }
+        return response
+    }
+    private func acceptAssistantScope(_ reply:AssistantScopeResponse)throws {
+        let response=try lock.withLock{()->PendingAssistantScopeResponse? in
+            guard let pending=assistantScopes[reply.requestID] else{
+                if assistantScopeReplies[reply.requestID]?.1==reply{return nil}
+                throw PanelBridgeError.malformed
+            }
+            let request=pending.0
+            guard reply.action==request.action,reply.assistantSessionID==request.assistantSessionID,
+                  reply.sessionEpoch==request.lease.sessionEpoch,
+                  reply.presentationGeneration==request.lease.presentationGeneration,
+                  reply.controlSequence==request.controlSequence else{throw PanelBridgeError.malformed}
+            // All fallible schema and ownership checks precede removal.
+            assistantScopes.removeValue(forKey:reply.requestID)
+            assistantScopeReplies[reply.requestID]=(request,reply);assistantScopeReplyOrder.append(reply.requestID)
+            while assistantScopeReplyOrder.count>8{assistantScopeReplies.removeValue(forKey:assistantScopeReplyOrder.removeFirst())}
             return pending.1
         }
         response?.finish(.success(reply))
@@ -436,6 +493,8 @@ public final class HelperTransport: @unchecked Sendable {
                         try acceptVisual(VisualInputResponse(data:frame))
                     } else if case .object(let fields)=node,case .string("answer_cancel_response")?=fields["kind"] {
                         try acceptAnswerCancellation(AnswerCancellationResponse(data:frame))
+                    } else if case .object(let fields)=node,case .string("assistant_scope_response")?=fields["kind"] {
+                        try acceptAssistantScope(AssistantScopeResponse(data:frame))
                     } else { _=try SessionAnswerDecision(data:frame);try onFrame(frame) }
                 }
                 if decoder.hasPartial { if partialSince==nil { partialSince=DispatchTime.now().uptimeNanoseconds } } else { partialSince=nil }
@@ -469,6 +528,8 @@ public final class HelperTransport: @unchecked Sendable {
             sessions.forEach { $0.2.resume(throwing:PanelBridgeError.closed) }
             let cancellations=Array(answerCancellations.values);answerCancellations.removeAll()
             cancellations.forEach{$0.1.finish(.failure(PanelBridgeError.closed))}
+            let scopes=Array(assistantScopes.values);assistantScopes.removeAll()
+            scopes.forEach{$0.1.finish(.failure(PanelBridgeError.closed))}
             let visual=Array(visualRequests.values);visualRequests.removeAll()
             visual.forEach{$0.response.finish(.failure(PanelBridgeError.closed))}
             return (process,pending,Array(imageWrites.values))

@@ -1,0 +1,37 @@
+{
+  "build-first-resume.log": {
+    "sha256": "777862102749d905d0df330b2050c6fe633e9cacac871a0d5cb657ac65095abc",
+    "bytes": 36136,
+    "storage": "local only; original host paths and build metadata omitted from public payload"
+  },
+  "build-retry1.log": {
+    "sha256": "0ea429b37096fd0567b976e79621a5a79ae95784f914e456305251d0cdfb0d0e",
+    "bytes": 65626,
+    "storage": "local only; original host paths and build metadata omitted from public payload"
+  },
+  "bundled6.log": {
+    "sha256": "f4b5861348724111dd43b5c3e7089d212a09023a6e0661858ed1ca9cad65bbdf",
+    "bytes": 1498,
+    "storage": "local only; original host paths and build metadata omitted from public payload"
+  },
+  "native10.log": {
+    "sha256": "92837158f60eca15883ce9a57991a249f659abd25515c6e06766e4b25a46e71d",
+    "bytes": 10264,
+    "storage": "local only; original host paths and build metadata omitted from public payload"
+  },
+  "old-artifact-red.log": {
+    "sha256": "7e1508ff6b52187bec5d0cf1d04e8d51b2cd2121b597ae66fa867ad510c42579",
+    "bytes": 10385,
+    "storage": "local only; original host paths and build metadata omitted from public payload"
+  },
+  "driver-argv-and-resources.jsonl": {
+    "sha256": "01461da2cb449237922b418032ea8468a414b030ffc285feffbc66211f47393f",
+    "bytes": 106176,
+    "storage": "local only; original host paths and build metadata omitted from public payload"
+  },
+  "resource_driver.py": {
+    "sha256": "1094629f9eef801b8885376cc889d75c9350518172ec99f20a70d5b0d2ae3fc0",
+    "bytes": 4963,
+    "storage": "local only; original host paths and build metadata omitted from public payload"
+  }
+}

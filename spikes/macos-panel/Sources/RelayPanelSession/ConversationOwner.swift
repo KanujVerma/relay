@@ -87,6 +87,7 @@ final class ConversationOwnerBox:@unchecked Sendable {
     let publication:ContextPublicationGate
     var composer:QuestionContextComposer?
     var forwarder:OrderedContextForwarder?
+    var responsePreferences:ResponsePreferencesRequestBridge?
     var currentBinding:PanelRequestBinding?
     var lastContextRetirement:(PanelRequestBinding,Bool)?
     var acceptedQuestion:String?

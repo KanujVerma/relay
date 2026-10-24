@@ -12,6 +12,7 @@ import RelayControls
         Window("Relay",id:"relay-home"){RelayHomeAdapter(model:model,shell:shell)}.defaultSize(width:920,height:670).windowResizability(.contentSize)
         Window("Relay session",id:"relay-live"){RelayLiveAdapter(model:model,shell:shell)}.windowStyle(.hiddenTitleBar).windowResizability(.contentSize)
         Window("My Context",id:"relay-context"){RelayMemoryWorkspace(model:model)}.defaultSize(width:920,height:720)
+        Window("History",id:"relay-history"){RelayHistoryWorkspace(model:model)}.defaultSize(width:920,height:670)
         Window("Relay Settings",id:"relay-settings"){SessionSettingsView(model:model)}.defaultSize(width:920,height:670).windowResizability(.contentSize)
         MenuBarExtra("Relay",systemImage:model.running ? "waveform.circle.fill":"waveform"){RelayMenu(model:model)}
         .commands{RelayAppCommands(model:model)}
@@ -22,7 +23,7 @@ private struct RelayAppCommands:Commands {
     @Environment(\.openWindow) private var openWindow
     var body:some Commands {
         CommandGroup(replacing:.appSettings){Button("Settings…"){openWindow(id:"relay-settings")}.keyboardShortcut(",",modifiers:.command)}
-        CommandGroup(replacing:.appTermination){Button("Quit Relay"){Task{await model.stop();NSApplication.shared.terminate(nil)}}.keyboardShortcut("q",modifiers:.command)}
+        CommandGroup(replacing:.appTermination){Button("Quit Relay"){Task{await model.shutdown();NSApplication.shared.terminate(nil)}}.keyboardShortcut("q",modifiers:.command)}
     }
 }
 @MainActor private struct RelayMenu:View {
@@ -37,21 +38,23 @@ private struct RelayAppCommands:Commands {
         Button("End session"){model.performWindowAction(.endSession)}.disabled(!model.relayPresentation.allows(.end))
         Divider()
         Button("My Context"){openWindow(id:"relay-context")}.disabled(model.fixture)
+        Button("History"){openWindow(id:"relay-history")}.disabled(model.fixture)
         Button("Settings…"){openWindow(id:"relay-settings")}
         Divider()
-        Button("Quit Relay"){Task{await model.stop();NSApplication.shared.terminate(nil)}}
+        Button("Quit Relay"){Task{await model.shutdown();NSApplication.shared.terminate(nil)}}
     }
 }
 @MainActor private struct RelayHomeAdapter:View {
     @ObservedObject var model:SessionApplicationModel
     @ObservedObject private var setup:SpeechSetupCoordinator
     @ObservedObject private var visual:VisualInputSetupState
+    @ObservedObject private var preferences:ResponsePreferencesCoordinator
     @ObservedObject var shell:RelayWindowShell
     @Environment(\.openWindow) private var openWindow
-    init(model:SessionApplicationModel,shell:RelayWindowShell){self.model=model;self.shell=shell;setup=model.speechSetup;visual=model.visual}
-    private var router:RelayCommandRouter{RelayCommandRouter(state:{model.relayPresentation},control:model.performWindowAction,start:{await model.start();if model.running{openWindow(id:"relay-live")}},cancelPreparation:model.cancelPreparation,retryPreparation:{await model.retryPreparation();if model.running{openWindow(id:"relay-live")}},openContext:{openWindow(id:"relay-context")},openSettings:{openWindow(id:"relay-settings")},showSession:{openWindow(id:"relay-live")})}
+    init(model:SessionApplicationModel,shell:RelayWindowShell){self.model=model;self.shell=shell;setup=model.speechSetup;visual=model.visual;preferences=model.responsePreferences}
+    private var router:RelayCommandRouter{RelayCommandRouter(state:{model.relayPresentation},control:model.performWindowAction,start:{await model.start();if model.running{openWindow(id:"relay-live")}},cancelPreparation:model.cancelPreparation,retryPreparation:{await model.retryPreparation();if model.running{openWindow(id:"relay-live")}},openContext:{openWindow(id:"relay-context")},openSettings:{openWindow(id:"relay-settings")},openAISettings:{model.showAISettings{openWindow(id:"relay-settings")}},showSession:{openWindow(id:"relay-live")})}
     var body:some View {
-        RelayHomeView(state:model.relayPresentation,preparation:RelayPreparationPresentation(setup.snapshot),aiEnabled:model.oauth,error:model.error,fixture:model.fixture,assistant:model.assistant,onAction:{router.perform($0)}){RelaySourceControls(model:model)}
+        RelayHomeView(state:model.relayPresentation,preparation:model.relayPreparation,aiEnabled:model.oauth,error:model.error,fixture:model.fixture,assistant:model.assistant,openHistory:{openWindow(id:"relay-history")},guideLabel:model.responseGuideName,onResponsePreferences:{model.showResponsePreferences{openWindow(id:"relay-settings")}},onAction:{router.perform($0)}){RelaySourceControls(model:model)}
             .task{if model.fixture && shell.claimFixtureStart(){await model.start();if model.running{openWindow(id:"relay-live")}}}
             .onChange(of:model.running){_,running in if running{shell.expanded=true;openWindow(id:"relay-live")}}
             .onChange(of:model.assistantActive){_,active in if active{shell.expanded=true;openWindow(id:"relay-live")}}
@@ -65,7 +68,7 @@ private struct RelayAppCommands:Commands {
             HStack{
                 Picker("Conversation app",selection:$model.selectedBundleID){Text(model.microphoneEnabled ? "Microphone only":"Choose an app").tag("");ForEach(apps,id:\.processIdentifier){app in if let bundle=app.bundleIdentifier{Text(app.localizedName ?? bundle).tag(bundle)}}}.labelsHidden().frame(maxWidth:.infinity,alignment:.leading).accessibilityLabel("Conversation app")
                 Toggle("My microphone",isOn:$model.microphoneEnabled).font(.system(size:12)).toggleStyle(.checkbox)
-            }.disabled(model.running || model.starting || model.stopping || model.speechSetup.snapshot.isBusy)
+            }.disabled(model.running || model.starting || model.stopping || model.accountPreparationActive || model.accountPreparationCancelling || model.speechSetup.snapshot.isBusy)
             Toggle("This conversation permits recording and assistance",isOn:Binding(get:{model.authorizedConversation},set:{allowed in if !allowed && (model.running || model.starting){model.performWindowAction(.endSession)};model.authorizedConversation=allowed})).font(.system(size:12)).toggleStyle(.checkbox)
         }
     }
@@ -75,13 +78,14 @@ private struct RelayAppCommands:Commands {
     @ObservedObject var shell:RelayWindowShell
     @ObservedObject private var setup:SpeechSetupCoordinator
     @ObservedObject private var visual:VisualInputSetupState
+    @ObservedObject private var preferences:ResponsePreferencesCoordinator
     @Environment(\.openWindow) private var openWindow
     @State private var startedAt:Double?
-    init(model:SessionApplicationModel,shell:RelayWindowShell){self.model=model;self.shell=shell;setup=model.speechSetup;visual=model.visual}
-    private var router:RelayCommandRouter{RelayCommandRouter(state:{model.relayPresentation},control:model.performWindowAction,start:{await model.start()},cancelPreparation:model.cancelPreparation,retryPreparation:{await model.retryPreparation()},openContext:{openWindow(id:"relay-context")},openSettings:{openWindow(id:"relay-settings")},showSession:{openWindow(id:"relay-live")})}
+    init(model:SessionApplicationModel,shell:RelayWindowShell){self.model=model;self.shell=shell;setup=model.speechSetup;visual=model.visual;preferences=model.responsePreferences}
+    private var router:RelayCommandRouter{RelayCommandRouter(state:{model.relayPresentation},control:model.performWindowAction,start:{await model.start()},cancelPreparation:model.cancelPreparation,retryPreparation:{await model.retryPreparation()},openContext:{openWindow(id:"relay-context")},openSettings:{openWindow(id:"relay-settings")},openAISettings:{model.showAISettings{openWindow(id:"relay-settings")}},showSession:{openWindow(id:"relay-live")})}
     var body:some View {
         TimelineView(.periodic(from:.now,by:1)){_ in
-            LiveSessionView(state:model.relayPresentation,question:model.snapshot.question,answer:model.relayAnswer,status:model.snapshot.status,contextLabel:model.relayContextLabel,contextDetail:model.contextStatus.isEmpty ? nil:model.contextStatus,error:model.error,elapsed:elapsed,fixture:model.fixture,assistant:model.assistant,attachScroll:{window,scroll in model.attachWindow(window,scrollView:scroll)},expanded:$shell.expanded,detailExpanded:$model.expanded,onAction:{router.perform($0)})
+            LiveSessionView(state:model.relayPresentation,question:model.snapshot.question,answer:model.relayAnswer,status:model.snapshot.status,contextLabel:model.relayContextLabel,contextDetail:model.relayContextDetail,error:model.error,elapsed:elapsed,fixture:model.fixture,assistant:model.assistant,guideLabel:model.responseGuideName,onResponsePreferences:{model.showResponsePreferences{openWindow(id:"relay-settings")}},attachScroll:{window,scroll in model.attachWindow(window,scrollView:scroll)},expanded:$shell.expanded,detailExpanded:$model.expanded,onAction:{router.perform($0)})
         }
         .background(RelayLiveWindowAttachment(shell:shell,attach:{window in model.attachWindow(window,scrollView:nil)}))
         .onAppear{if model.running{startedAt=ProcessInfo.processInfo.systemUptime}}

@@ -9,14 +9,22 @@ struct RelayHomeView<SourceControls:View>:View {
     let error:String?
     var fixture=false
     var assistant:TypedAssistantController?
+    var openHistory:(()->Void)?
+    var guideLabel:String?
+    var onResponsePreferences:(()->Void)?
     let onAction:(RelayUIAction)->Void
     @ViewBuilder let sourceControls:()->SourceControls
+    private var offersChatGPTSetup:Bool{!aiEnabled && !fixture}
+    private var headline:String {
+        state.stopping ? "Finishing the session…":state.paused ? "Take your time.":state.running ? "Your session is live.":state.visualBusy ? "Updating image settings…":offersChatGPTSetup ? "Connect ChatGPT for live answers.":"Ready when you are."
+    }
     var body:some View {
         HStack(spacing:0){
             VStack(alignment:.leading,spacing:assistant == nil ? 24:16){
                 RelayBrand().padding(.bottom,12)
                 Label("Session",systemImage:"waveform").font(.system(size:13,weight:.medium)).frame(maxWidth:.infinity,alignment:.leading).padding(10).background(.white.opacity(0.06),in:RoundedRectangle(cornerRadius:10))
                 Button{onAction(.context)}label:{Label("My Context",systemImage:"person.text.rectangle").frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).font(.system(size:13)).foregroundStyle(RelayTheme.secondary).padding(.horizontal,10).disabled(fixture)
+                if let openHistory{Button(action:openHistory){Label("History",systemImage:"clock.arrow.circlepath").frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).font(.system(size:13)).foregroundStyle(RelayTheme.secondary).padding(.horizontal,10).disabled(fixture)}
                 Spacer()
                 Button{onAction(.settings)}label:{Label("Settings",systemImage:"gearshape").frame(maxWidth:.infinity,alignment:.leading)}.buttonStyle(.plain).font(.system(size:13)).foregroundStyle(RelayTheme.secondary).padding(.horizontal,10)
             }.padding(20).frame(width:188).background(.white.opacity(0.02))
@@ -25,13 +33,21 @@ struct RelayHomeView<SourceControls:View>:View {
                 HStack{Text("SESSION").font(.system(size:11,weight:.semibold)).tracking(1.5).foregroundStyle(RelayTheme.muted);Spacer();Label(aiEnabled ? "AI suggestions":"Local reference cards",systemImage:aiEnabled ? "sparkles":"book.closed").font(.system(size:11)).foregroundStyle(RelayTheme.muted)}
                 Spacer(minLength:0)
                 VStack(alignment:.leading,spacing:12){
-                    Text(state.stopping ? "Finishing the session…":state.paused ? "Take your time.":state.running ? "Your session is live.":state.visualBusy ? "Updating image settings…":"Ready when you are.").font(.system(size:30,weight:.semibold)).tracking(-0.7)
-                    Text("Listen to the conversation. Get clear talking points, with your own experience close at hand.").font(.system(size:14)).lineSpacing(5).foregroundStyle(RelayTheme.secondary).fixedSize(horizontal:false,vertical:true)
+                    Text(headline).font(.system(size:30,weight:.semibold)).tracking(-0.7)
+                    if offersChatGPTSetup {
+                        HStack(spacing:16){
+                            Text("Use your ChatGPT plan, or continue with limited local reference cards.").font(.system(size:14)).lineSpacing(5).foregroundStyle(RelayTheme.secondary).fixedSize(horizontal:false,vertical:true)
+                            Button("Connect ChatGPT"){onAction(.connectChatGPT)}.buttonStyle(RelayPrimaryButtonStyle()).fixedSize()
+                        }
+                    }else{
+                        Text("Listen to the conversation. Get clear talking points, with your own experience close at hand.").font(.system(size:14)).lineSpacing(5).foregroundStyle(RelayTheme.secondary).fixedSize(horizontal:false,vertical:true)
+                    }
                 }
                 if let assistant{
                     VStack(alignment:.leading,spacing:8){
                         HStack{
                             Text("Ask Relay").font(.system(size:15,weight:.semibold));Spacer()
+                            if let guideLabel,let onResponsePreferences{ResponseGuideButton(name:guideLabel,action:onResponsePreferences)}
                             if state.assistantActive{Button("Open assistant"){onAction(.showSession)}.buttonStyle(.plain).font(.system(size:12)).foregroundStyle(RelayTheme.secondary)}
                         }
                         Text("Ask a question without starting audio recording.").font(.system(size:12)).foregroundStyle(RelayTheme.muted)

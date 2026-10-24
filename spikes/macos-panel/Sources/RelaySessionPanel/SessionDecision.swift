@@ -27,6 +27,7 @@ public struct SessionAnswerDecision: Sendable {
     public let resultRevision:UInt64;public let disposition:String;public let reason:String;public let token:PythonTurnIdentity?
     public let displayID:String?;public let question:String;public let answerID:String?;public let answerKind:String?;public let card:SessionCard?
     public let taskContext:TaskContextUse?
+    public let responsePreferencesRevision:UUID?
     public init(data:Data) throws {
         let o=try StrictJSON.decode(data).object(["schemaVersion","captureSessionID","sessionEpoch","presentationGeneration","requestID","eventSequence","resultRevision","disposition","reasonCode","pythonToken","displayID","question","answerID","answerKind","card","provenance"])
         guard try o["schemaVersion"]!.uint()==1,
@@ -46,17 +47,17 @@ public struct SessionAnswerDecision: Sendable {
         }
         if disposition != "answer" {
             guard o["answerID"]!.isNull,o["answerKind"]!.isNull,o["card"]!.isNull,o["provenance"]!.isNull else { throw PanelBridgeError.malformed }
-            answerID=nil;answerKind=nil;card=nil;taskContext=nil;return
+            answerID=nil;answerKind=nil;card=nil;taskContext=nil;responsePreferencesRevision=nil;return
         }
         answerID=try o["answerID"]!.string(64);answerKind=try o["answerKind"]!.string();card=try SessionCard(o["card"]!)
         if answerKind=="reviewed_reference" {
-            taskContext=nil
+            taskContext=nil;responsePreferencesRevision=nil
             let p=try o["provenance"]!.object(["referenceID","sourceRef"])
             _=try p["referenceID"]!.string(160);_=try p["sourceRef"]!.string(256)
         } else if answerKind=="generated_suggestion" {
             guard case .object(let p)=o["provenance"]! else { throw PanelBridgeError.malformed }
             if p["personal"] != nil {
-                taskContext=nil
+                taskContext=nil;responsePreferencesRevision=nil
                 guard try o["provenance"]!.object(["personal","contextRevision","facts","checks"])["personal"]!.boolean() else { throw PanelBridgeError.malformed }
                 _=try p["contextRevision"]!.string(256)
                 let facts=try p["facts"]!.array(2);guard !facts.isEmpty else { throw PanelBridgeError.malformed }
@@ -67,7 +68,14 @@ public struct SessionAnswerDecision: Sendable {
                 }
                 guard try p["checks"]!.array(1).map({try $0.string()})==["host_exact_approved_facts"] else { throw PanelBridgeError.malformed }
             } else {
-                _=try o["provenance"]!.object(p["taskContext"] == nil ? ["model","checks","independentlyReviewed"] : ["model","checks","independentlyReviewed","taskContext"])
+                var keys:Set<String>=["model","checks","independentlyReviewed"]
+                if p["taskContext"] != nil{keys.insert("taskContext")}
+                if let revision=p["responsePreferencesRevision"]{
+                    keys.insert("responsePreferencesRevision")
+                    guard let value=UUID(uuidString:try revision.string(36)) else{throw PanelBridgeError.malformed}
+                    responsePreferencesRevision=value
+                }else{responsePreferencesRevision=nil}
+                _=try o["provenance"]!.object(keys)
                 if let context=p["taskContext"] {
                     guard case .object(let fields)=context else{throw PanelBridgeError.malformed}
                     let c=try context.object(fields["imageDigest"]==nil ? ["provenance","source","capturedUptimeNanoseconds"]:["provenance","source","capturedUptimeNanoseconds","imageDigest"])

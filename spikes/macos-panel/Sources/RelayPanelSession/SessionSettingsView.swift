@@ -5,13 +5,17 @@ import RelayControls
 import RelayScreenContext
 import RelaySessionPanel
 import RelaySessionCapture
+import RelayAccount
 
+enum RelaySettingsSection:String,CaseIterable,Sendable {
+    case general="General",screen="Screen context",ai="AI",history="History",responses="Responses",shortcuts="Shortcuts",advanced="Advanced"
+    var symbol:String{switch self{case .general:"slider.horizontal.3";case .screen:"rectangle.dashed";case .ai:"sparkles";case .history:"clock.arrow.circlepath";case .responses:"text.bubble";case .shortcuts:"keyboard";case .advanced:"wrench.and.screwdriver"}}
+}
 @MainActor struct SessionSettingsView:View {
-    enum Section:String,CaseIterable{case general="General",screen="Screen context",ai="AI",shortcuts="Shortcuts",advanced="Advanced";var symbol:String{switch self{case .general:"slider.horizontal.3";case .screen:"rectangle.dashed";case .ai:"sparkles";case .shortcuts:"keyboard";case .advanced:"wrench.and.screwdriver"}}}
     @ObservedObject var model:SessionApplicationModel
     @ObservedObject private var setup:SpeechSetupCoordinator
     @ObservedObject private var visual:VisualInputSetupState
-    @State private var section:Section = .general
+    var selectedSection:RelaySettingsSection{model.settingsSection}
     @State private var selectingASR=false
     @State private var selectingVAD=false
     @Environment(\.openWindow) private var openWindow
@@ -19,7 +23,7 @@ import RelaySessionCapture
     var body:some View {
         VStack(spacing:0){
             HStack{Text("Settings").font(.system(size:13,weight:.semibold));Spacer();Text("Relay").font(.system(size:12)).foregroundStyle(RelayTheme.muted)}.padding(.horizontal,20).frame(height:40).background(.white.opacity(0.035))
-            HStack(spacing:4){ForEach(Section.allCases,id:\.self){item in Button{section=item}label:{VStack(spacing:7){Image(systemName:item.symbol).font(.system(size:18));Text(item.rawValue).font(.system(size:11,weight:.medium))}.frame(width:106,height:64).background(section==item ? .white.opacity(0.08):.clear,in:RoundedRectangle(cornerRadius:10))}.buttonStyle(.plain).foregroundStyle(section==item ? .white:RelayTheme.muted)};Spacer()}.padding(.horizontal,20).padding(.vertical,12)
+            HStack(spacing:4){ForEach(RelaySettingsSection.allCases,id:\.self){item in Button{model.settingsSection=item}label:{VStack(spacing:7){Image(systemName:item.symbol).font(.system(size:18));Text(item.rawValue).font(.system(size:11,weight:.medium))}.frame(width:106,height:64).background(selectedSection==item ? .white.opacity(0.08):.clear,in:RoundedRectangle(cornerRadius:10))}.buttonStyle(.plain).foregroundStyle(selectedSection==item ? .white:RelayTheme.muted)};Spacer()}.padding(.horizontal,20).padding(.vertical,12)
             Divider().overlay(RelayTheme.line)
             ScrollView{VStack(alignment:.leading,spacing:24){content}.padding(.horizontal,32).padding(.vertical,28).frame(maxWidth:760,alignment:.leading).frame(maxWidth:.infinity)}
         }.frame(width:920,height:670).background(RelayTheme.base).foregroundStyle(.white).preferredColorScheme(.dark).disabled(model.fixture)
@@ -27,7 +31,7 @@ import RelaySessionCapture
             .fileImporter(isPresented:$selectingVAD,allowedContentTypes:[.folder]){if case .success(let url)=$0{model.vadFolder=url.path}}
     }
     @ViewBuilder private var content:some View {
-        switch section {
+        switch selectedSection {
         case .general:
             settingsTitle("Conversation","Choose what Relay listens to. Audio starts only when you start a session.")
             RelaySourceControls(model:model)
@@ -43,14 +47,17 @@ import RelaySessionCapture
             Divider().overlay(RelayTheme.line)
             SelectedTextOptions(model:model)
         case .ai:
-            settingsTitle("AI suggestions","Uses your existing Relay sign-in and configured ChatGPT plan.")
-            Toggle("Enable AI suggestions",isOn:Binding(get:{model.oauth},set:{enabled in Task{await model.setAIEnabled(enabled)}})).disabled(!model.canChangeAIMode)
-            Text("Account sign-in is not available in this window yet. Local reference cards remain available with AI off.").font(.system(size:12)).foregroundStyle(RelayTheme.muted)
+            AccountSettingsView(controller:model.account)
+            Text("Local reference cards remain available with AI off. Finish or pause the current session before changing your connection.").font(.system(size:12)).foregroundStyle(RelayTheme.muted)
             Divider().overlay(RelayTheme.line)
             VisualInputOptions(model:model)
+        case .responses:
+            ResponsePreferencesSettingsView(model:model)
         case .shortcuts:
             settingsTitle("Keyboard shortcuts","Control Relay's own window and current answer.")
             ControlsSettingsView(controller:model.controls).onAppear{model.restoreShortcuts()}.onChange(of:model.controls.shortcuts){_,_ in model.saveShortcuts()}.onDisappear{model.saveShortcuts()}
+        case .history:
+            HistorySettingsOptions(model:model)
         case .advanced:
             settingsTitle("Advanced speech files","Leave both paths empty to use automatic setup. Custom files require both folders and explicit permission to use their models.")
             VStack(alignment:.leading,spacing:12){TextField("ASR model folder",text:$model.asrFolder);Button("Choose speech folder"){selectingASR=true};TextField("Compiled VAD model",text:$model.vadFolder);Button("Choose detector"){selectingVAD=true};Toggle("I have permission to use these custom speech models",isOn:$model.modelLicensesAcknowledged)}.disabled(model.running || model.starting || model.stopping || setup.snapshot.isBusy)
@@ -67,6 +74,22 @@ import RelaySessionCapture
     }
     private var preparationWithoutRecovery:RelayPreparationPresentation{var value=RelayPreparationPresentation(setup.snapshot);value.recovery = .none;return value}
     private func settingsTitle(_ title:String,_ subtitle:String)->some View{VStack(alignment:.leading,spacing:8){Text(title).font(.system(size:18,weight:.semibold));Text(subtitle).font(.system(size:13)).lineSpacing(4).foregroundStyle(RelayTheme.secondary)}}
+}
+@MainActor private struct HistorySettingsOptions:View{
+    @ObservedObject var model:SessionApplicationModel
+    @ObservedObject private var history:SessionHistoryCoordinator
+    @Environment(\.openWindow) private var openWindow
+    init(model:SessionApplicationModel){self.model=model;history=model.history}
+    var body:some View{
+        VStack(alignment:.leading,spacing:16){
+            Text("Local session history").font(.system(size:18,weight:.semibold))
+            Text("Optional saving keeps final audio-session transcript text and your manual notes encrypted on this Mac for 30 days. No raw audio, screenshots or screen text is saved. Typed chats and suggested answers are not saved here. Nothing is added to My Context automatically.").font(.system(size:13)).lineSpacing(4).foregroundStyle(RelayTheme.secondary)
+            Toggle("Save session text locally",isOn:Binding(get:{history.savingEnabled},set:{enabled in if enabled{Task{try? await history.enableSaving()}}else{history.stopSaving()}})).disabled(!history.savingEnabled && (!model.canEnableHistory || history.isBusy))
+            Text(history.snapshot.message).font(.system(size:12)).foregroundStyle(RelayTheme.muted)
+            HStack{Button("Open History"){openWindow(id:"relay-history")}.buttonStyle(RelayQuietButtonStyle());Button("Lock history"){history.lock()}.buttonStyle(RelayQuietButtonStyle())}
+            Text("Enable saving while idle. Stop saving keeps existing history available. Lock turns saving off and closes it. Recording permission changes do not delete saved history; use History to delete a source, a session or everything. Expiry runs when history is accessed, and exported copies remain yours to manage.").font(.system(size:12)).lineSpacing(4).foregroundStyle(RelayTheme.muted)
+        }
+    }
 }
 @MainActor private struct VisualInputOptions:View {
     @ObservedObject var model:SessionApplicationModel

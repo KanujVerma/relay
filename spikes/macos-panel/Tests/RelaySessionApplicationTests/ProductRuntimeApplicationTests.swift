@@ -2,9 +2,38 @@ import Foundation
 import XCTest
 import RelaySessionPanel
 import RelayControls
+import RelayProfile
 @testable import RelayPanelSession
 
+@MainActor private final class BundledIdlePreferences:SessionContextUsePreferences{var useInSessions=false}
+
 @MainActor final class ProductRuntimeApplicationTests:XCTestCase {
+    func testOptInActualBundleIdleAskNeedsNoRepositoryPythonOrSpeechInputs()async throws {
+        guard let path=ProcessInfo.processInfo.environment["RELAY_BUNDLED_RUNTIME_APP"] else{
+            throw XCTSkip("Requires a bundle built from this idle source; no capture, account or developer fallback.")
+        }
+        let app=URL(fileURLWithPath:path,isDirectory:true)
+        let model=SessionApplicationModel(arguments:["Relay","--role","analytics"],contextPreferences:BundledIdlePreferences(),bundleURL:app,workingDirectory:URL(fileURLWithPath:"/"))
+        addTeardownBlock{await model.stop()}
+        XCTAssertNil(model.error);XCTAssertFalse(model.authorizedConversation)
+        model.microphoneEnabled=false
+        let question="What is the difference between WHERE and HAVING?"
+        model.assistant.draft=question;model.assistant.submitDraft()
+        for _ in 0..<5000{
+            if model.snapshot.card != nil{break};try await Task.sleep(for:.milliseconds(2))
+        }
+        XCTAssertEqual(model.snapshot.question,question);XCTAssertNotNil(model.snapshot.card)
+        XCTAssertTrue(model.assistantActive);XCTAssertFalse(model.running)
+        XCTAssertTrue(model.root.path.hasPrefix(app.path+"/"));XCTAssertEqual(model.speechSetup.snapshot.stage,.notPrepared)
+        XCTAssertTrue(model.assistant.transcript.snapshot.rows.isEmpty)
+        let old=model.snapshot.replacement
+        try model.perform(.requestHelp)
+        for _ in 0..<5000{
+            if model.snapshot.replacement>old && model.snapshot.card != nil{break};try await Task.sleep(for:.milliseconds(2))
+        }
+        XCTAssertGreaterThan(model.snapshot.replacement,old);XCTAssertNotNil(model.snapshot.card)
+        await model.stop();XCTAssertNil(model.snapshot.card);XCTAssertNil(model.currentSessionID)
+    }
     private var repository:URL {
         URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

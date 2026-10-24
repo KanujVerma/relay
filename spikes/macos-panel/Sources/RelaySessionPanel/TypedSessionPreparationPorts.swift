@@ -5,12 +5,12 @@ import RelayNativeSession
 /// asynchronous operation must clean partial failure before throwing; a ready
 /// lease that goes unused is closed and joined through its original intent.
 @MainActor public struct TypedSessionPreparationPorts {
-    public let canPrepareSession:()->Bool
-    public let prepareSession:(UUID,@escaping @MainActor ()->Bool)async throws->PresentationLease
-    public let retireUnusedSession:(UUID,PresentationLease)async->Void
-    public init(canPrepareSession:@escaping()->Bool,
-                prepareSession:@escaping(UUID,@escaping @MainActor ()->Bool)async throws->PresentationLease,
-                retireUnusedSession:@escaping(UUID,PresentationLease)async->Void) {
+    public let canPrepareSession:@MainActor ()->Bool
+    public let prepareSession:@MainActor (UUID,@escaping @MainActor ()->Bool)async throws->PresentationLease
+    public let retireUnusedSession:@MainActor (UUID,PresentationLease)async->Void
+    public init(canPrepareSession:@escaping @MainActor ()->Bool,
+                prepareSession:@escaping @MainActor (UUID,@escaping @MainActor ()->Bool)async throws->PresentationLease,
+                retireUnusedSession:@escaping @MainActor (UUID,PresentationLease)async->Void) {
         self.canPrepareSession=canPrepareSession;self.prepareSession=prepareSession
         self.retireUnusedSession=retireUnusedSession
     }

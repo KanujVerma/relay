@@ -8,18 +8,19 @@ struct RelaySessionPresentation {
     var cancellingPreparation=false
     var hasQuestion=false,hasAnswer=false,hasSelectedSource=false,hasRemoteSource=false,authorizedConversation=false
     var ownerCanStart=false,ownerCanResume=false
-    var status:String{stopping ? "Stopping":paused ? "Paused":running ? "Listening":starting || preparing ? "Preparing":visualBusy ? "Image setup busy":"Ready"}
+    var assistantActive=false,assistantPreparing=false,assistantClosing=false
+    var status:String{stopping || assistantClosing ? "Stopping":paused ? "Paused":running ? "Listening":assistantPreparing ? "Preparing assistant":assistantActive ? "Assistant · not listening":starting || preparing ? "Preparing":visualBusy ? "Image setup busy":"Ready"}
     func allows(_ action:RelayUIAction)->Bool {
         switch action {
-        case .start:return ownerCanStart && hasSelectedSource && authorizedConversation && !paused && !running && !starting && !stopping && !preparing && !visualBusy
-        case .resume:return ownerCanResume && paused && hasSelectedSource && authorizedConversation && !running && !starting && !stopping && !preparing && !visualBusy
-        case .pause:return (running || starting) && !stopping
-        case .end:return running || starting || paused || stopping || preparing || visualBusy
-        case .help:return running && !stopping && hasQuestion
-        case .copy,.expand:return running && !stopping && hasAnswer
-        case .cancelPreparation:return (preparing || starting) && !stopping && !cancellingPreparation
+        case .start:return ownerCanStart && hasSelectedSource && authorizedConversation && !paused && !running && !starting && !stopping && !preparing && !visualBusy && !assistantPreparing && !assistantClosing
+        case .resume:return ownerCanResume && paused && hasSelectedSource && authorizedConversation && !running && !starting && !stopping && !preparing && !visualBusy && !assistantPreparing && !assistantClosing
+        case .pause:return (running || starting || assistantActive || assistantPreparing) && !stopping && !assistantClosing
+        case .end:return running || starting || paused || stopping || preparing || visualBusy || assistantActive || assistantPreparing || assistantClosing
+        case .help:return (running || assistantActive) && !stopping && !assistantClosing && hasQuestion
+        case .copy,.expand:return (running || assistantActive) && !stopping && !assistantClosing && hasAnswer
+        case .cancelPreparation:return (preparing || starting || assistantPreparing) && !stopping && !assistantClosing && !cancellingPreparation
         case .retryPreparation:return allows(.start)
-        case .showSession:return running || paused || stopping
+        case .showSession:return running || paused || stopping || assistantActive || assistantPreparing || assistantClosing
         case .hide,.context,.settings:return true
         }
     }

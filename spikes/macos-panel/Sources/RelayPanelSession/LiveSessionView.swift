@@ -28,10 +28,10 @@ struct LiveSessionView:View {
                     if let assistant{AssistantComposerView(assistant:assistant);Divider().overlay(RelayTheme.line)}
                     ScrollView{
                         VStack(alignment:.leading,spacing:22){
-                            if let question,state.running {
+                            if let question,state.running || state.assistantActive {
                                 HStack{Spacer(minLength:60);VStack(alignment:.leading,spacing:6){Text("CURRENT QUESTION").font(.system(size:10,weight:.semibold)).tracking(1).foregroundStyle(RelayTheme.muted);Text(question).font(.system(size:13,weight:.medium)).lineSpacing(5).textSelection(.enabled)}.padding(.horizontal,14).padding(.vertical,10).frame(maxWidth:530,alignment:.leading).background(.white.opacity(0.065),in:UnevenRoundedRectangle(topLeadingRadius:17,bottomLeadingRadius:17,bottomTrailingRadius:6,topTrailingRadius:17))}
                             }
-                            if let answer,state.running{AnswerCardView(answer:answer,expanded:$detailExpanded)}
+                            if let answer,state.running || state.assistantActive{AnswerCardView(answer:answer,expanded:$detailExpanded)}
                             else{emptyContent}
                             if let error{Label(error,systemImage:"exclamationmark.circle").font(.system(size:12)).foregroundStyle(.orange).fixedSize(horizontal:false,vertical:true)}
                         }.padding(.horizontal,18).padding(.top,12).padding(.bottom,18).frame(maxWidth:.infinity,alignment:.leading)
@@ -53,8 +53,8 @@ struct LiveSessionView:View {
     @ViewBuilder private var emptyContent:some View {
         VStack(alignment:.leading,spacing:12){
             Image(systemName:state.paused ? "pause.circle":state.stopping ? "stop.circle":"waveform").font(.system(size:26,weight:.light)).foregroundStyle(RelayTheme.muted)
-            Text(state.paused ? "Take your time.":state.stopping ? "Finishing the session…":question != nil ? "Thinking it through…":"Listening for the next question.").font(.system(size:19,weight:.medium))
-            Text(state.paused ? "Resume starts a fresh conversation. Your saved context stays available.":state.stopping ? "Relay is waiting for active audio and requests to finish.":"Talking points appear automatically as the conversation develops.").font(.system(size:13)).lineSpacing(5).foregroundStyle(RelayTheme.muted)
+            Text(state.paused ? "Take your time.":state.stopping || state.assistantClosing ? "Finishing the session…":question != nil ? "Thinking it through…":state.running ? "Listening for the next question.":"Ask Relay a question.").font(.system(size:19,weight:.medium))
+            Text(state.paused ? "Resume starts a fresh conversation. Your saved context stays available.":state.stopping || state.assistantClosing ? "Relay is waiting for active work to finish.":state.running ? "Talking points appear automatically as the conversation develops.":"Audio recording is off. Type a question or follow-up above.").font(.system(size:13)).lineSpacing(5).foregroundStyle(RelayTheme.muted)
         }.padding(.vertical,26).frame(maxWidth:.infinity,alignment:.leading)
     }
 }

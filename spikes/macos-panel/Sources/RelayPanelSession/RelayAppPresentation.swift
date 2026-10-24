@@ -26,7 +26,8 @@ extension SessionApplicationModel {
     var relayPresentation:RelaySessionPresentation {
         RelaySessionPresentation(running:running,starting:starting,paused:paused,stopping:stopping,preparing:speechSetup.snapshot.isBusy,visualBusy:visual.isBusy || visual.status == .busy,cancellingPreparation:speechSetup.snapshot.stage == .cancelled && speechSetup.snapshot.isBusy,
             hasQuestion:snapshot.question != nil,hasAnswer:snapshot.card != nil,hasSelectedSource:fixture || microphoneEnabled || !selectedBundleID.isEmpty,hasRemoteSource:fixture || !selectedBundleID.isEmpty,
-            authorizedConversation:fixture || authorizedConversation,ownerCanStart:canStartSession,ownerCanResume:canResume)
+            authorizedConversation:fixture || authorizedConversation,ownerCanStart:canStartSession,ownerCanResume:canResume,
+            assistantActive:assistantActive,assistantPreparing:assistant.snapshot.isPreparing,assistantClosing:assistantClosing)
     }
     var relayAnswer:RelayAnswerPresentation? {
         snapshot.card.map{RelayAnswerPresentation(lead:$0.lead,points:$0.points,detail:$0.detail?.text,language:$0.detail?.language,isCode:$0.detail?.kind=="code")}

@@ -246,6 +246,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     private var contextUseObservation:AnyCancellable?
     private let historyPreferencesOverride:(any HistorySavingPreferences)?
     private let historyStorageFactory:(@Sendable ()throws->any ProtectedSnapshotStorage)?
+    let historyNoteDraft=HistoryNoteDraft()
     private var historyObservation:AnyCancellable?
     private var hasHistory=false
     private var historyPermit:HistorySessionPermit?
@@ -262,10 +263,18 @@ private actor FixtureRecognizer: ActivityRecognizer {
         let coordinator=SessionHistoryCoordinator(storageFactory:factory,preferences:preferences,canEnable:{[weak self] in
             self?.canEnableHistory==true
         })
+        coordinator.onRecordsUnavailable={ [weak self] in self?.historyNoteDraft.invalidate($0) }
         assistant.transcript.onHistoryObservation={ [weak coordinator] in coordinator?.observe($0) }
         historyObservation=coordinator.$snapshot.dropFirst().sink{[weak self] _ in self?.objectWillChange.send()}
         return coordinator
     }()
+    @discardableResult func stageHistoryNoteDraft(discardingChanges:Bool=false)->Bool{
+        let coordinator=history,view=coordinator.snapshot
+        guard let record=view.selected?.record,
+              coordinator.allowsManualNoteDraft(record.id,revision:record.revision,epoch:view.epoch) else{return false}
+        let staged=historyNoteDraft.stage(record:record,epoch:view.epoch,discardingChanges:discardingChanges)
+        return staged && coordinator.allowsManualNoteDraft(record.id,revision:record.revision,epoch:view.epoch)
+    }
     lazy var contextUse:SessionContextUseCoordinator = {
         hasContextUse=true
         let preferences:any SessionContextUsePreferences=contextPreferencesOverride ?? (fixture ? FixtureContextPreferences():UserDefaultsSessionContextUsePreferences())

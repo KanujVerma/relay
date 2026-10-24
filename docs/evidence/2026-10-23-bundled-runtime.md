@@ -1,4 +1,12 @@
-# Self-contained typed and personal-context app artifact
+# Self-contained typed and personal-context app artifacts
+
+## Current query-corrected artifact
+
+Clean source6eb17170799df7708e3c3525e3e4513adb8e6de7, sourceDirty=false in build-provenance.json. Artifact `/private/tmp/relay-root-query-runtime/Relay.app`:170,817,203bytes,100 arm64 Mach-O audits, all strict inner/outer ad-hoc signatures pass. Native executable SHA256 `ec47e8caa4ac0d366746496696785c866b4bb5787ff1287d9ac7f24016b22fad`; helper SHA256 `752d4783bf8152e477715af7540abf9c4bac8ee31db6db79bb782e06adb6c555`.
+
+The same offline pinned recipe passes actual frozen TXT/PDF/DOCX/profile/session tests before and after assembly, final3case run5.164s. Eighteen resolver/actual-Model/saved-context cases pass with this app, including ordinary “How does Python implement lists?” and prospective team case-study questions with no personal vault. Typed input still creates no audio transcript row. This artifact has the query correction; the earlier db768 relocated artifact below remains exact evidence for full-app relocation. No current6eb full-app relocated-copy or actual-window result is inferred from that older artifact. Native production source is unchanged by the query-only patch.
+
+## Earlier saved-context artifact and relocation
 
 2026-10-23. Runtime source **db768fdeebb7f084b8619b2eae54d8aabebe0065**, clean at build provenance capture. Later docs/tests commits do not change its production source. Artifact `/private/tmp/relay-root-current-runtime/Relay.app`; unchanged full-app relocation `/private/tmp/relay-root-context-relocation/Folder With Spaces/Relay.app`. These are local unsigned-for-distribution/ad-hoc-signed build artifacts, not a notarized installer or hosted release.
 

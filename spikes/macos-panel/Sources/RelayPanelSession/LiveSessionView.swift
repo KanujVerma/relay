@@ -25,7 +25,7 @@ struct LiveSessionView:View {
                 VStack(spacing:0){
                     HStack(spacing:8){Image(systemName:"sparkles").foregroundStyle(RelayTheme.muted);Text("Live assistance").font(.system(size:13,weight:.semibold));Spacer();if fixture{Text("SYNTHETIC DEMO").font(.system(size:10,weight:.medium)).foregroundStyle(RelayTheme.muted)};RelayIconButton(title:"My Context",symbol:"person.text.rectangle",enabled:!fixture){onAction(.context)};RelayIconButton(title:"Settings",symbol:"gearshape"){onAction(.settings)};RelayIconButton(title:"Hide Relay window",symbol:"minus"){onAction(.hide)}}.padding(.horizontal,12).frame(height:56)
                     Divider().overlay(RelayTheme.line)
-                    if let assistant{AssistantComposerView(assistant:assistant,isActive:state.running && !state.stopping);Divider().overlay(RelayTheme.line)}
+                    if let assistant{AssistantComposerView(assistant:assistant);Divider().overlay(RelayTheme.line)}
                     ScrollView{
                         VStack(alignment:.leading,spacing:22){
                             if let question,state.running {

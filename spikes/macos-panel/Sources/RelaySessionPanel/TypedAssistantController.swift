@@ -11,6 +11,7 @@ public struct TypedQuestionBasis:Sendable,Equatable {
 public enum DraftBasisState:Sendable {case none,retained,unavailable}
 public struct TypedAssistantSnapshot:Sendable {
     public fileprivate(set) var canSend=false
+    public fileprivate(set) var canSendAsNew=false
     public fileprivate(set) var canHelpCurrent=false
     public fileprivate(set) var canStop=false
     public fileprivate(set) var basis:TypedQuestionBasis?
@@ -67,9 +68,10 @@ public struct TypedAssistantSnapshot:Sendable {
             return .retained
         } ?? .none
         let current=currentRequest()
-        snapshot.canSend=lease != nil && !draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty
-            && draft.utf8.count<=500 && snapshot.basisState != .unavailable
+        snapshot.canSendAsNew=lease != nil && !draft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty
+            && draft.utf8.count<=500
             && !draft.unicodeScalars.contains(where:{disallowedTextScalar($0)})
+        snapshot.canSend=snapshot.canSendAsNew && snapshot.basisState != .unavailable
         snapshot.canHelpCurrent=lease != nil && current?.lease==lease && current.map{records[$0.requestID] != nil} == true
         snapshot.canStop=lease != nil && current?.lease==lease && current?.requestID==pending
             && current.map{!cancelling.contains($0.requestID)} == true
@@ -110,7 +112,11 @@ public struct TypedAssistantSnapshot:Sendable {
         }
         chosen=basis;refresh()
     }
-    public func sendDraftAsNewQuestion(){chosen=nil;submitDraft()}
+    public func sendDraftAsNewQuestion(){
+        refresh()
+        guard snapshot.canSendAsNew else{snapshot.status="Start a session and enter a short question.";return}
+        chosen=nil;submitDraft()
+    }
     public func requestCurrentQuestionHelp() {
         refresh();guard snapshot.canHelpCurrent,let current=currentRequest() else{return}
         do {

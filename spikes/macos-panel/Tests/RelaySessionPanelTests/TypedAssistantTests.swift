@@ -72,6 +72,26 @@ private actor DraftQuietRecognizer:ActivityRecognizer {
         XCTAssertEqual(port.sent.count,1);XCTAssertNil(port.sent[0].baseRequestID)
         native.beginStop();await native.waitForQuiescence();native.finishStop(quiesced:true)
     }
+    func testLastSourceLossDisablesSendAsNewAndPreservesItsDraftBasis()async throws {
+        let native=NativeSessionController(onEvent:{_ in}),port=DraftPortState()
+        try native.start(selectedBundleID:nil,microphoneEnabled:true,
+            components:[1:SourceComponents(vad:DraftQuietVAD(),recognizer:DraftQuietRecognizer())])
+        let model=TypedAssistantController(session:{native.isSourceActive(.microphone) ? native.authority.snapshot():nil},currentRequest:{port.current},
+            issue:{_,_,_ in XCTFail("An unavailable source must not issue");throw NativeSessionError.notAuthorized},cancel:{_ in throw PanelBridgeError.closed})
+        let first=try native.issueUserQuestion(expectedLease:try XCTUnwrap(native.authority.snapshot()),intent:.ask,
+            question:"Explain queues.",baseRequestID:nil,enqueue:{_ in})
+        port.current=binding(first);model.recordQuestion(binding(first),question:"Explain queues.")
+        model.draft="Why?"
+        XCTAssertTrue(model.snapshot.canSendAsNew)
+        native.sourceUnavailable(source:.microphone,generation:1,reason:.asrUnavailable)
+        model.refresh()
+        XCTAssertFalse(model.snapshot.canSendAsNew)
+        XCTAssertFalse(model.snapshot.canHelpCurrent)
+        model.sendDraftAsNewQuestion()
+        XCTAssertEqual(model.draft,"Why?")
+        XCTAssertEqual(model.snapshot.basis?.requestID,first.requestID)
+        native.beginStop();await native.waitForQuiescence();native.finishStop(quiesced:true)
+    }
     func testLateContextFailureDoesNotOverwriteNewerDraftRevision()async throws {
         let native=try native(),port=DraftPortState(),model=model(native,port)
         model.draft="Explain queues.";model.submitDraft()

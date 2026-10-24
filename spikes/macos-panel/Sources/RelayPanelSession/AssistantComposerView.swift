@@ -3,7 +3,6 @@ import RelaySessionPanel
 
 @MainActor struct AssistantComposerView:View {
     @ObservedObject var assistant:TypedAssistantController
-    let isActive:Bool
     var body:some View {
         VStack(alignment:.leading,spacing:9){
             if assistant.snapshot.transcriptVisible{SessionTranscriptView(store:assistant.transcript)}
@@ -12,14 +11,14 @@ import RelaySessionPanel
                     Image(systemName:"arrow.turn.down.right")
                     Text("Following up: "+basis.question).lineLimit(2)
                     Spacer(minLength:0)
-                    Button("Use latest"){assistant.useLatestQuestionForDraft()}.buttonStyle(.plain).disabled(!isActive)
+                    Button("Use latest"){assistant.useLatestQuestionForDraft()}.buttonStyle(.plain).disabled(!assistant.snapshot.canHelpCurrent)
                 }.font(.system(size:11)).foregroundStyle(RelayTheme.muted)
             }
             if assistant.snapshot.basisState == .unavailable {
                 HStack{
                     Text("The original context is unavailable.").font(.system(size:11)).foregroundStyle(.orange)
                     Spacer()
-                    Button("Send as new question"){assistant.sendDraftAsNewQuestion()}.font(.system(size:11)).buttonStyle(.plain).disabled(!isActive)
+                    Button("Send as new question"){assistant.sendDraftAsNewQuestion()}.font(.system(size:11)).buttonStyle(.plain).disabled(!assistant.snapshot.canSendAsNew)
                 }
             }
             HStack(alignment:.bottom,spacing:10){

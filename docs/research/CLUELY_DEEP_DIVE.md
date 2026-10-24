@@ -4,7 +4,7 @@ Research date: 2026-10-23. Owner: visual/research lane. Research only; no Relay 
 
 The shipped 2.1.24 application is a compact control pill plus a 690px-wide, top-input chat/dashboard panel. Settings is a 920x670 window with a centered horizontal tab strip. The current renderer is a different generation from the Sep-Dec 2025 support screenshots: its About page announces a complete 2.0 rewrite dated April 3, 2026. The most useful Relay work is faithful surface hierarchy, a short session flow, a first-class background/preparation surface, clear context provenance, and usable transcript/history states. Copying the old guide's action row or inventing a generic bottom-composer assistant layout would miss the measured source.
 
-Companions: [measured renderer specification](CLUELY_UI_MEASUREMENTS.md) and [source-coordinate ledger](https://github.com/KanujVerma/relay/blob/04fe8095e7ba874154ae5bece09c71eb6680561f/docs/research/CLUELY_SOURCE_COORDINATES.json). Raw extracted source/graphs/assets stay local.
+Companions: [measured renderer specification](CLUELY_UI_MEASUREMENTS.md) and [source-coordinate ledger](CLUELY_SOURCE_COORDINATES.json). Raw extracted source/graphs/assets stay local.
 
 ## Evidence and limits
 

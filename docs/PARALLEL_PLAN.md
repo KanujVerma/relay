@@ -23,6 +23,17 @@ The owner approved this revised core assignment after clarifying the full conver
 
 Three workers can build against agreed synthetic interfaces in parallel. Real private imports and capture remain gated by their explicit native permission, storage and source-approval implementation; the product requirement does not authorize loading private data into the current synthetic store. A finished worker becomes an independent reviewer. No simultaneous writers to the same shared source file.
 
+## Current end-to-end owners
+
+This table supersedes historical lane assignments above for the active feature work. Each worker uses GPT-6.1 Sol xhigh and an isolated checkout/branch. All three may build their complete feature through its app surface. Overlapping Model/transport changes stay on separate branches; root independently reviews and reconciles them into the controller checkout. Root does not serially take every app join away from a worker.
+
+| Worker | Feature and branch | Current review boundary |
+| --- | --- | --- |
+| research_visual_inputs | Protected account, `feature/chatgpt-account-2026-10-23` | Storage728e929, control6bd40bd and native28d5948 accepted at their separate boundaries; product join remains. Own native controller/Settings plus Model/helper/provider/package joins on this branch after API review. Actual helper retirement before account/mode mutation is required. |
+| review_composition | Standalone Ask, `feature/idle-assistant-scope-2026-10-23` | Foundation3698e28 accepted96Python+10native; transport/app follow. Own native/helper/transport/prepare plus actual Model/Home/live lifecycle and UI. Root owns actual GUI verification and integration reconciliation. |
+| compose_context_controls | Résumé coverage, `feature/resume-coverage-2026-10-23` | Exact v2 contract882f98 approved with recorded amendments. Backendf353 has one P2 shared-name entry relevance finding awaiting correction. Own backend schema/extraction/provider/renderer plus native profile DTO/controller/review UI. No Model/outer app/account/Keychain-purpose edits. Query fixf0fe9d0 separately accepted and joined at6eb1717. |
+| Root | Joined PR71, documentation and independent verification | Integration checkout is root-only. Freeze author checkpoints before review; publish evidence, reconcile accepted changes and preserve actual child/source lifetime checks. Main merge remains separate. |
+
 ## Accepted implementation direction
 
 Keep native permission/capture/transcription/window ownership in Swift. Reuse Relay's existing Python question state, OAuth and QA through one local child helper, with bounded framed messages on inherited pipes. No new server or full application framework is needed for this transport. Compare any proposed dependency with the existing implementation before adding it.

@@ -35,3 +35,22 @@ Current accepted heads, hosted checks and remaining integration gates live in [B
 
 - [Saved-context API foundation](review-saved-context-foundation-56f9558.md): accepted API56,5 independent boundary tests pass; later coordinator/View and actual app reopening remain separate.
 - [Typed stale-original finding](review-typed-stale-original-c7a4a57.md): P2 expired typed frame blocked fresh Stop receipt; author correctionbe4fbef awaits final scoped root re-review with the rest of typed source.
+
+## Typed and saved-context app continuation
+
+- [review-typed-3f18299-rereview.md](review-typed-3f18299-rereview.md)
+- [review-typed-72ed859-rereview.md](review-typed-72ed859-rereview.md)
+- [review-typed-app-b431914.md](review-typed-app-b431914.md)
+- [review-typed-app-d969249-rereview.md](review-typed-app-d969249-rereview.md)
+- [review-saved-context-352703e-rereview.md](review-saved-context-352703e-rereview.md)
+- [review-saved-context-app-2b73674.md](review-saved-context-app-2b73674.md)
+
+These are local scoped independent reviews, not GitHub approval or a main merge. The b431 report preserves its original P2; d969 closes it. Joined root source db768fd independently passes129 panel/app cases collected,124pass/5opt-in skips.
+
+- [Protected account storage/key checkpoint728](review-account-storage-728e929.md): accepted at storage boundary; actual account control/bootstrap/product UI remains separate.
+
+- [Query mechanism/team-planning correction](review-query-f0fe9d0.md): accepted f0fe9d0, joined6eb1717;74focused/605full collected and18 packaged cases.
+
+- [Standalone scope foundation369](review-idle-foundation-3698e28.md): accepted96Python+10native; actual transport/app follow.
+- [Native account consumer28](review-account-native-28d5948.md): accepted17native+3launcher tests; full product consumer follows.
+- [Résumé backendf353 first review](review-resume-backend-f353253.md): one P2 shared-name employer relevance finding, correction pending.

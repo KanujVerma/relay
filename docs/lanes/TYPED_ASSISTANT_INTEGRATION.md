@@ -77,7 +77,7 @@ TypedAssistantController(
 
 The `session` closure returns only the actual current active-session authority while running, not stopping, with a live permitted source. Return nil while idle, paused, stopped, helper-failed or all sources unavailable. The `issue` and `cancel` closures implement the actual locked/ordered route above. They do not directly send model/request frames. Use weak app captures for the lazy app-owned instance.
 
-Bind the editor to `draft`; render `snapshot.canSend`, `canHelpCurrent`, `canStop`, `basis`, `basisState`, `status` and `transcriptVisible`. The real commands are `submitDraft()`, `requestCurrentQuestionHelp()`, `cancelCurrentResponse() async`, `useLatestQuestionForDraft()`, `sendDraftAsNewQuestion()` and `setTranscriptVisible(_:)`. A draft edit performs no capture/model action. Avoid exposing buttons before their actual closures are joined.
+Bind the editor to `draft`; render `snapshot.canSend`, `canSendAsNew`, `canHelpCurrent`, `canStop`, `basis`, `basisState`, `status` and `transcriptVisible`. The real commands are `submitDraft()`, `requestCurrentQuestionHelp()`, `cancelCurrentResponse() async`, `useLatestQuestionForDraft()`, `sendDraftAsNewQuestion()` and `setTranscriptVisible(_:)`. A draft edit performs no capture/model action. Avoid exposing buttons before their actual closures are joined.
 
 Call `recordQuestion(binding, question:)` for the real accepted original question, and `observeRequest(binding)` when that actual native binding becomes current. Feed original native events once, in receive order, to `observeNative(event)`, including session start/source activity/finals. Feed schema-valid answer decisions to `observeDecision` as above; only exact current decisions can update current question/work state. Call `refresh()` on authority/helper/source/lifecycle changes.
 
@@ -106,3 +106,5 @@ Completion has exactly10 keys: `schemaVersion`, `kind:answer_cancel_response`, `
 ## Joined acceptance still required
 
 The foundation tests prove actual controller issuance/ordered forwarding/stdio helper/HTTPX MockTransport, completed SSE, personal/reference gating, stopped held audio EOU+PNG zero POST, positive image control, original audio order, typed supersession and draft/transcript reducers. They do not prove the root's later app callback ordering or UI. Root must add a joined app test using its real receive/bind/composer hooks for typed Send/Stop while EOU/PNG is held, plus a positive unchanged control and late cancellation/new-edit/basis recovery cases. No live microphone, capture, account or model behavior is claimed.
+
+Rootd969249 adds actual-session/draft-based canSendAsNew. The command refreshes and refuses before discarding the original basis when no source/session is issuable. The UI consumes that snapshot and uses canHelpCurrent for Use latest, rather than duplicating eligibility from model.running.

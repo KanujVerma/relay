@@ -13,7 +13,7 @@ from typing import Protocol
 
 from .personal_brain import BrainError, BrainStore, _required
 from .resume_structure import decode_context, digest
-from .resume_personal import ApprovedResumeContext, context_words, eligible, personal_intent, selection_question
+from .resume_personal import ApprovedResumeContext, context_words, eligible, mentions_entry, personal_intent, selection_question
 
 MAX_FACTS = 16
 MAX_CONTEXT_CHARS = 8_000
@@ -130,6 +130,7 @@ class BrainContextProvider:
             r"(?:give me |an? )?(?:overview|summary) of your (?:experience|background|projects))\s*[.!?]*",
             question.casefold().strip()) is not None
         ranked: list[tuple[int, ContextFact]] = []
+        named_entries, named_terms, identity_terms, named_aliases = set(), set(), set(), set()
         missing: set[str] = set()
         conflict = False
         for claim in self._store.verified_claims():
@@ -165,17 +166,25 @@ class BrainContextProvider:
                                        row['span_start'], row['span_end'], self._locator(claim.fact_id))
             fact = ContextFact(claim.fact_id, claim.source_id, claim.actor, claim.claim_key,
                                claim.claim_text, evidence, row['review_revision'], resume)
+            if resume:
+                anchor_kinds = {'employer','project'}
+                if intent == 'education': anchor_kinds = {'institution'}
+                elif intent == 'employment': anchor_kinds = {'employer'}
+                elif intent == 'certification': anchor_kinds = {'issuer'}
+                elif intent == 'listed_skill': anchor_kinds = set()
+                elif intent == 'actual_tool_use' and not re.search(r'\b(?:at|on|from)\b', selection, re.I): anchor_kinds = set()
+                for field in resume.context.fields:
+                    if field.kind not in anchor_kinds: continue
+                    identity_terms.update(_terms(field.text))
+                    if mentions_entry(selection, field.text):
+                        named_entries.add(resume.context.entry_id); named_terms.update(_terms(field.text))
+                        named_aliases.add(field.text)
             if not eligible(fact, intent): continue
             haystack = _terms(claim.claim_text + ' ' + claim.claim_key + ' ' +
                               self._source_meta(claim.source_id) + (' '+context_words(resume) if resume else ''))
             if project_terms and not project_terms.intersection(haystack):
                 continue
             overlap = len(question_terms.intersection(haystack))
-            if resume and intent in ('individual_contribution', 'actual_tool_use'):
-                focus = question_terms - {'personally','individual','contribution','implement',
-                    'implemented','design','designed','write','wrote','actually','tools','tool'}
-                target = _terms(fact.text) if intent == 'actual_tool_use' else haystack
-                if focus and not focus.intersection(target): continue
             if resume and intent == 'listed_skill':
                 focus = question_terms - {'listed','skills','skill','languages','language',
                                           'technologies','list','listed'}
@@ -197,6 +206,23 @@ class BrainContextProvider:
             score = overlap * 10 + len(project_terms.intersection(haystack)) * 20
             score += len(_terms(role).intersection(haystack))
             ranked.append((score, fact))
+        if named_entries:
+            ranked = [(score, fact) for score, fact in ranked if
+                (fact.resume_context is not None and fact.resume_context.context.entry_id in named_entries) or
+                (fact.resume_context is None and any(mentions_entry(fact.text, name) for name in named_aliases))]
+        elif re.search(r'\b(?:at|on|from)\b', selection, re.I) and question_terms.intersection(identity_terms):
+            # A partial/shared entry token is ambiguous; it is not permission
+            # to include every employer/project sharing that token.
+            ranked = [(score, fact) for score, fact in ranked if fact.resume_context is None]
+        if intent in ('individual_contribution', 'actual_tool_use'):
+            focus = question_terms - named_terms - {'personally','individual','contribution','implement',
+                'implemented','design','designed','write','wrote','actually','tools','tool'}
+            def has_focus(fact):
+                if fact.resume_context is None: return True
+                target = _terms(fact.text)
+                if intent != 'actual_tool_use': target.update(_terms(context_words(fact.resume_context)))
+                return focus.issubset(target)
+            ranked = [(score, fact) for score, fact in ranked if has_focus(fact)]
         ranked.sort(key=lambda pair: (-pair[0], pair[1].claim_key, pair[1].fact_id))
         selected: list[ContextFact] = []
         size = 0

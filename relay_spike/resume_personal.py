@@ -1,6 +1,7 @@
 """Exact reviewed résumé selection/rendering, never generated biography."""
 from dataclasses import dataclass
 import re
+import unicodedata
 
 from .generated_answer import CardError, bounded_text
 from .resume_structure import ResumeContext
@@ -54,6 +55,13 @@ def eligible(fact, intent):
 
 def context_words(context):
     return ' '.join(field.text for field in context.context.fields if field.kind != 'section_heading')
+
+
+def mentions_entry(question, name):
+    # Names come only from reviewed entry fields, never a person/technology
+    # registry. Lookup normalization does not rewrite stored source evidence.
+    fold = lambda value: ' '.join(unicodedata.normalize('NFKC', value).casefold().split())
+    return re.search(r'(?<!\w)'+re.escape(fold(name))+r'(?!\w)', fold(question)) is not None
 
 
 def render_personal(bundle):

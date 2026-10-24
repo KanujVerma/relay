@@ -144,3 +144,35 @@ class ResumePersonalAnswers(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(bundle.facts)
         size = sum(len(f.text)+sum(len(field.text) for field in f.resume_context.context.fields) for f in bundle.facts)
         self.assertLessEqual(size, 8000)
+
+    async def test_named_employer_selection_does_not_leak_another_entry_sharing_labs(self):
+        text = ('Experience\nBirch Labs | Engineer | 2023\n- I implemented a cache using C++.\n'
+                'Cedar Labs | Analyst | Expected 2027\n- I built a dashboard using R.\n'
+                'Skills\nLanguages: C++, R\n')
+        host, out, prep, _ = await self.prepared(text)
+        for name, other, qualifier in (('Birch Labs','Cedar Labs','2023'), ('Cedar Labs','Birch Labs','Expected 2027')):
+            with self.subTest(name=name):
+                value = await self.ask(host, out, 'What did you personally do at '+name+'?')
+                self.assertEqual(value['reasonCode'], 'grounded_personal')
+                self.assertIn(name, str(value['card'])); self.assertIn(qualifier, str(value['card']))
+                self.assertNotIn(other, str(value['card']))
+        for name in ('Ash Labs', 'Labs'):
+            with self.subTest(unknown=name):
+                value = await self.ask(host, out, 'What did you personally do at '+name+'?')
+                self.assertEqual(value['reasonCode'], 'personal_context_missing')
+                self.assertEqual(prep.provider.retrieve('What did you personally do at '+name+'?', 'developer').facts, ())
+        broad = await self.ask(host, out, 'What did you personally implement?')
+        self.assertEqual(broad['reasonCode'], 'grounded_personal')
+        self.assertIn('Birch Labs', str(broad['card'])); self.assertIn('Cedar Labs', str(broad['card']))
+
+    async def test_named_project_selection_requires_its_whole_reviewed_name(self):
+        text = ('Projects\nHarbor Monitor | 2024\n- I wrote monitor checks using Python.\n'
+                'Harbor Forecast | Expected 2027\n- I wrote forecasts using R.\n')
+        host, out, _, _ = await self.prepared(text)
+        for name, other in (('Harbor Monitor','Harbor Forecast'), ('Harbor Forecast','Harbor Monitor')):
+            result = await self.ask(host, out, 'What did you personally do on '+name+'?')
+            self.assertEqual(result['reasonCode'], 'grounded_personal')
+            self.assertIn(name, str(result['card'])); self.assertNotIn(other, str(result['card']))
+        for name in ('Harbor', 'Harbor Archive'):
+            result = await self.ask(host, out, 'What did you personally do on '+name+'?')
+            self.assertEqual(result['reasonCode'], 'personal_context_missing')

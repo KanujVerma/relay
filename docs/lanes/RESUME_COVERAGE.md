@@ -82,3 +82,15 @@ private upload or network model was used.
 Next: freeze/review backend; implement strict Unicode-scalar native DTOs and
 visible context/Save routing; then run new actual offline TXT/PDF/DOCX and
 native API→helper→restore→personal-answer acceptance before final review.
+
+## Scoped review correction: named entries
+
+Independent review of f353 found that common token overlap (Labs/Harbor) could
+include a second employer/project in a named-entry question. The correction
+uses complete names from actual reviewed entry fields, then limits selection
+to those entry identities and remaining topic terms. Unknown/partial shared
+names withhold; broad generic and multiple complete named entries remain
+eligible. It adds no name/technology registry and preserves exact qualifiers.
+Two actual restored-provider/Host regressions fail five assertions on f353;
+the corrected new/legacy personal-context/host/typed subset passes all 60 tests
+in 1.388 s. Native work and real-format fixtures are separate pending changes.

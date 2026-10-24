@@ -194,6 +194,75 @@ final class HistoryAdmission:@unchecked Sendable {
     public func retireNotesSource(_ original:HistoryNotesSource){
         original.deny();if notesSource === original{notesSource=nil};original.notifyRetired()
     }
+    /// Only a genuine registered-helper completion can enter this creation
+    /// route. Parsed notes DATA and source identifiers cannot issue its grant.
+    @discardableResult public func commitGeneratedNotes(_ operation:NotesCompletedOperation)async throws->HistoryNotesCommitOutcome{
+        try Task.checkCancellation()
+        let source=operation.source
+        guard ownsNotesSource(source),store === source.store else{throw HistoryError.stale}
+        await waitForQuiescence();try Task.checkCancellation()
+        guard !isBusy,ownsNotesSource(source),let originalStore=store,originalStore === source.store,
+              let detail=state.selected else{throw HistoryError.stale}
+        try operation.claim(using:self)
+        let original=epoch,selected=selectionEpoch,gate=source.gate,read=source.read
+        let outcome:HistoryNotesCommitOutcome
+        do{
+            outcome=try await withTaskCancellationHandler(operation:{try await run(gate:gate){store in
+                guard store === originalStore else{throw HistoryError.stale}
+                let saved=try store.saveGeneratedNotes(operation.output,provenance:operation.generation,modelID:operation.modelID,
+                    source:read,operationID:read.intentID,admission:{gate.allowed && operation.saveAdmission})
+                operation.recordActualSave(saved)
+                return saved
+            }},onCancel:{gate.retire();operation.gate.retire()})
+        }catch{
+            retireNotesSource(source)
+            if case HistoryNotesCommitError.indeterminate=error,epoch==original,store === originalStore{fail(error)}
+            throw error
+        }
+        // A known positive save remains a known outcome even if cancellation,
+        // Lock or old-queue cleanup subsequently prevents current painting.
+        if !outcome.cleanupComplete{
+            retireNotesSource(source)
+            if epoch==original,store === originalStore{fail(HistoryError.unavailable)}
+            return outcome
+        }
+        if epoch==original,selectionEpoch==selected,store === originalStore,!Task.isCancelled,
+           state.phase == .ready,operation.saveAdmission,ownsNotesSource(source),
+           state.selected?.record.id==detail.record.id,state.selected?.record.revision==detail.record.revision{
+            var record=detail.record;record.revision=outcome.receipt.savedAtRecordRevision
+            state.selected=HistoryDetail(record:record,captures:detail.captures,rows:detail.rows,nextOffset:detail.nextOffset,totalRows:detail.totalRows)
+            state.records=state.records.map{$0.id==record.id ? record:$0}
+            state.message="Meeting notes were saved locally. They are not approved personal facts."
+        }
+        retireNotesSource(source)
+        onSourceDenial?(.record(retiredEpoch:original,recordID:source.data.recordID,reason:.recordChanged))
+        publish();return outcome
+    }
+    /// Explicit read only. It does not migrate a v1 ledger or issue source,
+    /// generation or write authority from a displayed document.
+    public func generatedNotes(_ id:UUID,expectedRevision:Int64,epoch expectedEpoch:UUID)async throws->HistoryNotesDocumentData?{
+        try Task.checkCancellation()
+        guard epoch==expectedEpoch,!isBusy,opened,state.phase == .ready,let originalStore=store,
+              !tombstones.contains(id),state.selected?.record.id==id,state.selected?.record.revision==expectedRevision else{throw HistoryError.stale}
+        let selected=selectionEpoch,gate=HistoryAdmission()
+        do{
+            let result=try await withTaskCancellationHandler(operation:{try await run(gate:gate){store in
+                guard store === originalStore else{throw HistoryError.stale}
+                try store.open(create:false)
+                guard try store.detail(id).record.revision==expectedRevision else{throw HistoryError.stale}
+                return try store.generatedNotes(id)
+            }},onCancel:{gate.retire()})
+            guard epoch==expectedEpoch,selectionEpoch==selected,store === originalStore,gate.allowed,!Task.isCancelled,
+                  state.phase == .ready,!tombstones.contains(id),state.selected?.record.id==id,
+                  state.selected?.record.revision==expectedRevision else{throw HistoryError.stale}
+            return result
+        }catch{
+            let stale:Bool
+            if case HistoryError.stale=error{stale=true}else{stale=false}
+            if epoch==expectedEpoch,store === originalStore,!(error is CancellationError),!stale{fail(error)}
+            throw error
+        }
+    }
     public func prepareNotesSource(recordID:UUID,expectedRevision:Int64,selection:HistoryNotesSelection,intentID:UUID,
         isCurrent:@escaping @MainActor ()->Bool,onRetired:@escaping @MainActor (HistoryNotesSource)->Void)async throws->HistoryNotesSource{
         try Task.checkCancellation()

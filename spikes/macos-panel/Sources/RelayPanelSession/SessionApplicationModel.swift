@@ -128,6 +128,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     private var accountHelperRetiring=false
     var accountPreparationActive:Bool{accountPreparationStorage?.isPreparing == true}
     var accountPreparationCancelling:Bool{accountPreparationStorage?.isCancelling == true || accountStartCancellation != nil}
+    private var accountMutationOwned:Bool{accountHelperRetiring || accountStorageController?.busy == true || accountPreparationActive || accountPreparationCancelling}
     var account:AccountController {
         if let accountStorageController{return accountStorageController}
         let directory=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("Relay",isDirectory:true)
@@ -307,11 +308,11 @@ private actor FixtureRecognizer: ActivityRecognizer {
         })
     }
     func openMyContext(){
-        guard !stopping,(!fixture || (contextPreferencesOverride != nil && profileVaultFactory != nil)),let target=profileTarget() else{return}
+        guard !stopping,!accountMutationOwned,(!fixture || (contextPreferencesOverride != nil && profileVaultFactory != nil)),let target=profileTarget() else{return}
         contextUse.openFromUserAction(target:target)
     }
     func lockMyContext(){
-        guard let target=profileTarget() else{return}
+        guard !accountMutationOwned,let target=profileTarget() else{return}
         contextUse.lockFromUserAction(target:target)
     }
     private func profileRequest(_ data:Data,binding:SharedProfileBinding) async throws -> Data {
@@ -401,7 +402,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     private static func argument(_ key:String,_ args:[String]) -> String? { guard let i=args.firstIndex(of:key),args.indices.contains(i+1) else { return nil };return args[i+1] }
     func ensureHelper(referenceOnly:Bool=false) throws -> HelperTransport {
-        guard !stopping,profileBinding?.retired != true else { throw PanelBridgeError.closed }
+        guard !stopping,!accountHelperRetiring,accountStorageController?.busy != true,profileBinding?.retired != true else { throw PanelBridgeError.closed }
         if let helper { return helper }
         let runtime=try helperRuntime.get()
         visual.retireForHelperChange()
@@ -799,7 +800,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     var currentSessionID:UUID? { authority.snapshot()?.captureSessionID ?? forwardedSessionID }
     var canStartSession:Bool {
         guard case .success=helperRuntime else{return false}
-        return !running && !starting && !stopping && !accountPreparationActive && accountStartCancellation==nil && accountStorageController?.busy != true && teardown==nil && !speechSetup.snapshot.isBusy && !visual.isBusy && visual.status != .busy && profileStorage?.busy != true && !(hasContextUse && contextUse.isBusy) && (fixture || capture.phase == .idle)
+        return !running && !starting && !stopping && !accountMutationOwned && teardown==nil && !speechSetup.snapshot.isBusy && !visual.isBusy && visual.status != .busy && profileStorage?.busy != true && !(hasContextUse && contextUse.isBusy) && (fixture || capture.phase == .idle)
     }
     var canResume:Bool { paused && canStartSession }
     func beginRetirement(end:Bool) {

@@ -36,6 +36,7 @@ private final class HeldAppAccountKey: ProfileKeyProvider, @unchecked Sendable {
 @MainActor private final class AccountRigState {
     var controls = 0, browsers = 0
     var sessionLogs: [URL] = []
+    var sessionModes: [HelperMode] = []
     var expectedOldHelper: HelperTransport?
     var oldExitAtNextControl: [Bool] = []
 }
@@ -51,16 +52,19 @@ private final class HeldAppAccountKey: ProfileKeyProvider, @unchecked Sendable {
     }
     private func model(directory: URL, preferences: AppPlanPreferences, state: AccountRigState,
                        context: AppProfilePreferences = AppProfilePreferences(), holdRefresh: URL? = nil,
-                       key: any ProfileKeyProvider = AppAccountKey(value: 43), response: HeldAppProfileResponse? = nil) throws -> SessionApplicationModel {
+                       key: any ProfileKeyProvider = AppAccountKey(value: 43), response: HeldAppProfileResponse? = nil,
+                       holdAuthorization: URL? = nil) throws -> SessionApplicationModel {
         let interpreter = try XCTUnwrap(ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"]), repository = root
         let relay = directory.appendingPathComponent("Relay")
         let ports = AccountApplicationPorts(storage: AccountStorage(sharedDirectory: relay, keys: key), preferences: preferences,
             control: { runtime, bootstrap in
                 if let old = state.expectedOldHelper { state.oldExitAtNextControl.append(old.hasExited); state.expectedOldHelper = nil }
                 let log = directory.appendingPathComponent("control-\(state.controls).jsonl"); state.controls += 1
-                return PipeAccountPort(python: runtime.executable, repository: runtime.resourceRoot, bootstrap: bootstrap,
-                    pythonArguments: [repository.appendingPathComponent("tests/support/account_backend_helper.py").path, "--synthetic-account-test", "--log", log.path])
+                var arguments = [repository.appendingPathComponent("tests/support/account_backend_helper.py").path, "--synthetic-account-test", "--log", log.path]
+                if let holdAuthorization { arguments += ["--hold-callback", holdAuthorization.path] }
+                return PipeAccountPort(python: runtime.executable, repository: runtime.resourceRoot, bootstrap: bootstrap, pythonArguments: arguments)
             }, openBrowser: { url in state.browsers += 1; return url.host == "auth.openai.com" }, sessionArguments: { runtime, mode in
+                state.sessionModes.append(mode)
                 guard mode == .protectedOAuth else { return runtime.arguments }
                 let log = directory.appendingPathComponent("session-\(state.sessionLogs.count).jsonl"); state.sessionLogs.append(log)
                 var prefix = [repository.appendingPathComponent("tests/support/account_product_helper.py").path, "--synthetic-product-account-test", "--log", log.path]
@@ -175,5 +179,23 @@ private final class HeldAppAccountKey: ProfileKeyProvider, @unchecked Sendable {
         response.release(); await request.value; try await retirement.value
         XCTAssertTrue(retired); XCTAssertNil(profile.card); XCTAssertFalse(profile.busy)
         XCTAssertTrue(state.sessionLogs.isEmpty); await model.shutdown()
+    }
+    func testAccountMutationCannotLaunchAReplacementProfileHelperOrAcceptSourcePreparation() async throws {
+        let directory = try directory(), preferences = AppPlanPreferences(), state = AccountRigState(), context = AppProfilePreferences()
+        let gate = directory.appendingPathComponent("release-authorization")
+        let model = try model(directory: directory, preferences: preferences, state: state, context: context, holdAuthorization: gate)
+        addTeardownBlock { try? Data().write(to: gate) }
+        let connection = Task { await model.account.connect() }
+        try await waitUntil { state.browsers == 1 }
+        XCTAssertTrue(model.account.busy); XCTAssertFalse(model.canStartSession)
+        model.openMyContext(); for _ in 0..<20 { await Task.yield() }
+        XCTAssertFalse(context.useInSessions, "An account mutation already owns old helper retirement")
+        XCTAssertThrowsError(try model.ensureHelper(referenceOnly: true))
+        XCTAssertTrue(state.sessionModes.isEmpty, "No replacement helper may launch before account mutation finishes")
+        try Data().write(to: gate); await connection.value
+        XCTAssertNotNil(model.account.inferenceSelection); XCTAssertTrue(state.sessionModes.isEmpty)
+        model.openMyContext(); await model.contextUse.waitForQuiescence()
+        XCTAssertTrue(context.useInSessions); XCTAssertTrue(model.profile.opened)
+        XCTAssertEqual(state.sessionModes, [.protectedOAuth]); await model.shutdown()
     }
 }

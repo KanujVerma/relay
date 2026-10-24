@@ -325,9 +325,15 @@ class OAuthAnswerStream:
         """
         if not isinstance(permit, VisualAttachmentPermit):
             return False
+        if self._closed:
+            permit.retire()
+            return False
         try:
             async with asyncio.timeout(self.deadline):
                 token = await self._token()
+                if self._closed:
+                    permit.retire()
+                    return False
                 permit._check(token=token, model=self.model, effort=self.effort,
                               endpoint=self._endpoint, check_config=True)
                 return permit.validate_for_publication()

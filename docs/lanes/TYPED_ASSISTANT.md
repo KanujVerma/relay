@@ -22,7 +22,7 @@ All inputs and responses were synthetic. HTTPX0.28.1 came from the existing `/pr
 
 | Check | Result | Evidence boundary |
 |---|---|---|
-| Affected Python user/helper/semantic/context/reference suites |139 passed,1.416s | Actual SessionHost and no-network child; complete mocked OAuth additionally covered below |
+| Affected Python user/helper/semantic/context/reference suites |142 passed,3.758s | Actual SessionHost and no-network child; complete mocked OAuth additionally covered below |
 | Native session package |27 passed,0.881s | Native source lock/sequence/issuance and existing lifecycle; includes last-source-loss rejection |
 | Explicit and existing ordered forwarder suites |7 passed,0.013s | Original denial before held release, no reorder, bounded queue and optional-work deadline |
 | New/affected panel foundation suites |22 passed,2.043s | Draft/controller, transcript, real transport receipt and actual helper/MockTransport proofs |
@@ -66,3 +66,9 @@ Final affected run:139 tests passed (`/private/tmp/relay-typed-manual-basis-fina
 ## Paused transcript privacy removal
 
 Independent review of97b found the sealed guard discarded a genuine next-sequence consent_revoked after Pause. The reducer now preserves matching original session/epoch and replay high-water while sealed, ignores additions and applies only an exact source consent-revocation removal. It preserves paused/idle/unavailable phase and never inserts/reopens transcript text. Late final events stay ignored; later genuine revocation can still remove the remaining source. Wrong session/epoch, replay and old-session controls cannot clear a replacement session. Two focused regressions ran red/green;22 affected panel foundation tests pass,2.043s (`/private/tmp/relay-typed-paused-revoke-green.log`), including all five actual helper/native proofs. No Python/native capture/Model/UI change.
+
+## Deny-first Help consumer compatibility
+
+Actual app integration exposed a conflict between mandatory deny-before-held-release and Help's current-active predicate. The helper now captures one private formerly-current retirement key plus semantic generation counter only when that retirement matched the actual current request/token under valid permission. A fresh Help can consume its bounded read-only basis only at exactly next native generation while helper presentation is still the original generation, actual semantic generation and permission remain unchanged, and session/epoch/UUID match. No old token is retained or reactivated: the ordinary explicit issuer creates a fresh token and re-retrieves context. Invalidation, source loss, session closure and new admitted operations clear the fence. Historical/noncurrent tombstones, skipped generations, newer requests and revoke/regrant cannot use it.
+
+Three focused cases ran red/green: deny -> Help completed answer/fresh token, noncurrent/newer/skipped-generation negatives, and changed permission/microphone-source negatives.142 affected Python tests pass,3.758s (`/private/tmp/relay-typed-help-deny-final.log`), including the existing cancellation and legacy Help regressions. Root keeps original denial before optional callbacks/held-frame release and owns the joined app rerun. No wire/native/Model/UI changes in this correction.

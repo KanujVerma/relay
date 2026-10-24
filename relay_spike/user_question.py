@@ -56,15 +56,19 @@ class UserQuestionCoordinator:
     """Bounded host-owned context, replay and actual target-task receipts."""
     def __init__(self,host):
         self.host=host;self.bases=OrderedDict();self.seen={};self.replies=OrderedDict()
-        self.retired={};self.cancel_tasks=set()
+        self.retired={};self.cancel_tasks=set();self._retired_current=None
 
     @staticmethod
     def key(value):return (value['captureSessionID'].lower(),value['sessionEpoch'],value['presentationGeneration'],value['requestID'].lower())
 
     def close(self):
         self.bases.clear();self.seen.clear();self.replies.clear();self.retired.clear()
+        self.invalidate_retired_help()
+
+    def invalidate_retired_help(self):self._retired_current=None
 
     def note_request(self,request,projection,*,semantic_context=None):
+        self.invalidate_retired_help()
         context=(request.question,) if semantic_context is None else semantic_context
         self.bases[request.native['requestID'].lower()]=_Basis(self.host.session,request.display_question,request.question,context,projection.fork())
         while len(self.bases)>8:self.bases.popitem(last=False)
@@ -85,6 +89,14 @@ class UserQuestionCoordinator:
             return True
         return False
 
+    def _help_after_retirement(self,n):
+        h=self.host;retired=self._retired_current;current=h.machine.turns.current()
+        if retired is None or h.active is not None or current is None:return False
+        key,semantic_generation=retired
+        return (key[:2]==h.session and key[3]==n['baseRequestID'].lower()
+            and key[2]==h.presentation and n['presentationGeneration']==key[2]+1
+            and current.generation==semantic_generation and h.permission.authorized())
+
     def _admit(self,value):
         h=self.host
         return (h.live and (value['captureSessionID'].lower(),value['sessionEpoch'])==h.session
@@ -97,6 +109,7 @@ class UserQuestionCoordinator:
             h.close();raise WireError('request_ledger_budget')
         h.used_requests.add(identity)
         self.seen[identity]=sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).digest()
+        self.invalidate_retired_help()
 
     async def question(self,raw):
         try:n=decode_user_question(raw)
@@ -107,8 +120,9 @@ class UserQuestionCoordinator:
         basis=self.bases.get((n['baseRequestID'] or '').lower())
         valid=basis is not None and basis.session==h.session
         if n['intent']=='help_current':
-            valid=(valid and previous is not None and previous.native['requestID'].lower()==n['baseRequestID'].lower()
+            live_current=(previous is not None and previous.native['requestID'].lower()==n['baseRequestID'].lower()
                 and h.machine.turns.is_current(previous.token) and h.permission.authorized())
+            valid=valid and (live_current or self._help_after_retirement(n))
         self._spend(n);h.presentation=n['presentationGeneration'];h._invalidate()
         if self.key(n) in self.retired:return False
         if n['baseRequestID'] is not None and not valid:
@@ -145,9 +159,15 @@ class UserQuestionCoordinator:
         self.retired[key]=owner
         if h.active is not None and self.key(h.active.native)==key:
             original=h.active.native
+            token=h.active.token
+            eligible=h.machine.turns.is_current(token) and h.permission.authorized()
             h._invalidate()
             retire_current=getattr(h.supplemental_provider,'retire_current',None)
             if callable(retire_current):retire_current(original)
+            # Only the exact formerly-current request may bridge deny-first
+            # Help. Keep a generation fence, never an old publication token.
+            if eligible and h.machine.turns.is_current(token) and h.permission.authorized():
+                self._retired_current=(key,token.generation)
         elif owner is not None and not owner.done() and not owner.cancelling():owner.cancel()
         staged=getattr(h.supplemental_provider,'retire_staged',None)
         if callable(staged):staged(n)

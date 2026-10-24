@@ -40,13 +40,25 @@ public struct SessionActivitySnapshot:Sendable,Equatable {
     private func activity(_ source:TranscriptSource,_ state:SourceActivity){
         if source == .microphone{snapshot.microphone=state}else{snapshot.selectedAudio=state}
     }
+    private func purge(_ source:TranscriptSource){
+        snapshot.rows.removeAll{$0.source==source};bytes=snapshot.rows.reduce(0){$0+$1.text.utf8.count}
+    }
     public func observe(_ event:NativeSessionEvent) {
         if event.kind == .sessionStarted {
             guard event.eventSequence==1,event.sessionEpoch>0,event.captureSessionID != snapshot.sessionID else{return}
             snapshot=SessionActivitySnapshot(sessionID:event.captureSessionID,phase:.listening)
             epoch=event.sessionEpoch;sequence=1;sealed=false;activities.removeAll();bytes=0;changed();return
         }
-        guard !sealed,snapshot.sessionID==event.captureSessionID,epoch==event.sessionEpoch,event.eventSequence>sequence else{return}
+        guard snapshot.sessionID==event.captureSessionID,epoch==event.sessionEpoch,event.eventSequence>sequence else{return}
+        if sealed {
+            // Preserve the original scope/high-water mark while ignoring late
+            // additions. Denial-only privacy removal still applies after Pause.
+            sequence=event.eventSequence
+            guard [.sourceUnavailable,.discontinuity].contains(event.kind),
+                  let code=event.sourceCode,let source=TranscriptSource(rawValue:code),event.streamGeneration != nil,
+                  event.payload==["reasonCode":.string("consent_revoked")] else{return}
+            purge(source);activity(source,.unavailable);changed();return
+        }
         guard sequence<UInt64.max,event.eventSequence==sequence+1 else{
             activities.removeAll();snapshot.phase = .unavailable;sealed=true;changed();return
         }
@@ -57,7 +69,7 @@ public struct SessionActivitySnapshot:Sendable,Equatable {
         if [.sourceUnavailable,.discontinuity].contains(event.kind){
             activities=activities.filter{!$0.key.hasPrefix("\(code):")};activity(source,.unavailable)
             if p["reasonCode"] == .string("consent_revoked") {
-                snapshot.rows.removeAll{$0.source==source};bytes=snapshot.rows.reduce(0){$0+$1.text.utf8.count}
+                purge(source)
             }
             changed();return
         }

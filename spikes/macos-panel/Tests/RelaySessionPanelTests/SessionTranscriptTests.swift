@@ -4,12 +4,13 @@ import RelayNativeSession
 @testable import RelaySessionPanel
 
 @MainActor final class SessionTranscriptTests:XCTestCase {
-    private let session=UUID()
+    private var session=UUID()
+    private var epoch:UInt64=1
     private var sequence:UInt64=0
     private let timebase:WireValue = .object(["hostTicksAtAnchor":.uint(0),"uptimeNsAtAnchor":.uint(0),"nsNumer":.uint(1),"nsDenom":.uint(1)])
     private func event(_ kind:SessionEventKind,_ source:UInt32?=nil,_ payload:[String:WireValue]=[:])->NativeSessionEvent {
         sequence+=1
-        return NativeSessionEvent(captureSessionID:session,sessionEpoch:1,eventSequence:sequence,presentationGeneration:2,
+        return NativeSessionEvent(captureSessionID:session,sessionEpoch:epoch,eventSequence:sequence,presentationGeneration:2,
             kind:kind,sourceCode:source,streamGeneration:source==nil ? nil:1,emittedUptimeNanoseconds:1_000_000,
             payload:payload,requestID:kind == .eou && source==2 ? UUID():nil)
     }
@@ -74,5 +75,37 @@ import RelayNativeSession
         // A real native sequence gap seals the read view; a later final cannot restore text.
         sequence+=1;final(3,text:"After the gap.",source:1,store:store)
         XCTAssertEqual(store.snapshot.phase,.unavailable);XCTAssertEqual(store.snapshot.rows.count,1)
+    }
+    func testPausedNextSequenceRevocationPurgesOnlyOwnedSourceWithoutReopeningOrLateRestoration() {
+        let store=SessionTranscriptStore();store.observe(event(.sessionStarted))
+        final(1,text:"Microphone private text.",source:1,store:store)
+        final(2,text:"Selected app text.",source:2,store:store)
+        let revocation=event(.sourceUnavailable,1,["reasonCode":.string("consent_revoked")])
+        store.pause();let before=store.snapshot
+        for (wrongSession,wrongEpoch) in [(UUID(),epoch),(session,epoch+1)] {
+            store.observe(NativeSessionEvent(captureSessionID:wrongSession,sessionEpoch:wrongEpoch,
+                eventSequence:revocation.eventSequence,presentationGeneration:revocation.presentationGeneration,
+                kind:revocation.kind,sourceCode:revocation.sourceCode,streamGeneration:revocation.streamGeneration,
+                emittedUptimeNanoseconds:revocation.emittedUptimeNanoseconds,payload:revocation.payload))
+            XCTAssertEqual(store.snapshot,before)
+        }
+        store.observe(revocation)
+        XCTAssertEqual(store.snapshot.rows.map(\.source),[.selectedAppAudio])
+        XCTAssertEqual(store.snapshot.phase,.paused)
+        let after=store.snapshot;store.observe(revocation);XCTAssertEqual(store.snapshot,after)
+        final(3,text:"Late microphone text.",source:1,store:store)
+        XCTAssertEqual(store.snapshot.rows,after.rows);XCTAssertEqual(store.snapshot.phase,.paused)
+        store.observe(event(.sourceUnavailable,2,["reasonCode":.string("consent_revoked")]))
+        XCTAssertTrue(store.snapshot.rows.isEmpty);XCTAssertEqual(store.snapshot.phase,.paused)
+    }
+    func testOldPausedSessionRevocationCannotPurgeReplacementSession() {
+        let store=SessionTranscriptStore();store.observe(event(.sessionStarted))
+        final(1,text:"Old private text.",source:1,store:store)
+        let oldRevocation=event(.sourceUnavailable,1,["reasonCode":.string("consent_revoked")])
+        store.pause();session=UUID();epoch+=1;sequence=0
+        store.observe(event(.sessionStarted));final(1,text:"Current private text.",source:1,store:store)
+        let current=store.snapshot
+        store.observe(oldRevocation)
+        XCTAssertEqual(store.snapshot,current);XCTAssertEqual(store.snapshot.phase,.listening)
     }
 }

@@ -106,6 +106,7 @@ private final class HistoryAdmission:@unchecked Sendable {
         current?.acceptsNew=false;current?.failed=true;current?.gate.retire();pending=[];pendingBytes=0
         state.phase = .unavailable;state.records=[];state.selected=nil
         if case HistoryError.capacity=error{state.message="History is full. Delete saved sessions or turn saving off."}
+        else if case HistoryError.inUse=error{state.message="Local history is in use. Close or lock another Relay app, then retry, or turn saving off here."}
         else if case HistoryError.missing=error{state.message="Saved history is missing. Enable saving explicitly, or turn it off before starting."}
         else{state.message="History is unavailable. Open it to retry, or turn saving off before starting."}
         publish()

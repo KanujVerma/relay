@@ -14,11 +14,13 @@ private final class AppHistoryKey:ProfileKeyProvider,@unchecked Sendable{
     var calls:Int{lock.withLock{count}}
     func key(createIfMissing:Bool)throws->Data{lock.withLock{count+=1};return Data(repeating:91,count:32)}
 }
-private final class AppHistoryStorage:ProtectedSnapshotStorage,@unchecked Sendable{
-    private let real:any ProtectedSnapshotStorage
+private final class AppHistoryStorage:HistoryOwnedSnapshotStorage,@unchecked Sendable{
+    private let real:any HistoryOwnedSnapshotStorage
     private let lock=NSLock(),releaseGate=DispatchSemaphore(value:0)
     private var armed=false,held=false
-    init(_ real:any ProtectedSnapshotStorage){self.real=real}
+    init(_ real:any HistoryOwnedSnapshotStorage){self.real=real}
+    func beginAccess(create:Bool)throws{try real.beginAccess(create:create)}
+    func endAccess()throws{try real.endAccess()}
     func holdNextSave(){lock.withLock{armed=true}}
     var isHeld:Bool{lock.withLock{held}}
     func release(){releaseGate.signal()}
@@ -40,7 +42,7 @@ private final class AppHistoryStorage:ProtectedSnapshotStorage,@unchecked Sendab
         let owns=directory==nil,directory=directory ?? FileManager.default.temporaryDirectory.appendingPathComponent("relay-app-history-"+UUID().uuidString)
         if owns{try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:false,attributes:[.posixPermissions:0o700])}
         let prefs=preferences ?? AppHistoryPreferences(),key=AppHistoryKey(),starts=AppHistoryStarts()
-        let port=AppHistoryStorage(ProtectedSnapshotVault(directory:directory.appendingPathComponent("Relay/History"),purpose:.history,keys:key))
+        let port=AppHistoryStorage(HistoryVaultStorage(directory:directory.appendingPathComponent("Relay/History"),keys:key))
         let python=ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"] ?? "/usr/bin/python3"
         let model=SessionApplicationModel(arguments:["relay","--fixture-suite",suite,"--repository",root.path,"--python",python],ingressEnqueued:starts.observe,
             historyPreferences:prefs,historyStorageFactory:{port})
@@ -154,6 +156,30 @@ private final class AppHistoryStorage:ProtectedSnapshotStorage,@unchecked Sendab
             else{XCTAssertFalse(FileManager.default.fileExists(atPath:path.path))}
             await model.shutdown()
         }
+    }
+    func testSecondActualModelCannotReadHistoryOrStartCaptureUntilFirstOwnerCloses()async throws{
+        let(first,directory,_,_,_,_)=try rig();try await first.history.enableSaving()
+        await first.start();try await until{!first.assistant.transcript.snapshot.rows.isEmpty};await first.stop()
+        let preference=AppHistoryPreferences();preference.savingEnabled=true
+        let(second,_,_,key,_,starts)=try rig(directory:directory,preferences:preference)
+        await second.start();XCTAssertFalse(second.running);XCTAssertEqual(starts.count,0);XCTAssertEqual(key.calls,0)
+        XCTAssertTrue(second.error?.contains("in use")==true,"The actual contention result needs a useful fixed recovery message")
+        await first.shutdown();await second.start();try await until{!second.assistant.transcript.snapshot.rows.isEmpty}
+        XCTAssertTrue(second.running);XCTAssertEqual(starts.count,1)
+        await second.stop();XCTAssertEqual(second.history.snapshot.records.count,2)
+    }
+    func testHistoryLockLeavesCaptureActiveAndActualHelperDoesNotInheritLease()async throws{
+        let(first,directory,prefs,_,_,_)=try rig();try await first.history.enableSaving()
+        await first.start();try await until{!first.assistant.transcript.snapshot.rows.isEmpty};await first.history.waitForQuiescence()
+        let helper=try first.ensureHelper(),record=try XCTUnwrap(first.history.snapshot.recordingID)
+        first.history.lock();await first.history.waitForQuiescence()
+        XCTAssertFalse(prefs.savingEnabled);XCTAssertTrue(first.running)
+        XCTAssertTrue(try first.ensureHelper() === helper);XCTAssertEqual(first.assistant.transcript.snapshot.rows.count,1)
+        let(second,_,_,_,_,_)=try rig(directory:directory)
+        try await second.history.openExisting();try await second.history.openRecord(record)
+        XCTAssertEqual(second.history.snapshot.selected?.record.state,.partial)
+        XCTAssertTrue(second.history.snapshot.selected?.record.gaps.contains(.savingStopped)==true)
+        second.history.lock();await second.history.waitForQuiescence()
     }
     func testOptInSyntheticHistoryRendersNeverOrderAWindowOnScreen()async throws{
         guard let path=ProcessInfo.processInfo.environment["RELAY_HISTORY_RENDER_DIRECTORY"] else{throw XCTSkip("Explicit synthetic offscreen History exports only.")}

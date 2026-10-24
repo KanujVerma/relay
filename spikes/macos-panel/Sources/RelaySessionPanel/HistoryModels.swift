@@ -1,7 +1,7 @@
 import Foundation
 import RelayNativeSession
 
-public enum HistoryError:Error,Sendable{case unavailable,missing,invalid,capacity,stale,closed}
+public enum HistoryError:Error,Sendable{case unavailable,missing,invalid,capacity,stale,closed,inUse}
 public enum HistoryBounds {
     public static let snapshot=8*1024*1024,softSnapshot=7*1024*1024
     public static let records=100,rows=1024,text=256*1024,note=8*1024,title=120,captures=64

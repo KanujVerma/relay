@@ -144,7 +144,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
         let preferences:any HistorySavingPreferences=historyPreferencesOverride ?? (fixture ? FixtureHistoryPreferences():UserDefaultsHistoryPreferences())
         let factory:@Sendable ()throws->any ProtectedSnapshotStorage=historyStorageFactory ?? {
             let directory=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("Relay/History",isDirectory:true)
-            return ProtectedSnapshotVault(directory:directory,purpose:.history,keys:KeychainProfileKey(purpose:.history))
+            return HistoryVaultStorage(directory:directory,keys:KeychainProfileKey(purpose:.history))
         }
         let coordinator=SessionHistoryCoordinator(storageFactory:factory,preferences:preferences,canEnable:{[weak self] in
             self?.canEnableHistory==true
@@ -835,7 +835,10 @@ private actor FixtureRecognizer: ActivityRecognizer {
             }
             historyPermit=permit;return true
         }catch{
-            if ownsStart(identity){self.error="Local history could not open. Open History to retry, or turn saving off and start again."}
+            if ownsStart(identity){
+                if case HistoryError.inUse=error{self.error="Local history is in use. Close or lock another Relay app, or turn saving off here before starting."}
+                else{self.error="Local history could not open. Open History to retry, or turn saving off and start again."}
+            }
             return false
         }
     }

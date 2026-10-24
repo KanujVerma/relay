@@ -70,11 +70,11 @@ Interfaces: Model owns one lazy coordinator, injectable storage/preferences fact
 
 Controller approval2026-10-24 follows an actual two-independent-store lost-update reproduction. Add only a History-specific `HistoryOwnedSnapshotStorage` port and `HistoryVaultStorage` wrapper. Shared194 and peer053 files remain untouched. `beginAccess(create:)` holds a nonblocking exclusive Darwin flock on zero-content0600 `owner.lock` under owned0700 Relay/History before any load/create; `endAccess()` releases only after actual database/storage cleanup. No truncation, overwrite or permission healing; no existing-only missing directory/vault/key/lock creation. Validate retained descriptor/device/inode/owner/link/mode/path identity before storage calls. Constructor/default appearance remains inert. File lock is cooperating-process consistency, not same-user hostile-process isolation.
 
-- [ ] Red desired API and actual two-owner/synthetic subprocess contention, stale cached writer rejection and actual release/reopen.
-- [ ] Red inode/path replacement, symlink/hardlink/nonzero lock/wrong owner-mode/no healing and existing-only zero-create.
-- [ ] Red held actual `endAccess` plus repeated Lock, proving second owner cannot acquire before cleanup.
-- [ ] Implement wrapper/port and minimal HistoryStore/Model default factory; temporary tests use injected fake keys and actual wrapper.
-- [ ] Run focused store/coordinator and actual Model history cases, publish frozen narrow checkpoint/report.
+- [x] Red desired API and actual two-owner/synthetic subprocess contention, stale cached writer rejection and actual release/reopen.
+- [x] Red inode/path replacement, symlink/hardlink/nonzero lock/wrong owner-mode/no healing and existing-only zero-create.
+- [x] Red held actual `endAccess` plus repeated Lock, proving second owner cannot acquire before cleanup.
+- [x] Implement wrapper/port and minimal HistoryStore/Model default factory; temporary tests use injected fake keys and actual wrapper.
+- [x] Run focused store/coordinator and actual Model history cases, publish frozen narrow checkpoint/report.
 
 ### Approved follow-up: root account/idle integration
 

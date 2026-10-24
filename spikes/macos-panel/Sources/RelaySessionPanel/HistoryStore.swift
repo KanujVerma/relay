@@ -12,6 +12,7 @@ final class HistoryStore:@unchecked Sendable {
     private let lock=NSLock()
     private var queue:DatabaseQueue?
     private var retiringQueue:DatabaseQueue?
+    private var ownsStorage=false
     init(storage:any ProtectedSnapshotStorage,clock:@escaping @Sendable()->Date={Date()},contentLimitBytes:Int=HistoryBounds.softSnapshot){
         self.storage=storage;self.clock=clock;self.contentLimitBytes=contentLimitBytes
     }
@@ -105,13 +106,28 @@ final class HistoryStore:@unchecked Sendable {
                 // or a different owner's snapshot using cached plaintext.
                 let current=try required()
                 guard try storage.exists() else{throw HistoryError.missing}
+                guard admission() else{throw HistoryError.stale}
                 let actual=try storage.load()
                 guard try actual==HistorySnapshotCodec.encode(current) else{throw HistoryError.invalid}
                 guard admission() else{throw HistoryError.stale}
                 return
             }
+            guard !ownsStorage else{throw HistoryError.closed}
+            if let owner=storage as? any HistoryOwnedSnapshotStorage{try owner.beginAccess(create:create);ownsStorage=true}
+            do{try openCold(create:create,admission:admission)}catch{
+                if queue==nil,retiringQueue==nil,ownsStorage,let owner=storage as? any HistoryOwnedSnapshotStorage{
+                    do{try owner.endAccess();ownsStorage=false}catch{}
+                }
+                throw error
+            }
+        }
+    }
+    private func openCold(create:Bool,admission:@Sendable()->Bool)throws{
+            guard admission() else{throw HistoryError.stale}
+            let exists=try storage.exists()
+            guard admission() else{throw HistoryError.stale}
             let candidate:DatabaseQueue
-            if try storage.exists(){candidate=try HistorySnapshotCodec.decode(storage.load())}
+            if exists{candidate=try HistorySnapshotCodec.decode(storage.load())}
             else{
                 guard create else{throw HistoryError.missing}
                 candidate=try HistorySnapshotCodec.makeQueue()
@@ -128,11 +144,11 @@ final class HistoryStore:@unchecked Sendable {
                     for r in active{var r=try Self.bumped(r);r.state = .interrupted;if !r.gaps.contains(.interrupted){r.gaps.append(.interrupted)};try Self.put(db,r)}
                 }}
             }catch{if let q=queue{try? q.close()};queue=nil;try? candidate.close();throw error}
-        }
     }
     func close()throws{try lock.withLock{
         if let old=retiringQueue{try old.close();retiringQueue=nil}
         if let q=queue{try q.close();queue=nil}
+        if ownsStorage,let owner=storage as? any HistoryOwnedSnapshotStorage{try owner.endAccess();ownsStorage=false}
     }}
     private func expire(admission:@Sendable()->Bool={true})throws{
         let now=clock().timeIntervalSince1970

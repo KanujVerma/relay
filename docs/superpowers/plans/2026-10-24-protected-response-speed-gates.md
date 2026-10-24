@@ -56,6 +56,10 @@ Preserve every attempt, terminal category, failure, format withhold, first valid
 delta, valid completed time, total attempt time, spoken-word/detail sizes and
 human rubric outcome. Keep completed-but-invalid cards separate from successful
 format checks. Human correctness remains unreviewed until the checks below.
+Transport milliseconds share the admitted `complete()` start, before fresh token
+read/client readiness. Retain those separate marks and HTTP request-start time;
+the first-delta/completion numbers include that local preparation and are not
+isolated server-compute measurements.
 Do not compute p95 or a reliable model ranking from three pairs. These results
 exclude native audio, helper IPC, the actual Model and any window observation.
 

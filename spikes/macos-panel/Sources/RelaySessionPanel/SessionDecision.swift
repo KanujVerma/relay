@@ -28,8 +28,14 @@ public struct SessionAnswerDecision: Sendable {
     public let displayID:String?;public let question:String;public let answerID:String?;public let answerKind:String?;public let card:SessionCard?
     public let taskContext:TaskContextUse?
     public let responsePreferencesRevision:UUID?
+    public let timing:HelperDecisionTiming?
     public init(data:Data) throws {
-        let o=try StrictJSON.decode(data).object(["schemaVersion","captureSessionID","sessionEpoch","presentationGeneration","requestID","eventSequence","resultRevision","disposition","reasonCode","pythonToken","displayID","question","answerID","answerKind","card","provenance"])
+        let node=try StrictJSON.decode(data)
+        guard case .object(let fields)=node else{throw PanelBridgeError.malformed}
+        var keys:Set<String>=["schemaVersion","captureSessionID","sessionEpoch","presentationGeneration","requestID","eventSequence","resultRevision","disposition","reasonCode","pythonToken","displayID","question","answerID","answerKind","card","provenance"]
+        if fields["timing"] != nil{keys.insert("timing")}
+        let o=try node.object(keys)
+        timing=o["timing"].flatMap{try? HelperDecisionTiming($0)}
         guard try o["schemaVersion"]!.uint()==1,
               let session=UUID(uuidString:try o["captureSessionID"]!.string()),let request=UUID(uuidString:try o["requestID"]!.string()) else { throw PanelBridgeError.malformed }
         sessionID=session;requestID=request;epoch=try o["sessionEpoch"]!.uint();generation=try o["presentationGeneration"]!.uint();eventSequence=try o["eventSequence"]!.uint()

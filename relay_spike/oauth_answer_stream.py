@@ -1,7 +1,7 @@
 """Cancelable plan-OAuth adapter. No credential access until explicit live use.
 
-HTTPX 0.28.1 (BSD-3-Clause) is invoked, not copied. AsyncClient's context
-manager closes responses on cancellation. A local-socket regression tests it.
+HTTPX 0.28.1 (BSD-3-Clause) is invoked, not copied. Each response context
+closes on cancellation. One lazy client belongs to this helper until aclose().
 Local disconnect bounds waiting; it does not prove provider token work stopped.
 """
 from __future__ import annotations
@@ -10,6 +10,7 @@ from collections import deque
 import time
 from .generated_answer import strict_json, CardError
 from .response_assembly import ResponseAssembler, ResponseProtocolError
+from .answer_timing import AnswerTimingAttempt
 from .stream import MODELS, RESPONSES, response_payload, StreamError
 from .visual_input import (VisualInputController, VisualAttachmentPermit, VisualInputError,
                            PROBE_QUESTION, PROBE_INSTRUCTIONS)
@@ -88,7 +89,8 @@ class SSEDecoder:
 
 class OAuthAnswerStream:
     def __init__(self, *, model='gpt-6-luna', effort=None, deadline=15.0,
-                 token_provider=None, endpoint=RESPONSES, client_factory=None, models_endpoint=MODELS):
+                 token_provider=None, endpoint=RESPONSES, client_factory=None, models_endpoint=MODELS,
+                 clock=time.monotonic):
         if not 0 < deadline <= 30: raise ValueError('Invalid deadline.')
         self.model,self.effort,self.deadline=model,effort,deadline
         self._token_provider,self._endpoint,self._client_factory=token_provider,endpoint,client_factory
@@ -96,13 +98,52 @@ class OAuthAnswerStream:
         self._active=False
         self._spent=0
         self._recent=deque()
+        self._clock=clock
+        self._owned_client=None
+        self._active_task=None
+        self._closed=False
+        self._close_task=None
+        self._last_timing=None
+
+    @property
+    def last_timing(self):
+        """The latest admitted complete() attempt only; one immutable snapshot."""
+        return self._last_timing
 
     def _enter(self):
+        if self._closed: raise AnswerTransportError('request_closed')
         now=time.monotonic()
         while self._recent and now-self._recent[0]>=60: self._recent.popleft()
         if self._active: raise AnswerTransportError('request_busy')
         if self._spent>=60 or len(self._recent)>=10: raise AnswerTransportError('request_budget')
         self._active=True; self._spent+=1; self._recent.append(now)
+        self._active_task=asyncio.current_task()
+
+    def _leave(self):
+        self._active=False
+        self._active_task=None
+
+    async def aclose(self):
+        """Retire admission, join the actual owned request, then close its client.
+
+        A separate close task makes simultaneous/retried cleanup idempotent.
+        Shielding keeps ownership even when a cleanup caller is cancelled.
+        """
+        if self._active_task is asyncio.current_task():
+            raise RuntimeError('active_request_cannot_close_itself')
+        if self._close_task is None:
+            self._closed=True
+            self._close_task=asyncio.create_task(self._close_owned())
+        await asyncio.shield(self._close_task)
+
+    async def _close_owned(self):
+        task=self._active_task
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task,return_exceptions=True)
+        if self._owned_client is not None:
+            await self._owned_client.aclose()
+            self._owned_client.cookies.clear()
 
     async def _token(self):
         if self._token_provider is None:
@@ -116,10 +157,12 @@ class OAuthAnswerStream:
         return token
 
     def _client(self):
+        if self._owned_client is not None: return self._owned_client
         import httpx
         factory = self._client_factory or httpx.AsyncClient
-        return factory(timeout=httpx.Timeout(10, connect=5), follow_redirects=False, trust_env=False,
-                       limits=httpx.Limits(max_connections=1, max_keepalive_connections=0))
+        self._owned_client=factory(timeout=httpx.Timeout(10, connect=5), follow_redirects=False, trust_env=False,
+                       limits=httpx.Limits(max_connections=1, max_keepalive_connections=1, keepalive_expiry=15))
+        return self._owned_client
 
     async def _small_body(self, response, *, budget=65536):
         data = bytearray()
@@ -132,12 +175,16 @@ class OAuthAnswerStream:
         except CardError:
             return None
 
-    async def _request(self, client, body, token, *, guard=None):
+    async def _request(self, client, body, token, *, guard=None, timing=None):
         if guard is not None:
             guard()
+        # A retained client must not add a provider cookie to a later bearer.
+        client.cookies.clear()
+        if timing is not None: timing.mark('request_started_ms')
         async with client.stream('POST', self._endpoint, json=body, headers={
             'Authorization': 'Bearer ' + token, 'Accept': 'text/event-stream', 'Accept-Encoding': 'identity',
         }) as response:
+            if timing is not None: timing.mark('response_headers_ms')
             if response.status_code != 200:
                 raise _response_error(await self._small_body(response), status=response.status_code)
             if not response.headers.get('content-type', '').lower().startswith('text/event-stream'):
@@ -149,13 +196,25 @@ class OAuthAnswerStream:
                 if len(chunk) > 65536:
                     raise AnswerTransportError('stream_budget')
                 for event in decoder.feed(chunk):
+                    if timing is not None:
+                        terminal={'response.failed':'failed','response.incomplete':'incomplete',
+                            'response.refusal.delta':'refused','response.refusal.done':'refused'}.get(event.get('type'))
+                        if terminal is not None:timing.provider_terminal=terminal
                     if event.get('type') in ('response.failed', 'response.incomplete', 'error'):
                         payload = event.get('response') if isinstance(event.get('response'), dict) else event
                         raise _response_error(payload)
                     answer = assembler.feed(event)
+                    if (timing is not None and event.get('type')=='response.output_text.delta'
+                            and event.get('delta', '').strip()):
+                        # The assembler has validated item identity and order.
+                        timing.mark('first_text_ms')
                     if answer is not None:
                         if guard is not None:
                             guard()
+                        if timing is not None:
+                            timing.mark('response_completed_ms')
+                            timing.provider_terminal='completed'
+                            timing.output_bytes=len(answer.encode('utf-8'))
                         return answer
             decoder.finish(); assembler.finish()
             raise AnswerTransportError('missing_response_completed')
@@ -170,23 +229,30 @@ class OAuthAnswerStream:
                 visual_attachment.retire()
             raise
         success = False
+        timing=AnswerTimingAttempt(self._spent,self._clock)
+        outcome='failed'
         try:
             async with asyncio.timeout(self.deadline):
                 token = await self._token()
+                timing.mark('token_ready_ms')
                 part, guard = None, None
                 if visual_attachment is not None:
                     part = visual_attachment._begin_send(token=token, model=self.model, effort=self.effort, endpoint=self._endpoint)
                     guard = lambda: visual_attachment._check(token=token, model=self.model, effort=self.effort,
                                                              endpoint=self._endpoint, check_config=True)
                 body = response_payload(self.model, question, instructions=instructions, effort=self.effort, image_input=part)
-                async with self._client() as client:
-                    answer = await self._request(client, body, token, guard=guard)
+                client=self._client()
+                timing.mark('client_ready_ms')
+                answer = await self._request(client, body, token, guard=guard, timing=timing)
                 if visual_attachment is not None:
                     current_token = await self._token()
                     visual_attachment._mark_completed(token=current_token, model=self.model, effort=self.effort, endpoint=self._endpoint)
                 success = True
+                outcome='completed'
                 return answer
-        except asyncio.CancelledError: raise
+        except asyncio.CancelledError:
+            outcome='cancelled'
+            raise
         except AnswerTransportError as error:
             if (visual_attachment is not None
                     and error.provider_code == 'subscription_sharing_unsupported_capability'
@@ -200,7 +266,8 @@ class OAuthAnswerStream:
             # Provider/HTTP exceptions can contain credentials or private content.
             raise AnswerTransportError('request_unavailable') from None
         finally:
-            self._active = False
+            self._last_timing=timing.finish(outcome)
+            self._leave()
             if visual_attachment is not None and not success:
                 visual_attachment.retire()
 
@@ -222,26 +289,27 @@ class OAuthAnswerStream:
                 def guard():
                     visual._probe_current(consent, probe, token=token, model=self.model, effort=self.effort,
                                            endpoint=self._endpoint, is_current=is_current)
-                async with self._client() as client:
-                    guard()
-                    async with client.stream('GET', self._models_endpoint, headers={
-                        'Authorization': 'Bearer ' + token, 'Accept': 'application/json', 'Accept-Encoding': 'identity',
-                    }) as response:
-                        catalog = await self._small_body(response, budget=1048576 if response.status_code == 200 else 65536)
-                        if response.status_code != 200:
-                            raise _response_error(catalog, status=response.status_code)
-                    rows = catalog.get('models') if isinstance(catalog, dict) else None
-                    if not isinstance(rows, list):
-                        raise VisualInputError('model_catalog_invalid')
-                    matches = [row for row in rows if isinstance(row, dict) and row.get('slug') == self.model]
-                    if len(matches) != 1 or matches[0].get('visibility') != 'list':
-                        raise VisualInputError('model_not_available')
-                    current_token = await self._token()
-                    visual._probe_current(consent, probe, token=current_token, model=self.model, effort=self.effort,
-                                           endpoint=self._endpoint, is_current=is_current)
-                    body = response_payload(self.model, PROBE_QUESTION, instructions=PROBE_INSTRUCTIONS,
-                                            effort=self.effort, image_input=probe.image_part())
-                    answer = await self._request(client, body, token, guard=guard)
+                client=self._client()
+                client.cookies.clear()
+                guard()
+                async with client.stream('GET', self._models_endpoint, headers={
+                    'Authorization': 'Bearer ' + token, 'Accept': 'application/json', 'Accept-Encoding': 'identity',
+                }) as response:
+                    catalog = await self._small_body(response, budget=1048576 if response.status_code == 200 else 65536)
+                    if response.status_code != 200:
+                        raise _response_error(catalog, status=response.status_code)
+                rows = catalog.get('models') if isinstance(catalog, dict) else None
+                if not isinstance(rows, list):
+                    raise VisualInputError('model_catalog_invalid')
+                matches = [row for row in rows if isinstance(row, dict) and row.get('slug') == self.model]
+                if len(matches) != 1 or matches[0].get('visibility') != 'list':
+                    raise VisualInputError('model_not_available')
+                current_token = await self._token()
+                visual._probe_current(consent, probe, token=current_token, model=self.model, effort=self.effort,
+                                       endpoint=self._endpoint, is_current=is_current)
+                body = response_payload(self.model, PROBE_QUESTION, instructions=PROBE_INSTRUCTIONS,
+                                        effort=self.effort, image_input=probe.image_part())
+                answer = await self._request(client, body, token, guard=guard)
                 current_token = await self._token()
                 return visual._accept_probe(consent, probe, answer, token=current_token, model=self.model,
                                              effort=self.effort, endpoint=self._endpoint, is_current=is_current)
@@ -250,7 +318,7 @@ class OAuthAnswerStream:
         except Exception:
             raise AnswerTransportError('request_unavailable') from None
         finally:
-            self._active = False
+            self._leave()
             visual._abort_probe(consent)
 
     async def validate_visual_publication(self, permit):
@@ -262,9 +330,15 @@ class OAuthAnswerStream:
         """
         if not isinstance(permit, VisualAttachmentPermit):
             return False
+        if self._closed:
+            permit.retire()
+            return False
         try:
             async with asyncio.timeout(self.deadline):
                 token = await self._token()
+                if self._closed:
+                    permit.retire()
+                    return False
                 permit._check(token=token, model=self.model, effort=self.effort,
                               endpoint=self._endpoint, check_config=True)
                 return permit.validate_for_publication()

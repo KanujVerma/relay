@@ -29,6 +29,7 @@ class OAuthTests(unittest.IsolatedAsyncioTestCase):
             port=server.sockets[0].getsockname()[1]
             # Endpoint injection is test-only constructor port; production default fixed.
             stream=OAuthAnswerStream(token_provider=lambda:'synthetic-token', endpoint=f'http://127.0.0.1:{port}/responses', client_factory=httpx.AsyncClient)
+            self.addAsyncCleanup(stream.aclose)
             task=asyncio.create_task(stream.complete('question','instructions'))
             await asyncio.wait_for(got_headers.wait(),2)
             task.cancel()
@@ -58,5 +59,6 @@ class CompletionSocketTests(unittest.IsolatedAsyncioTestCase):
         async with server:
             port=server.sockets[0].getsockname()[1]
             adapter=OAuthAnswerStream(token_provider=lambda:'synthetic',endpoint=f'http://127.0.0.1:{port}/responses',client_factory=httpx.AsyncClient)
+            self.addAsyncCleanup(adapter.aclose)
             self.assertEqual(await asyncio.wait_for(adapter.complete('question','instructions'),1),text)
             await asyncio.wait_for(disconnected.wait(),1)

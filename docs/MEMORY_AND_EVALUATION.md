@@ -1,6 +1,8 @@
 # Personal Brain, learning memory, and evaluation design
 
-Status: the **Personal Brain Slice 02A-A local SQLite prototype** landed in merged [PR #18](https://github.com/KanujVerma/relay/pull/18), with synthetic-only consent/approval, candidate/verified claims, comprehensive source-dependency redaction and append-only audit events. This is **not** user data ingestion or a production encrypted Mac database. Learning Memory and other entities below remain proposals. PR #26 adds the synthetic v2 candidate-evidence and review contract for [issue #21](https://github.com/KanujVerma/relay/issues/21); real import and native approval remain future work. Reviewed 2026-10-22.
+Current status,2026-10-24: continuous Learning Memory remains an accepted product requirement and an unfinished implementation milestone. Current integrated source has within-conversation correction/constraint handling, explicitly saved response guides/preferences and confirmed personal-context ingestion/retrieval. Those are foundations, not automatic persistent learning from meetings. [BUILD_STATUS](BUILD_STATUS.md) and [HANDOFF](../HANDOFF.md) own exact source/gates; real private-user acceptance remains open.
+
+Historical foundation: the Personal Brain Slice02A-A local SQLite prototype landed in merged [PR18](https://github.com/KanujVerma/relay/pull/18); [PR26](https://github.com/KanujVerma/relay/pull/26) added synthetic v2 candidate evidence for [issue21](https://github.com/KanujVerma/relay/issues/21). The prototype/table discussion below explains that original trust boundary. It does not describe the full later encrypted native import/approval implementation as missing. Future draft entities below are not committed production schemas.
 
 ## Personal knowledge layers
 - Confirmed structured facts: education, actual roles, technologies used, individual contributions and project outcomes. Source, timestamp, verification and uncertainty are mandatory.
@@ -11,6 +13,23 @@ Status: the **Personal Brain Slice 02A-A local SQLite prototype** landed in merg
 
 ## Learning Memory is separate
 Question themes, clarifications, user-corrected assistant errors, answer verbosity preferences, style preferences, success/failure of model responses, and observed topic frequency. These do not automatically change personal biography, nor prove proficiency from generated answers.
+
+## Tracked cross-meeting improvement milestone
+
+The owner reaffirmed this requirement on2026-10-24. Completing saved History or AI session notes does not complete Learning Memory. After accepted source/retention ownership is available, the controller must give the learning loop its own reviewed end-to-end slice:
+
+The owner clarified that learning must also observe the natural interaction: the suggestion actually made available, what the user subsequently said through the microphone, and how the other side continued. Explicit ratings alone are insufficient. The proposed chain is **question → available suggestion → original spoken response → remote continuation → updated context/style candidate**. Availability is not proof of reading; phrase similarity is tentative uptake, and a follow-up is not proof of success/failure. Preserve original source timing/identities and ambiguity instead of guessing causal attribution.
+
+Immediate meeting continuity and later-session learning are separate requirements. Current code uses a12utterance/6000byte recent-dialogue window plus bounded mechanical task state; it does not implement a complete semantic memory of a long interview. Future live context should keep what was actually said, decisions/constraints and unresolved follow-ups distinct from assistant suggestions. Across sessions, derive a compact style profile and representative explanation examples, scoped to technical versus recruiter conversations, with source-backed updates/undo. New career facts still require Personal Brain confirmation. [Pinned source/test/license research and open decisions](research/LEARNING_MEMORY_DESIGN_INPUT.md) inform the proposal; no LangMem/Graphiti dependency or learning runtime is adopted.
+
+- Observe recurring question concepts within the user's permitted saved sessions and role context, retaining actual supporting source identities. Frequency describes those sessions, not all interviews at a company.
+- Capture explicit helpful/unhelpful feedback, assistant-error corrections and preferences such as shorter answers or a clearer coding approach. An interviewer statement, silence or an AI-generated debrief is not proof of a successful answer.
+- Apply bounded, versioned, inspectable and reversible retrieval/presentation adjustments to future requests. Explicit preferences take precedence over inferred candidates. Model-generated suggestions never become verified technical corrections merely because they were generated.
+- Propagate source/session deletion, retention expiry and disabling learning to dependent derived data; preserve an explicit user-owned correction only under its own clear retention choice. Do not create invisible permanent memory from an opted-out or deleted session.
+- Show what was learned and allow correction/removal/reset. New biographical claims still require the separate Personal Brain confirmation path.
+- Demonstrate a real later-session advice change and held-out correctness/privacy regressions against the unchanged baseline before calling the loop delivered. Initial adaptation reuses memory/retrieval/preferences; model-weight training is not required or currently implemented.
+
+Current checkboxes: within-session context and explicit preference storage are implemented; cross-meeting event capture, derived-learning persistence, future-request application and measured improvement remain unchecked. Source/reuse research and an exact lifecycle/evaluation design precede new learning architecture or dependencies. Keep this milestone visible in delivery status rather than silently dropping it behind notes.
 
 ## Implemented subset and future draft entities
 

@@ -12,6 +12,7 @@ public struct SessionPanelSnapshot: Sendable {
 /// Native source invalidation happens before queued helper/UI delivery.
 @MainActor public final class SessionPanelController {
     public private(set) var snapshot=SessionPanelSnapshot()
+    public let latency=ResponseLatencyRecorder()
     private let authority:SessionPresentationAuthority
     private var session:(UUID,UInt64)?
     private var bound:PanelRequestBinding?;private var identity:(PythonTurnIdentity,String)?
@@ -21,6 +22,7 @@ public struct SessionPanelSnapshot: Sendable {
     public init(authority:SessionPresentationAuthority) { self.authority=authority }
     public func observe(_ event:NativeSessionEvent) {
         if event.sourceCode==1 { return }
+        latency.observeNative(event)
         switch event.kind {
         case .eou:
             if let request=PanelRequestBinding(event) { bind(request) }
@@ -37,6 +39,7 @@ public struct SessionPanelSnapshot: Sendable {
     /// An issued manual binding follows the same reducer and actual lease gate.
     public func bind(_ request:PanelRequestBinding) {
         _=authority.withCurrentLease(request.lease) {
+            latency.begin(request)
             session=(request.lease.captureSessionID,request.lease.sessionEpoch)
             bound=request;identity=nil;terminal=false;pending=false
             deadline=DispatchTime.now().uptimeNanoseconds+15_000_000_000
@@ -47,6 +50,7 @@ public struct SessionPanelSnapshot: Sendable {
         }
     }
     public func clear(status:String="Stopped") {
+        latency.retire(outcome:"retired")
         bound=nil;identity=nil;terminal=true;pending=false;snapshot.question=nil;snapshot.card=nil;snapshot.responsePreferencesRevision=nil;snapshot.status=status;snapshot.replacement &+= 1;onChange?()
     }
     /// Negative-content-only updates may be reentrant from onChange while the
@@ -58,11 +62,13 @@ public struct SessionPanelSnapshot: Sendable {
     }
     public func withholdGuideAnswer(for request:PanelRequestBinding,status:String) {
         guard bound==request else{return}
+        latency.retire(outcome:"withheld")
         terminal=true;pending=false;snapshot.card=nil;snapshot.responsePreferencesRevision=nil
         snapshot.status=status;snapshot.replacement &+= 1;onChange?()
     }
     public func expire(requestID:UUID) {
         guard let bound,bound.requestID==requestID,!terminal else { return }
+        latency.retire(outcome:"timeout")
         terminal=true;snapshot.card=nil;snapshot.responsePreferencesRevision=nil;snapshot.status="Answer timed out";snapshot.replacement &+= 1;onChange?()
     }
     @discardableResult public func accept(_ data:Data) throws -> Bool {
@@ -87,7 +93,9 @@ public struct SessionPanelSnapshot: Sendable {
             case "abstain":snapshot.status=d.reason=="response_preferences_changed" ? "Response guide changed. Ask again.":["no_question","blank_question"].contains(d.reason) ? "Listening":d.reason=="manual_context_unavailable" ? "Ask a question first" : d.reason=="inference_disabled" ? "AI requests are off" : "No reliable answer available"
             default:snapshot.status="Answer unavailable"
             }
-            snapshot.replacement &+= 1;onChange?()
+            snapshot.replacement &+= 1
+            latency.accepted(d,binding:b,replacement:snapshot.replacement)
+            onChange?()
         }
     }
 }

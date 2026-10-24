@@ -46,6 +46,54 @@ Card: lead at most 280 UTF-8 bytes, zero to two points at most 180 bytes each, o
 
 Python pre-send publication keeps actual ReferenceCard object checks; native actual commit checks the current lease/fences with its MainActor reducer. A serialized object does not inherit Python identity/locks. Initial answers are immutable after terminal publication; no background critic/upgrade. Local cancellation does not prove upstream token work stopped. All fake-source/model acceptance remains distinct from real hardware/model quality and latency.
 
+### Optional decision timing v1
+
+An answer decision may include a top-level `timing` diagnostic member while its
+outer `schemaVersion` remains 1. Decisions without it remain valid. This is not
+part of the inner 13-key EOU, card, provenance or model-generated candidate.
+The exact timing object has these nine keys; stage values are positive UInt64
+monotonic nanoseconds or explicit null where indicated:
+
+| Key | Type and meaning |
+| --- | --- |
+| `schemaVersion` | Exactly 1. |
+| `helperReceivedUptimeNanoseconds` | Required. Read time of the byte chunk that lets the helper decoder finish this input frame. |
+| `generationStartedUptimeNanoseconds` | Nullable. Entry to the queued generation task, before probe drain and prompt preparation. |
+| `transportStartedUptimeNanoseconds` | Nullable. Entry to `complete()`, including credential/client preparation; not proof of HTTP send. |
+| `firstTextUptimeNanoseconds` | Nullable. First nonempty text delta accepted by the actual response lifecycle assembler. |
+| `responseCompletedUptimeNanoseconds` | Nullable. Actual validated `response.completed`, with the original transport guard still passing. |
+| `validationFinishedUptimeNanoseconds` | Nullable. Successful helper visual/card-format checks, before final native admission. |
+| `helperEmittedUptimeNanoseconds` | Required. Snapshot immediately before decision serialization/enqueue; not completed pipe IO. |
+| `transportOutcome` | Null, `completed`, `failed` or `cancelled` for that original transport attempt. |
+
+The chunk read timestamp is sampled after `reader.read` returns and before frame
+decoding. Several coalesced frames can share it; earlier fragments, kernel
+arrival and decoder completion have distinct meanings. Direct in-process host
+callers without a supplied chunk stamp use handler-entry time. Native EOU's
+existing `receivedUptimeNanoseconds` is sampled inside native ASR finalization
+and does **not** mean helper receipt. Native host ticks use the original explicit
+calibration; helper stages use the same Mac monotonic uptime domain. Projection
+to integer nanoseconds does not establish nanosecond measurement accuracy.
+
+Helper emission must follow receipt within 60 seconds; present stage marks are
+ordered between them. Transport start requires generation start; text/completion
+marks require a transport outcome, and a completed transport requires its actual
+completion mark. Reviewed/personal/no-inference routes leave unavailable provider
+marks null. A later denied attempt cannot borrow a previous attempt's marks.
+Provider completion followed by format or continuity failure remains withheld;
+first text and completion alone never establish a successful card or usefulness.
+
+The consumer discards malformed optional timing without changing an otherwise
+valid decision's admission. Existing global framing/UTF-8/duplicate/depth bounds,
+required exact fields, request/currentness checks and terminal latches remain
+strict. Timing grants no permission, personal fact, receipt or publication
+authority and cannot trigger output. Diagnostic native rows are memory-only and
+bounded to 32, with original IDs/times/fixed outcomes and no private content.
+Panel commit, post-drain actual Model availability, observed window visibility,
+actual paint and human-rated useful advice are distinct measurement boundaries.
+The latter app/GUI/account gates remain separate from the source foundation's
+synthetic tests; [evidence and current limits](lanes/RESPONSE_LATENCY.md).
+
 ## Multi-turn task acceptance
 
 The first useful product must support natural mixed interviews, not just D02. Coding-with-an-engineer cases cover clarifying constraints, explaining an approach, implementing a solution, discussing complexity and improving it as feedback changes. Feature case studies cover users/problem, requirements, flows, design/trade-offs, success measures and follow-ups. Keep known facts, unresolved assumptions, the user's latest attempt and current stage separately. Never invent unseen screen/starter code or missing schemas. A screen-context port will be separately supplied; explicit pasted problem/code is a valid first input.

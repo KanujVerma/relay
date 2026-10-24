@@ -1,0 +1,204 @@
+{
+  "researchDate": "2026-10-24",
+  "sources": [
+    {
+      "label": "LangMem license",
+      "repository": "langchain-ai/langmem",
+      "pin": "48e3c11f5bb527282c7d5339c6a87a0b35abccfc",
+      "path": "LICENSE",
+      "blobSHA": "c38f6f284dc464af69e9f618bc0304d299d0bdf0",
+      "license": "MIT",
+      "sourceURL": "https://github.com/langchain-ai/langmem/blob/48e3c11f5bb527282c7d5339c6a87a0b35abccfc/LICENSE#L1-L22",
+      "inspection": "read source through GitHub connector; not installed or executed",
+      "reuse": "concept/test-case reference only; no code or prompts copied"
+    },
+    {
+      "label": "LangMem dependencies",
+      "repository": "langchain-ai/langmem",
+      "pin": "48e3c11f5bb527282c7d5339c6a87a0b35abccfc",
+      "path": "pyproject.toml",
+      "blobSHA": "7e44b90b4f72bea560c90f49c41db8f5a91f44ba",
+      "license": "MIT",
+      "sourceURL": "https://github.com/langchain-ai/langmem/blob/48e3c11f5bb527282c7d5339c6a87a0b35abccfc/pyproject.toml#L1-L17",
+      "inspection": "read source through GitHub connector; not installed or executed",
+      "reuse": "concept/test-case reference only; no code or prompts copied"
+    },
+    {
+      "label": "LangMem memory concepts",
+      "repository": "langchain-ai/langmem",
+      "pin": "48e3c11f5bb527282c7d5339c6a87a0b35abccfc",
+      "path": "docs/docs/concepts/conceptual_guide.md",
+      "blobSHA": "c41fcaac7f9064932385423a6fbc54b6440646f5",
+      "license": "MIT",
+      "sourceURL": "https://github.com/langchain-ai/langmem/blob/48e3c11f5bb527282c7d5339c6a87a0b35abccfc/docs/docs/concepts/conceptual_guide.md#L179-L326",
+      "inspection": "read source through GitHub connector; not installed or executed",
+      "reuse": "concept/test-case reference only; no code or prompts copied"
+    },
+    {
+      "label": "LangMem episodes",
+      "repository": "langchain-ai/langmem",
+      "pin": "48e3c11f5bb527282c7d5339c6a87a0b35abccfc",
+      "path": "docs/docs/guides/extract_episodic_memories.md",
+      "blobSHA": "e3d4be3793c12eed5cbdec544666cd331c6062a5",
+      "license": "MIT",
+      "sourceURL": "https://github.com/langchain-ai/langmem/blob/48e3c11f5bb527282c7d5339c6a87a0b35abccfc/docs/docs/guides/extract_episodic_memories.md#L19-L47",
+      "inspection": "read source through GitHub connector; not installed or executed",
+      "reuse": "concept/test-case reference only; no code or prompts copied"
+    },
+    {
+      "label": "LangMem manager",
+      "repository": "langchain-ai/langmem",
+      "pin": "48e3c11f5bb527282c7d5339c6a87a0b35abccfc",
+      "path": "src/langmem/knowledge/extraction.py",
+      "blobSHA": "aac36d77afb3ff2e6e9eeb60bfe49f1a981050b3",
+      "license": "MIT",
+      "sourceURL": "https://github.com/langchain-ai/langmem/blob/48e3c11f5bb527282c7d5339c6a87a0b35abccfc/src/langmem/knowledge/extraction.py#L536-L546",
+      "inspection": "read source through GitHub connector; not installed or executed",
+      "reuse": "concept/test-case reference only; no code or prompts copied"
+    },
+    {
+      "label": "LangMem optimizer",
+      "repository": "langchain-ai/langmem",
+      "pin": "48e3c11f5bb527282c7d5339c6a87a0b35abccfc",
+      "path": "src/langmem/prompts/optimization.py",
+      "blobSHA": "f42e7b25f6563f6a336080d4dab2676fc1c1c022",
+      "license": "MIT",
+      "sourceURL": "https://github.com/langchain-ai/langmem/blob/48e3c11f5bb527282c7d5339c6a87a0b35abccfc/src/langmem/prompts/optimization.py#L232-L268",
+      "inspection": "read source through GitHub connector; not installed or executed",
+      "reuse": "concept/test-case reference only; no code or prompts copied"
+    },
+    {
+      "label": "LangMem single-shot optimizer",
+      "repository": "langchain-ai/langmem",
+      "pin": "48e3c11f5bb527282c7d5339c6a87a0b35abccfc",
+      "path": "src/langmem/prompts/stateless.py",
+      "blobSHA": "cd3a3405c7606413d078ef1b075d7240445a7938",
+      "license": "MIT",
+      "sourceURL": "https://github.com/langchain-ai/langmem/blob/48e3c11f5bb527282c7d5339c6a87a0b35abccfc/src/langmem/prompts/stateless.py#L57-L115",
+      "inspection": "read source through GitHub connector; not installed or executed",
+      "reuse": "concept/test-case reference only; no code or prompts copied"
+    },
+    {
+      "label": "LangMem bounded summary tests",
+      "repository": "langchain-ai/langmem",
+      "pin": "48e3c11f5bb527282c7d5339c6a87a0b35abccfc",
+      "path": "tests/short_term/test_summarization.py",
+      "blobSHA": "2d4a865e99bbe400baab85920a043016aff8c0e0",
+      "license": "MIT",
+      "sourceURL": "https://github.com/langchain-ai/langmem/blob/48e3c11f5bb527282c7d5339c6a87a0b35abccfc/tests/short_term/test_summarization.py#L13-L67",
+      "inspection": "read source through GitHub connector; not installed or executed",
+      "reuse": "concept/test-case reference only; no code or prompts copied"
+    },
+    {
+      "label": "LangMem incremental summary tests",
+      "repository": "langchain-ai/langmem",
+      "pin": "48e3c11f5bb527282c7d5339c6a87a0b35abccfc",
+      "path": "tests/short_term/test_summarization.py",
+      "blobSHA": "2d4a865e99bbe400baab85920a043016aff8c0e0",
+      "license": "MIT",
+      "sourceURL": "https://github.com/langchain-ai/langmem/blob/48e3c11f5bb527282c7d5339c6a87a0b35abccfc/tests/short_term/test_summarization.py#L330-L415",
+      "inspection": "read source through GitHub connector; not installed or executed",
+      "reuse": "concept/test-case reference only; no code or prompts copied"
+    },
+    {
+      "label": "LangMem example test runner",
+      "repository": "langchain-ai/langmem",
+      "pin": "48e3c11f5bb527282c7d5339c6a87a0b35abccfc",
+      "path": "tests/test_docstring_examples.py",
+      "blobSHA": "804e4866c841794d244b0cdce023893b483f4acf",
+      "license": "MIT",
+      "sourceURL": "https://github.com/langchain-ai/langmem/blob/48e3c11f5bb527282c7d5339c6a87a0b35abccfc/tests/test_docstring_examples.py#L239-L298",
+      "inspection": "read source through GitHub connector; not installed or executed",
+      "reuse": "concept/test-case reference only; no code or prompts copied"
+    },
+    {
+      "label": "Graphiti license",
+      "repository": "getzep/graphiti",
+      "pin": "8ce6d633bdcd3d178b3a47bc25b105dce106a754",
+      "path": "LICENSE",
+      "blobSHA": "5feb0d9d299a1107adfa8331306b13cc0eff2d78",
+      "license": "Apache-2.0",
+      "sourceURL": "https://github.com/getzep/graphiti/blob/8ce6d633bdcd3d178b3a47bc25b105dce106a754/LICENSE#L1-L202",
+      "inspection": "read source through GitHub connector; not installed or executed",
+      "reuse": "concept/test-case reference only; no code or prompts copied"
+    },
+    {
+      "label": "Graphiti dependencies",
+      "repository": "getzep/graphiti",
+      "pin": "8ce6d633bdcd3d178b3a47bc25b105dce106a754",
+      "path": "pyproject.toml",
+      "blobSHA": "6f1cd4718a5ff6570532e9eab57fd3b704740fd3",
+      "license": "Apache-2.0",
+      "sourceURL": "https://github.com/getzep/graphiti/blob/8ce6d633bdcd3d178b3a47bc25b105dce106a754/pyproject.toml#L1-L42",
+      "inspection": "read source through GitHub connector; not installed or executed",
+      "reuse": "concept/test-case reference only; no code or prompts copied"
+    },
+    {
+      "label": "Graphiti evidence/time fields",
+      "repository": "getzep/graphiti",
+      "pin": "8ce6d633bdcd3d178b3a47bc25b105dce106a754",
+      "path": "graphiti_core/edges.py",
+      "blobSHA": "6800438d9da1ea0f9d566a93bb4489c206726e2c",
+      "license": "Apache-2.0",
+      "sourceURL": "https://github.com/getzep/graphiti/blob/8ce6d633bdcd3d178b3a47bc25b105dce106a754/graphiti_core/edges.py#L263-L290",
+      "inspection": "read source through GitHub connector; not installed or executed",
+      "reuse": "concept/test-case reference only; no code or prompts copied"
+    },
+    {
+      "label": "Graphiti episode provenance",
+      "repository": "getzep/graphiti",
+      "pin": "8ce6d633bdcd3d178b3a47bc25b105dce106a754",
+      "path": "graphiti_core/nodes.py",
+      "blobSHA": "f7e5806a165f232e18681bb0060f8d84ebc52f04",
+      "license": "Apache-2.0",
+      "sourceURL": "https://github.com/getzep/graphiti/blob/8ce6d633bdcd3d178b3a47bc25b105dce106a754/graphiti_core/nodes.py#L318-L326",
+      "inspection": "read source through GitHub connector; not installed or executed",
+      "reuse": "concept/test-case reference only; no code or prompts copied"
+    },
+    {
+      "label": "Graphiti deletion/rebuild",
+      "repository": "getzep/graphiti",
+      "pin": "8ce6d633bdcd3d178b3a47bc25b105dce106a754",
+      "path": "graphiti_core/graphiti.py",
+      "blobSHA": "bd46a19e5f9ee129fb20df43dced053416c7e9f4",
+      "license": "Apache-2.0",
+      "sourceURL": "https://github.com/getzep/graphiti/blob/8ce6d633bdcd3d178b3a47bc25b105dce106a754/graphiti_core/graphiti.py#L2174-L2245",
+      "inspection": "read source through GitHub connector; not installed or executed",
+      "reuse": "concept/test-case reference only; no code or prompts copied"
+    },
+    {
+      "label": "Graphiti deletion failure test",
+      "repository": "getzep/graphiti",
+      "pin": "8ce6d633bdcd3d178b3a47bc25b105dce106a754",
+      "path": "tests/test_graphiti_mock.py",
+      "blobSHA": "dec2fdb32081140698adc6540a839f173293c3ba",
+      "license": "Apache-2.0",
+      "sourceURL": "https://github.com/getzep/graphiti/blob/8ce6d633bdcd3d178b3a47bc25b105dce106a754/tests/test_graphiti_mock.py#L845-L956",
+      "inspection": "read source through GitHub connector; not installed or executed",
+      "reuse": "concept/test-case reference only; no code or prompts copied"
+    },
+    {
+      "label": "Graphiti temporal tests",
+      "repository": "getzep/graphiti",
+      "pin": "8ce6d633bdcd3d178b3a47bc25b105dce106a754",
+      "path": "tests/utils/maintenance/test_temporal_edge_utils.py",
+      "blobSHA": "4e3df66584b85aeb03dbe92427317e923e58a0a8",
+      "license": "Apache-2.0",
+      "sourceURL": "https://github.com/getzep/graphiti/blob/8ce6d633bdcd3d178b3a47bc25b105dce106a754/tests/utils/maintenance/test_temporal_edge_utils.py#L37-L95",
+      "inspection": "read source through GitHub connector; not installed or executed",
+      "reuse": "concept/test-case reference only; no code or prompts copied"
+    },
+    {
+      "label": "Graphiti immutable scope tests",
+      "repository": "getzep/graphiti",
+      "pin": "8ce6d633bdcd3d178b3a47bc25b105dce106a754",
+      "path": "tests/test_request_scope_concurrency.py",
+      "blobSHA": "cad1b4d9a91ec223fc3d7d64a0942235ffb40d37",
+      "license": "Apache-2.0",
+      "sourceURL": "https://github.com/getzep/graphiti/blob/8ce6d633bdcd3d178b3a47bc25b105dce106a754/tests/test_request_scope_concurrency.py#L99-L173",
+      "inspection": "read source through GitHub connector; not installed or executed",
+      "reuse": "concept/test-case reference only; no code or prompts copied"
+    }
+  ],
+  "footprint": "No repository clone, environment, dependency/model download, install, generated cache, indexing, account or inference operation. Only small original research notes and metadata ledger."
+}

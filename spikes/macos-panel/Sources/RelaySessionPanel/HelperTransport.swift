@@ -2,6 +2,7 @@ import Foundation
 import Dispatch
 import Darwin
 import RelayNativeSession
+import RelayAccount
 
 private final class OwnedChildExit: @unchecked Sendable {
     private let lock=NSLock()
@@ -23,7 +24,7 @@ private final class OwnedChildExit: @unchecked Sendable {
     }
 }
 
-public enum HelperMode: Sendable { case noInference, fixture, oauth }
+public enum HelperMode: Sendable { case noInference, fixture, oauth, protectedOAuth }
 
 /// Owned response for an already registered/enqueued visual control. Issuance
 /// is synchronous; waiting for the actual helper terminal remains asynchronous.
@@ -108,6 +109,8 @@ private final class ImageWriteReservation:@unchecked Sendable {
 /// bounded queue overflow/EOF/malformed input retires native admission.
 public final class HelperTransport: @unchecked Sendable {
     private let root:URL;private let python:URL;private let pythonArguments:[String];private let mode:HelperMode;private let role:String
+    private var accountBootstrap:AccountSecretBootstrap?
+    private let model:String?
     private let onFrame:@Sendable(Data)throws->Void;private let onFailure:@Sendable()->Void
     private let io=DispatchQueue(label:"relay.helper.read");private let writes=DispatchQueue(label:"relay.helper.write")
     private let lock=NSLock();private var process:Process?;private var input:FileHandle?;private var output:FileHandle?;private var errors:FileHandle?
@@ -132,14 +135,26 @@ public final class HelperTransport: @unchecked Sendable {
     private var queuedFrames=0;private var queuedBytes=0;private var failed=false
     private let exitReceipt=OwnedChildExit()
     private let decoder=AnswerFrameDecoder();private var partialSince:UInt64?
-    public init(root:URL,python:URL,pythonArguments:[String]=[],mode:HelperMode,role:String="analytics",
+    public init(root:URL,python:URL,pythonArguments:[String]=[],mode:HelperMode,
+                accountBootstrap:AccountSecretBootstrap?=nil,model:String?=nil,role:String="analytics",
                 onFrame:@escaping @Sendable(Data)throws->Void,onFailure:@escaping @Sendable()->Void) {
         self.root=root;self.python=python;self.pythonArguments=pythonArguments;self.mode=mode;self.role=role;self.onFrame=onFrame;self.onFailure=onFailure
+        self.accountBootstrap=accountBootstrap;self.model=model
     }
     public func start() throws {
+        let initial:Data?
+        if mode == .protectedOAuth {
+            guard let accountBootstrap,accountBootstrap.purpose == .oauthSession,let model,!model.isEmpty,model.utf8.count<=128,
+                  !model.hasPrefix("-"),model.utf8.allSatisfy({(33...126).contains($0)}) else{throw PanelBridgeError.malformed}
+            initial=try accountBootstrap.frame()
+        }else{
+            guard accountBootstrap==nil,model==nil else{throw PanelBridgeError.malformed}
+            initial=nil
+        }
         let child=Process();let stdin=Pipe(),stdout=Pipe(),stderr=Pipe()
         child.executableURL=python;child.currentDirectoryURL=root
-        child.arguments=pythonArguments+["-m","relay_spike.session_host","--role",role]+(mode == .fixture ? ["--fixture-model"] : mode == .oauth ? ["--oauth"]:[])
+        let modeArguments=mode == .fixture ? ["--fixture-model"]:mode == .oauth ? ["--oauth"]:mode == .protectedOAuth ? ["--oauth","--protected-account","--model",model!]:[]
+        child.arguments=pythonArguments+["-m","relay_spike.session_host","--role",role]+modeArguments
         child.standardInput=stdin;child.standardOutput=stdout;child.standardError=stderr
         let receipt=exitReceipt
         child.terminationHandler={ [weak self,receipt] child in
@@ -151,6 +166,9 @@ public final class HelperTransport: @unchecked Sendable {
             try child.run();process=child;input=stdin.fileHandleForWriting;output=stdout.fileHandleForReading;errors=stderr.fileHandleForReading
             if let fd=input?.fileDescriptor { _=fcntl(fd,F_SETNOSIGPIPE,1) }
             for handle in [input,output,errors] { if let fd=handle?.fileDescriptor { _=fcntl(fd,F_SETFL,fcntl(fd,F_GETFL)|O_NONBLOCK) } }
+            // Queue the private first frame while admission is still locked.
+            // A concurrent normal send cannot overtake its writer reservation.
+            if let initial{try enqueueLocked(initial);accountBootstrap=nil}
         }
         let readSource=DispatchSource.makeReadSource(fileDescriptor:stdout.fileHandleForReading.fileDescriptor,queue:io)
         readSource.setEventHandler { [weak self] in self?.readAvailable() };source=readSource;readSource.resume()
@@ -344,11 +362,13 @@ public final class HelperTransport: @unchecked Sendable {
         }
     }
     private func enqueue(_ frame:Data) throws {
-        try lock.withLock {
-            guard !failed,input != nil else { throw PanelBridgeError.closed }
-            guard queuedFrames<32,queuedBytes+frame.count<=262144 else { throw PanelBridgeError.overflow }
-            queuedFrames+=1;queuedBytes+=frame.count
-        }
+        try lock.withLock {try enqueueLocked(frame)}
+    }
+    /// Caller holds lock through writer scheduling, preserving reservation order.
+    private func enqueueLocked(_ frame:Data) throws {
+        guard !failed,input != nil else { throw PanelBridgeError.closed }
+        guard queuedFrames<32,queuedBytes+frame.count<=262144 else { throw PanelBridgeError.overflow }
+        queuedFrames+=1;queuedBytes+=frame.count
         writes.async { [weak self] in
             guard let self else { return }
             defer { self.lock.withLock { self.queuedFrames-=1;self.queuedBytes-=frame.count } }

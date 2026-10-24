@@ -23,6 +23,7 @@ import Foundation
     public init(account: AccountController) { self.account = account }
 
     public func prepare(intentID: UUID, isCurrent: @escaping @MainActor () -> Bool) async throws {
+        try Task.checkCancellation()
         guard isCurrent() else { throw CancellationError() }
         let owner: Flight
         if let existing = flight {
@@ -44,9 +45,12 @@ import Foundation
         try await withTaskCancellationHandler {
             do {
                 try await task.value
+                try Task.checkCancellation()
                 guard !owner.denied, owner.current(), let selection = owner.selection, account.owns(selection) else { throw CancellationError() }
                 if owner.cancellation == nil { finish(owner) }
             } catch {
+                if Task.isCancelled { await cancel(intentID: intentID) }
+                else if let cancellation = owner.cancellation { await cancellation.value }
                 if owner.cancellation == nil { finish(owner) }
                 throw error
             }

@@ -206,4 +206,28 @@ private actor SyntheticAccountPort: AccountPort {
         let actions = await port.actions; XCTAssertEqual(actions, [.status, .select])
         await controller.close()
     }
+    func testSwiftCallerCancellationWaitsOwnedReadinessAndCannotReturnReady() async throws {
+        let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
+        let gate = Gate(), keys = ControllerKeys(); var factories = 0, callerFinished = false
+        let controller = AccountController(storage: AccountStorage(sharedDirectory: directory.appendingPathComponent("Relay"), keys: keys),
+            portFactory: { _ in factories += 1; return SyntheticAccountPort() }, retireInference: { await gate.wait() }, openBrowser: { _ in false }, aiEnabled: true)
+        let preparation = AccountPreparationController(account: controller)
+        let caller = Task { try await preparation.prepare(intentID: UUID(), isCurrent: { true }) }
+        try await entered(gate); caller.cancel()
+        let waiter = Task { _ = await caller.result; callerFinished = true }
+        try await Task.sleep(for: .milliseconds(10)); XCTAssertFalse(callerFinished); XCTAssertTrue(preparation.isPreparing)
+        await gate.release(); await waiter.value
+        do { try await caller.value; XCTFail("Cancelled Swift caller returned readiness") } catch { }
+        XCTAssertFalse(preparation.isPreparing); XCTAssertEqual(keys.count, 0); XCTAssertEqual(factories, 0)
+    }
+    func testAlreadyCancelledExplicitCallerCannotPassEvenTheInertAIOffPath() async throws {
+        let directory = try temporary(); defer { try? FileManager.default.removeItem(at: directory) }
+        let keys = ControllerKeys(); var factories = 0
+        let account = AccountController(storage: AccountStorage(sharedDirectory: directory.appendingPathComponent("Relay"), keys: keys),
+            portFactory: { _ in factories += 1; return SyntheticAccountPort() }, retireInference: { XCTFail("Inert action retired a helper") }, openBrowser: { _ in false })
+        let preparation = AccountPreparationController(account: account)
+        let caller = Task { try await preparation.prepare(intentID: UUID(), isCurrent: { true }) }; caller.cancel()
+        do { try await caller.value; XCTFail("Already-cancelled caller passed readiness") } catch { }
+        XCTAssertEqual(keys.count, 0); XCTAssertEqual(factories, 0)
+    }
 }

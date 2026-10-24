@@ -25,7 +25,7 @@ All inputs and responses were synthetic. HTTPX0.28.1 came from the existing `/pr
 | Affected Python user/helper/semantic/context/reference suites |133 passed,1.393s | Actual SessionHost and no-network child; complete mocked OAuth additionally covered below |
 | Native session package |27 passed,0.881s | Native source lock/sequence/issuance and existing lifecycle; includes last-source-loss rejection |
 | Explicit and existing ordered forwarder suites |7 passed,0.013s | Original denial before held release, no reorder, bounded queue and optional-work deadline |
-| New/affected panel foundation suites |19 passed,1.671s | Draft/controller, transcript, real transport receipt and actual helper/MockTransport proofs |
+| New/affected panel foundation suites |20 passed,1.631s | Draft/controller, transcript, real transport receipt and actual helper/MockTransport proofs |
 | `git diff --check` |Passed | Source hygiene only |
 
 Tests began red for absent typed modules/native types/forwarding ports/receipt parser/draft/transcript reducers. Targeted behavior regressions also ran red before their fixes: old-target cancellation crossing a newer generation, lost current microphone gap in retained projection, last-source-loss typed issuance, missing-latest silently dropping basis, malformed transcript confidence/field sets, and original issued-screen cleanup. Independent review reproduced a denied original request expiring before helper admission; its fresh Cancel previously lost the receipt. The fix allows a fresh cancel of a known target at or ahead of helper presentation while rejecting a target older than the current presentation. Original2s request freshness is unchanged. That stale-original regression returns `already_finished` and zero model requests, while old-target/newer-request rejection and actual target-task join stay green.
@@ -39,7 +39,9 @@ Actual helper/transport proof uses `tests/support/visual_backend_helper.py`, whi
 - Both microphone and selected-app transcript rows originate from the actual NativeSessionController using injected synthetic VAD/recognizers. Late, unassociated, malformed, duplicate and retired data cannot enter or restore the read view.
 - Wrong target/session cancellation receipts resolve the actual pending waiter with error, without waiting for its15s deadline or losing ownership.
 
-Final local logs: `/private/tmp/relay-typed-python-final2.log`, `/private/tmp/relay-typed-native-final.log`, `/private/tmp/relay-typed-forwarder-final.log`, `/private/tmp/relay-typed-panel-final4.log`. Unrelated full Python/native suites were not rerun in this bounded slice. Copied SwiftPM manifest caches emitted read-only cache warnings; all listed compilation/test commands completed successfully.
+An additional red/green draft regression covers an owned context-unavailable terminal arriving after a newer current audio/question binding. It can recover only the exact submitted UUID/session/epoch/generation/anchor and untouched cleared revision; a mismatched anchor is ignored, newer edits and current response ownership are preserved. This local draft recovery grants no publication authority.
+
+Final local logs: `/private/tmp/relay-typed-python-final2.log`, `/private/tmp/relay-typed-native-final.log`, `/private/tmp/relay-typed-forwarder-final.log`, `/private/tmp/relay-typed-panel-final5.log`. The five actual helper/native proofs also passed after the cancellation review fix,1.235s (`/private/tmp/relay-typed-helper-after-review-fix.log`). Unrelated full Python/native suites were not rerun in this bounded slice. Copied SwiftPM manifest caches emitted read-only cache warnings; all listed compilation/test commands completed successfully.
 
 ## Reuse and limits
 

@@ -130,6 +130,30 @@ private actor DraftQuietRecognizer:ActivityRecognizer {
         model.sendDraftAsNewQuestion();XCTAssertNil(port.sent.last?.baseRequestID)
         native.beginStop();await native.waitForQuiescence();native.finishStop(quiesced:true)
     }
+    func testOwnedLateContextFailureAfterNewCurrentQuestionRecoversUntouchedDraft()async throws {
+        let native=try native(),port=DraftPortState(),model=model(native,port)
+        let basis=try native.issueUserQuestion(expectedLease:try XCTUnwrap(native.authority.snapshot()),intent:.ask,
+            question:"Explain queues.",baseRequestID:nil,enqueue:{_ in})
+        port.current=binding(basis);model.recordQuestion(binding(basis),question:"Explain queues.")
+        model.draft="Why?";model.submitDraft()
+        let submitted=try XCTUnwrap(port.sent.last)
+        let newer=try native.issueUserQuestion(expectedLease:submitted.lease,intent:.ask,
+            question:"Explain caches.",baseRequestID:nil,enqueue:{_ in})
+        port.current=binding(newer);model.recordQuestion(binding(newer),question:"Explain caches.");model.observeRequest(binding(newer))
+        let fields:[String:Any]=["schemaVersion":1,"captureSessionID":submitted.lease.captureSessionID.uuidString,
+            "sessionEpoch":submitted.lease.sessionEpoch,"presentationGeneration":submitted.lease.presentationGeneration,
+            "requestID":submitted.requestID.uuidString,"eventSequence":submitted.anchorEventSequence,"resultRevision":2,
+            "disposition":"abstain","reasonCode":"user_request_context_unavailable","pythonToken":NSNull(),
+            "displayID":NSNull(),"question":"","answerID":NSNull(),"answerKind":NSNull(),"card":NSNull(),"provenance":NSNull()]
+        var wrong=fields;wrong["eventSequence"]=submitted.anchorEventSequence+1
+        model.observeDecision(try SessionAnswerDecision(data:JSONSerialization.data(withJSONObject:wrong)))
+        XCTAssertTrue(model.draft.isEmpty)
+        model.observeDecision(try SessionAnswerDecision(data:JSONSerialization.data(withJSONObject:fields)))
+        XCTAssertEqual(model.draft,"Why?");XCTAssertEqual(model.snapshot.basis?.requestID,basis.requestID)
+        XCTAssertEqual(model.snapshot.basisState,.unavailable);XCTAssertEqual(port.current?.requestID,newer.requestID)
+        XCTAssertTrue(model.snapshot.canStop)
+        native.beginStop();await native.waitForQuiescence();native.finishStop(quiesced:true)
+    }
     func testLateCancellationReceiptCannotClearAReplacementRequest()async throws {
         let native=try native(),port=DraftPortState(),gate=DraftCancelGate()
         let model=model(native,port,cancel:{target in

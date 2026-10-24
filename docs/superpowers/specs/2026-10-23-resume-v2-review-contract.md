@@ -1,7 +1,7 @@
 # Résumé v2 review and personal-answer contract
 
-2026-10-23. Proposed exact seam, **pending controller approval before schema
-implementation**. Owner: `/root/compose_context_controls`, GPT-6.1 Sol xhigh.
+2026-10-23. Controller-approved increment 1, including the amendments below.
+Owner: `/root/compose_context_controls`, GPT-6.1 Sol xhigh.
 Isolated branch `feature/resume-coverage-2026-10-23`, base
 `db768fdeebb7f084b8619b2eae54d8aabebe0065` / frozen
 `build/resume-coverage-foundation-2026-10-23`.
@@ -95,7 +95,7 @@ fields: [LocatedField, ...]  # zero to six, ordered as displayed
 Each `LocatedField` has exactly six keys:
 
 ```text
-kind: section_heading|employer|title|institution|credential|project|date|category|issuer
+kind: section_heading|employer|title|institution|credential|project|date|category|issuer|gpa|status
 text: exact slice
 sha256: SHA256(text UTF-8), lowercase hex64
 span_start, span_end: integer offsets
@@ -293,3 +293,20 @@ converters offline and must not count dependency skips as format acceptance.
 
 Increment 2 cannot claim table/column/header support until separately approved
 nested/geometry locator design and real fixtures pass the same authority gates.
+
+## Controller amendments at approval
+
+- Native offset/length checks use `unicodeScalars`, which matches Python code
+  points, never Swift grapheme count or UTF-16 offsets.
+- Self-biographical education, employment and listed-skill requests require
+  explicitly self-approved units. A role/date attached to a team contribution
+  cannot prove the user's employment or proficiency. Team/teammate units appear
+  only under their honest labels.
+- Literal GPA, completed/Expected education, certification issuer/status and
+  C++/R retrieval are required fictional fixtures; numbers remain as written.
+- Re-import of an old v1 source creates a new selected source/v2 candidate set;
+  already confirmed v1 authority is neither edited nor auto-replaced. Existing
+  digest/span/claim-key and explicit replacement rules still apply.
+- An unparsed long/ambiguous entry clears dependent associations and reports
+  partial coverage. Produced invalid cards roll back. Long-unit and complex
+  layout gaps remain explicit under the unchanged two-point publication bound.

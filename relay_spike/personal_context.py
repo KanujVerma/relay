@@ -6,12 +6,14 @@ before publishing. A fresh check cannot make arbitrary generated prose true.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from hashlib import sha256
 import re
 from typing import Protocol
 
 from .personal_brain import BrainError, BrainStore, _required
+from .resume_structure import decode_context, digest
+from .resume_personal import ApprovedResumeContext, context_words, eligible, personal_intent, selection_question
 
 MAX_FACTS = 16
 MAX_CONTEXT_CHARS = 8_000
@@ -36,6 +38,7 @@ class ContextFact:
     text: str
     evidence: ContextEvidence
     revision: int
+    resume_context: ApprovedResumeContext | None = None
 
 
 @dataclass(frozen=True)
@@ -47,6 +50,7 @@ class ContextBundle:
     status: str
     missing_fields: tuple[str, ...]
     revision: str
+    intent: str = 'general'
 
 
 class PersonalContextProvider(Protocol):
@@ -117,7 +121,9 @@ class BrainContextProvider:
         if type(budget) is not int or not 1 <= budget <= MAX_FACTS:
             raise BrainError("Invalid context budget.")
         revision = self._revision()
-        question_terms = _terms(question)
+        selection = selection_question(question)
+        intent = personal_intent(selection)
+        question_terms = _terms(selection)
         project_terms = _terms(project_hint or "")
         overview = re.fullmatch(
             r"(?:tell me about yourself|(?:please )?walk me through your (?:resume|résumé|background)|"
@@ -139,12 +145,42 @@ class BrainContextProvider:
                     or row["span_end"] - row["span_start"] != len(claim.claim_text)):
                 missing.add("valid_source_evidence")
                 continue
-            haystack = _terms(claim.claim_text + " " + claim.claim_key + " " +
-                              self._source_meta(claim.source_id))
+            structured = self._store.db.execute(
+                'SELECT r.*,v.confirmation_event_id AS verified_event,h.action,h.fact_id AS event_fact '
+                'FROM candidate_resume_context r LEFT JOIN verified_fact v ON v.fact_id=r.fact_id '
+                'LEFT JOIN history_event h ON h.id=r.confirmation_event_id WHERE r.fact_id=?', (claim.fact_id,)).fetchone()
+            resume = None
+            if structured is not None:
+                try:
+                    context = decode_context(structured['context_json'])
+                    if (structured['approved_context_sha256'] != structured['context_sha256'] or
+                            digest(asdict(context)) != structured['context_sha256'] or
+                            structured['confirmation_event_id'] != structured['verified_event'] or
+                            structured['action'] != 'fact_confirmed' or structured['event_fact'] != claim.fact_id):
+                        raise BrainError('Reviewed résumé context is unavailable.')
+                    resume = ApprovedResumeContext(structured['claim_kind'], context)
+                except BrainError:
+                    missing.add('reviewed_entry_context'); continue
+            evidence = ContextEvidence(row['source_sha256'], row['snippet_sha256'],
+                                       row['span_start'], row['span_end'], self._locator(claim.fact_id))
+            fact = ContextFact(claim.fact_id, claim.source_id, claim.actor, claim.claim_key,
+                               claim.claim_text, evidence, row['review_revision'], resume)
+            if not eligible(fact, intent): continue
+            haystack = _terms(claim.claim_text + ' ' + claim.claim_key + ' ' +
+                              self._source_meta(claim.source_id) + (' '+context_words(resume) if resume else ''))
             if project_terms and not project_terms.intersection(haystack):
                 continue
             overlap = len(question_terms.intersection(haystack))
-            if not overlap and not project_terms and not overview:
+            if resume and intent in ('individual_contribution', 'actual_tool_use'):
+                focus = question_terms - {'personally','individual','contribution','implement',
+                    'implemented','design','designed','write','wrote','actually','tools','tool'}
+                target = _terms(fact.text) if intent == 'actual_tool_use' else haystack
+                if focus and not focus.intersection(target): continue
+            if resume and intent == 'listed_skill':
+                focus = question_terms - {'listed','skills','skill','languages','language',
+                                          'technologies','list','listed'}
+                if focus and not focus.intersection(_terms(fact.text)): continue
+            if not overlap and not project_terms and not overview and not (resume and intent != 'general'):
                 continue
             # A pending alternative under an existing canonical key is an
             # unresolved contradiction, never a second approved claim.
@@ -158,10 +194,6 @@ class BrainContextProvider:
                 conflict = True
                 missing.add("resolve_conflicting_facts")
                 continue
-            evidence = ContextEvidence(row["source_sha256"], row["snippet_sha256"],
-                                       row["span_start"], row["span_end"], self._locator(claim.fact_id))
-            fact = ContextFact(claim.fact_id, claim.source_id, claim.actor, claim.claim_key,
-                               claim.claim_text, evidence, row["review_revision"])
             score = overlap * 10 + len(project_terms.intersection(haystack)) * 20
             score += len(_terms(role).intersection(haystack))
             ranked.append((score, fact))
@@ -173,9 +205,11 @@ class BrainContextProvider:
         for _, fact in ranked:
             if len(selected) == budget:
                 break
-            if size + len(fact.text) <= MAX_CONTEXT_CHARS:
+            field_size = sum(len(field.text) for field in fact.resume_context.context.fields) if fact.resume_context else 0
+            unit_size = len(fact.text)+field_size
+            if size + unit_size <= MAX_CONTEXT_CHARS:
                 selected.append(fact)
-                size += len(fact.text)
+                size += unit_size
         status = "ready"
         if conflict:
             status = "conflict"
@@ -189,7 +223,7 @@ class BrainContextProvider:
         if job is None:
             missing.add("job_context")
         bundle = ContextBundle(tuple(selected), role, project_hint, job, status,
-                               tuple(sorted(missing)), revision)
+                               tuple(sorted(missing)), revision, intent)
         self._issued.append(bundle)
         del self._issued[:-32]
         return bundle

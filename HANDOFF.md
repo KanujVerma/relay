@@ -180,3 +180,8 @@ Synthetic Notes backend test launcher is now available for actual held-writer na
 ## Actual Notes protected commit checkpoint
 
 The actual helper-issued completion now enters a typed, one-use original-source/helper/intent/deadline/CAS path through the existing History run and Store. Genuine positive save outcome is latched before publication; later Lock/cleanup can deny painting without erasing it. Unknown thrown save never latches and requires actual close/reopen. Anchored read is protected/read-only and does not migrate absent v1 notes.45focused native tests pass/zero skips8.216s after8missing-API reds; Store/codec/Learning factory block stay unchanged at approved05. Next is generated-only deletion/edit and actual Model/History UI/export/bundled acceptance. Heavy released.
+
+
+## Generated-only Store deletion checkpoint
+
+Exact record/note CAS now deletes only derived AI notes with a private actual metadata receipt. Transcript/captures/manual fields/schema3 Learning survive. Five original missing-API tests now pass with42affected native cases/zero skips8.806s, including real encrypted unknown-after-write and old SQLite-close failure outcomes. Only43Store production lines were added; no Coordinator/Model/UI mutation API is claimed by this checkpoint. Next: anchored user edit/delete wrappers and actual disjoint App controller/Model/citation/export/bundle gates. Heavy released.

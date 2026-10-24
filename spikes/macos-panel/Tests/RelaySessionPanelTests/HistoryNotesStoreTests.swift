@@ -237,4 +237,49 @@ private final class NotesHeldSQLiteStatement:@unchecked Sendable{
             XCTAssertThrowsError(try fresh.open(create:false));try fresh.close();XCTAssertEqual(try port.rawCiphertext(),before)
         }
     }
+
+    func testDeleteOnlyGeneratedNotesKeepsOriginalTranscriptAndManualFields()async throws{
+        let(store,_,vault,id,_)=try fixture()
+        let old=try store.detail(id).record;_=try store.edit(id,expectedRevision:old.revision,title:"Keep the title",note:"Keep my manual wording.")
+        let saved=try save(store,source(store,id)),before=try store.detail(id)
+        let operation=UUID(),outcome=try store.deleteGeneratedNotes(id,expectedRecordRevision:before.record.revision,
+            noteID:saved.document.noteID,expectedNoteRevision:saved.document.noteRevision,operationID:operation,admission:{true})
+        XCTAssertTrue(outcome.cleanupComplete);XCTAssertEqual(outcome.receipt.operationID,operation)
+        XCTAssertEqual(outcome.receipt.noteID,saved.document.noteID);XCTAssertEqual(outcome.receipt.deletedNoteRevision,saved.document.noteRevision)
+        XCTAssertEqual(outcome.receipt.savedAtRecordRevision,before.record.revision+1)
+        let after=try store.detail(id);XCTAssertEqual(after.rows,before.rows);XCTAssertEqual(after.captures,before.captures)
+        XCTAssertEqual(after.record.title,"Keep the title");XCTAssertEqual(after.record.note,"Keep my manual wording.")
+        XCTAssertNil(try store.generatedNotes(id));XCTAssertEqual(try version(vault),2)
+    }
+    func testDeleteRejectsMissingV1AndEveryStaleNoteRecordOrRetiredGateWithoutAWrite()async throws{
+        let(store,port,vault,id,_)=try fixture(),v1=try port.rawCiphertext(),revision=try store.detail(id).record.revision
+        XCTAssertThrowsError(try store.deleteGeneratedNotes(id,expectedRecordRevision:revision,noteID:UUID(),expectedNoteRevision:1,operationID:UUID(),admission:{true}))
+        XCTAssertEqual(try port.rawCiphertext(),v1);XCTAssertEqual(try version(vault),1)
+        let saved=try save(store,source(store,id)),before=try port.rawCiphertext(),current=try store.detail(id).record.revision
+        for (record,note,noteRevision,allowed) in [(current-1,saved.document.noteID,saved.document.noteRevision,true),
+            (current,UUID(),saved.document.noteRevision,true),(current,saved.document.noteID,saved.document.noteRevision+1,true),
+            (current,saved.document.noteID,saved.document.noteRevision,false)]{
+            XCTAssertThrowsError(try store.deleteGeneratedNotes(id,expectedRecordRevision:record,noteID:note,expectedNoteRevision:noteRevision,operationID:UUID(),admission:{allowed}))
+            XCTAssertEqual(try port.rawCiphertext(),before)
+        }
+        XCTAssertEqual(try store.generatedNotes(id),saved.document)
+    }
+    func testDeleteUnknownAfterWriteHasNoReceiptAndRequiresActualReopen()async throws{
+        let(store,port,_,id,clock)=try fixture(),saved=try save(store,source(store,id)),current=try store.detail(id).record.revision
+        port.arm(.afterWrite)
+        do{_=try store.deleteGeneratedNotes(id,expectedRecordRevision:current,noteID:saved.document.noteID,expectedNoteRevision:saved.document.noteRevision,operationID:UUID(),admission:{true});XCTFail("Unknown deletion issued a receipt")}
+        catch HistoryNotesCommitError.indeterminate{}catch{XCTFail("Expected typed unknown outcome")}
+        XCTAssertThrowsError(try store.generatedNotes(id));try store.close()
+        let fresh=HistoryStore(storage:port,clock:clock.now);defer{try? fresh.close()};try fresh.open(create:false)
+        XCTAssertNil(try fresh.generatedNotes(id));XCTAssertEqual(try fresh.detail(id).rows.count,2)
+    }
+    func testPositiveDeleteReceiptSurvivesActualOldQueueCloseFailure()async throws{
+        let(store,_,_,id,_)=try fixture(),saved=try save(store,source(store,id)),current=try store.detail(id).record.revision
+        let wrapped=try XCTUnwrap(Mirror(reflecting:store).children.first{$0.label=="queue"}?.value)
+        let old=try XCTUnwrap(Mirror(reflecting:wrapped).children.first?.value as? DatabaseQueue),statement=NotesHeldSQLiteStatement()
+        try await old.read{db in try statement.prepare(db)};defer{statement.finish()}
+        let outcome=try store.deleteGeneratedNotes(id,expectedRecordRevision:current,noteID:saved.document.noteID,expectedNoteRevision:saved.document.noteRevision,operationID:UUID(),admission:{true})
+        XCTAssertFalse(outcome.cleanupComplete);XCTAssertEqual(outcome.receipt.noteID,saved.document.noteID)
+        XCTAssertThrowsError(try store.generatedNotes(id));statement.finish();try store.close()
+    }
 }

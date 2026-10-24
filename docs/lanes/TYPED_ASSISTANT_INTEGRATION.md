@@ -87,6 +87,8 @@ The first nonempty draft retains the visible question's original read-only basis
 
 For an actual typed current request, toolbar Help must call `requestCurrentQuestionHelp()` / the new `help_current` route. The legacy ManualHelp path deliberately requires `machine.current()`'s actual audio semantic snapshot and cannot authorize an explicit typed token. Keep that legacy path for compatible audio requests. Choose the route from the app's original locally issued request origin, never a model/serialized authority flag.
 
+An accepted legacy audio Help request is also retained as read-only bounded question context under its visible Help UUID, with its original display/semantic question and actual current task projection. A later typed follow-up can select that visible basis normally; it still issues a fresh explicit token and retrieves current context. Rejected/stale/mismatched legacy Help creates no basis and no additional model work; legacy admission/equality/anchor/token behavior is unchanged.
+
 The helper retains the original semantic request separately from exact display text. Typed follow-ups carry a flat list of their supplied question contexts, capped at6000 UTF-8 bytes including labels; Help reuses the exact stored semantic request with a fresh token and fresh current personal/source retrieval. Overflow returns the existing `user_request_context_unavailable` before provider/model work, so the normal exact-owned draft recovery/send-as-new path applies. Earlier personal context is never silently dropped to fit this bound, and labels do not recursively nest.
 
 ## Wire forms

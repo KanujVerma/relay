@@ -172,6 +172,40 @@ class UserQuestionHostTests(unittest.IsolatedAsyncioTestCase):
         else:self.fail('semantic ancestry did not hit its bounded budget')
         self.assertEqual(self.prompts,[]);self.assertEqual(host.model_requests,0)
 
+    async def test_audio_legacy_help_becomes_read_only_basis_for_a_fresh_typed_followup(self):
+        from tests.test_session_host import speech,end,final
+        from tests.test_composition_host import manual
+        host=await self.prepared()
+        await host.handle(speech(2));await host.handle(end(3));await host.handle(final(4,'Explain event loops.'))
+        await host.drain();semantic=host.active.question;token=host.active.token
+        current_projection=host.context.snapshot()
+        legacy=manual(host,'Explain event loops.')
+        self.assertTrue(await host.handle_manual_help(legacy));await host.drain()
+        self.assertIn(legacy['requestID'],host.user.bases)
+        self.assertEqual(host.active.question,semantic);self.assertEqual(host.active.token,token)
+        self.assertEqual(host.active.projection.snapshot(),current_projection)
+        follow=question(host,'How does that queue work?',basis=legacy['requestID'])
+        self.assertTrue(await host.handle_user_question(follow));await host.drain()
+        self.assertEqual(self.out[-1]['disposition'],'answer')
+        self.assertEqual(self.out[-1]['question'],follow['question'])
+        self.assertIn(semantic,self.prompts[-1]['semantic_request'])
+        self.assertNotEqual(host.active.token,token)
+        self.assertEqual(host.sequence,4)
+
+    async def test_rejected_legacy_help_never_creates_basis_or_additional_model_work(self):
+        from tests.test_session_host import speech,end,final
+        from tests.test_composition_host import manual
+        host=await self.prepared()
+        await host.handle(speech(2));await host.handle(end(3));await host.handle(final(4,'Explain event loops.'))
+        await host.drain();calls=len(self.prompts)
+        stale=manual(host,'Explain event loops.',anchorEventSequence=host.sequence-1)
+        self.assertFalse(await host.handle_manual_help(stale));await host.drain()
+        self.assertNotIn(stale['requestID'],host.user.bases)
+        mismatch=manual(host,'Invent a different question.')
+        self.assertFalse(await host.handle_manual_help(mismatch));await host.drain()
+        self.assertNotIn(mismatch['requestID'],host.user.bases)
+        self.assertEqual(len(self.prompts),calls)
+
     async def test_evicted_basis_and_noncurrent_help_never_reactivate_old_permission(self):
         host=await self.prepared()
         first=question(host)

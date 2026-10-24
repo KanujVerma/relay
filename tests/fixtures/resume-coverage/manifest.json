@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "fictional": true,
+  "files": {
+    "fictional-linear.txt": {
+      "sha256": "237f345ba1d1d4991340f0dc602e599c3b3a2b00bc89fd3fe74ee1510a64af27",
+      "size": 770
+    },
+    "fictional-linear.pdf": {
+      "sha256": "8356e706f185ca636ccd1438b8f15e89a3e19fb1dd2cce8054c84576ddf8e001",
+      "size": 1688
+    },
+    "fictional-linear.docx": {
+      "sha256": "845ebdb0e498c180c4081fe0051a3397888dfc35af7390c0cb1c6891663564b0",
+      "size": 37084
+    }
+  }
+}

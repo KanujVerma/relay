@@ -383,13 +383,9 @@ class SessionHost:
         bundle=req.bundle
         if bundle is None or not bundle.facts or bundle.status=='conflict':
             self._result(req,'clarify','personal_context_missing');return
-        facts=bundle.facts[:2]
-        labels={'self':'Your contribution','team':'Team contribution','teammate':'Teammate contribution'}
         try:
-            points=tuple(labels[f.actor]+': '+f.text for f in facts)
-            from .generated_answer import bounded_text
-            for point in points: bounded_text(point,180)
-            card={'lead':'Use these confirmed details; add only what you can personally support.','points':list(points),'detail':None}
+            from .resume_personal import render_personal
+            facts,card=render_personal(bundle)
             self._result(req,'answer','grounded_personal',card,kind='generated_suggestion',provenance={'personal':True,'contextRevision':bundle.revision,'facts':[{'factID':f.fact_id,'sourceID':f.source_id,'actor':f.actor,'revision':f.revision} for f in facts],'checks':['host_exact_approved_facts']})
         except (CardError,WireError): self._result(req,'abstain','personal_detail_budget')
 

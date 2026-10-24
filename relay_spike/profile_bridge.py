@@ -34,6 +34,7 @@ _FIELDS = {
     "select_begin": ("size", "sha256", "file_type", "purpose", "label", "role", "project_hint"),
     "select_commit": (), "transfer_chunk": ("offset", "data"), "transfer_abort": (),
     "decide": ("fact_id", "fingerprint", "decision", "actor", "claim_key", "replaces_fact_id"),
+    "decide_v2": ("fact_id", "fingerprint", "decision", "actor", "claim_key", "replaces_fact_id", "card_version", "context_sha256"),
     "approve_job": ("source_id", "fingerprint"), "revoke": ("source_id",),
     "current_claim": ("claim_key",),
     "memories": ("after", "limit"),
@@ -132,6 +133,8 @@ class ProfileBridge:
         command = message["command"]
         if command not in _FIELDS or set(message) - {"command", *_FIELDS[command]}:
             raise BrainError("Unsupported profile command fields.")
+        if command == 'decide_v2' and set(message) != {'command', *_FIELDS[command]}:
+            raise BrainError('Incomplete résumé review command.')
         if len(json.dumps(message, ensure_ascii=False).encode()) > MAX_FRAME_BYTES:
             raise BrainError("Profile frame exceeds its bound.")
         if command == "new":
@@ -207,6 +210,13 @@ class ProfileBridge:
                 decision=message.get("decision"), actor=message.get("actor"), claim_key=message.get("claim_key"),
                 replaces_fact_id=message.get("replaces_fact_id"), capability=self.__cap)
             return self._state()
+        if command == 'decide_v2':
+            self._retire()
+            self._prep.decide_v2(message['fact_id'], message['fingerprint'],
+                decision=message['decision'], actor=message['actor'], claim_key=message['claim_key'],
+                replaces_fact_id=message['replaces_fact_id'], card_version=message['card_version'],
+                context_sha256=message['context_sha256'], capability=self.__cap)
+            return self._state()
         if command == "approve_job":
             self._retire()
             self._prep.approve_job(message.get("source_id"), message.get("fingerprint"), capability=self.__cap)
@@ -221,7 +231,13 @@ class ProfileBridge:
             rows = self._prep.store.db.execute(
                 "SELECT p.source_id,p.label,p.purpose FROM profile_source p JOIN source s ON s.id=p.source_id "
                 "WHERE s.revoked_at IS NULL ORDER BY p.rowid")
-            return {"ok": True, "sources": [{"source_id": r[0], "label": r[1][:64], "purpose": r[2]} for r in rows]}
+            sources = []
+            for row in rows:
+                item = {'source_id': row[0], 'label': row[1][:64], 'purpose': row[2]}
+                coverage = self._prep.store.db.execute('SELECT coverage_json FROM profile_resume_coverage WHERE source_id=?', (row[0],)).fetchone()
+                if coverage is not None: item['resume_coverage'] = json.loads(coverage[0])
+                sources.append(item)
+            return {'ok': True, 'sources': sources}
         if command == "current_claim":
             key = message.get("claim_key")
             if not isinstance(key, str) or not 0 < len(key) <= 160:

@@ -261,7 +261,7 @@ def convert_document(data, *, file_type, backend="native") -> ConversionResult:
         return _failure("invalid", "conversion_failed", valid_backend, document_sha256)
 
 
-def _validate_for_staging(result: ConversionResult) -> None:
+def _validate_for_staging(result: ConversionResult, *, allow_no_candidates=False) -> None:
     if not isinstance(result, ConversionResult):
         raise MissingEvidence("Conversion result is unavailable.")
     if (not isinstance(result.status, str) or
@@ -302,7 +302,7 @@ def _validate_for_staging(result: ConversionResult) -> None:
         prior_end = segment.end
 
     candidates = extract_synthetic_candidates(result.text)
-    if not candidates:
+    if not candidates and not allow_no_candidates:
         raise MissingEvidence("Converted document has no reviewable evidence.")
     for candidate in candidates:
         if result.text[candidate.span_start:candidate.span_end] != candidate.snippet:

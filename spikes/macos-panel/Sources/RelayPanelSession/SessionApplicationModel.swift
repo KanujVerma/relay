@@ -103,6 +103,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     @Published private(set) var stopping=false
     @Published private(set) var contextStatus=""
     @Published var expanded=false
+    @Published var settingsSection:RelaySettingsSection = .general
     @Published private(set) var error:String?
     @Published var selectedBundleID=""
     @Published private(set) var selectedTextBundleID=""
@@ -1241,6 +1242,9 @@ private actor FixtureRecognizer: ActivityRecognizer {
         error=nil;await account.setAIEnabled(enabled)
         contextStatus=oauth ? "Using ChatGPT plan":"AI is off. Local reference cards remain available."
     }
+    /// Navigation only. Showing the existing account controller performs no
+    /// readiness or authorization; its explicit login action remains separate.
+    func showAISettings(openWindow:()->Void){settingsSection = .ai;openWindow()}
     func performWindowAction(_ action:ControlAction) {
         do { try windowActions.perform(action) } catch { self.error=error.localizedDescription }
     }

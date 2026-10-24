@@ -7,12 +7,16 @@ import RelaySessionPanel
 import RelaySessionCapture
 import RelayAccount
 
+enum RelaySettingsSection:String,CaseIterable,Sendable {
+    case general="General",screen="Screen context",ai="AI",history="History",shortcuts="Shortcuts",advanced="Advanced"
+    var symbol:String{switch self{case .general:"slider.horizontal.3";case .screen:"rectangle.dashed";case .ai:"sparkles";case .history:"clock.arrow.circlepath";case .shortcuts:"keyboard";case .advanced:"wrench.and.screwdriver"}}
+}
 @MainActor struct SessionSettingsView:View {
-    enum Section:String,CaseIterable{case general="General",screen="Screen context",ai="AI",history="History",shortcuts="Shortcuts",advanced="Advanced";var symbol:String{switch self{case .general:"slider.horizontal.3";case .screen:"rectangle.dashed";case .ai:"sparkles";case .history:"clock.arrow.circlepath";case .shortcuts:"keyboard";case .advanced:"wrench.and.screwdriver"}}}
+
     @ObservedObject var model:SessionApplicationModel
     @ObservedObject private var setup:SpeechSetupCoordinator
     @ObservedObject private var visual:VisualInputSetupState
-    @State private var section:Section = .general
+    var selectedSection:RelaySettingsSection{model.settingsSection}
     @State private var selectingASR=false
     @State private var selectingVAD=false
     @Environment(\.openWindow) private var openWindow
@@ -20,7 +24,7 @@ import RelayAccount
     var body:some View {
         VStack(spacing:0){
             HStack{Text("Settings").font(.system(size:13,weight:.semibold));Spacer();Text("Relay").font(.system(size:12)).foregroundStyle(RelayTheme.muted)}.padding(.horizontal,20).frame(height:40).background(.white.opacity(0.035))
-            HStack(spacing:4){ForEach(Section.allCases,id:\.self){item in Button{section=item}label:{VStack(spacing:7){Image(systemName:item.symbol).font(.system(size:18));Text(item.rawValue).font(.system(size:11,weight:.medium))}.frame(width:106,height:64).background(section==item ? .white.opacity(0.08):.clear,in:RoundedRectangle(cornerRadius:10))}.buttonStyle(.plain).foregroundStyle(section==item ? .white:RelayTheme.muted)};Spacer()}.padding(.horizontal,20).padding(.vertical,12)
+            HStack(spacing:4){ForEach(RelaySettingsSection.allCases,id:\.self){item in Button{model.settingsSection=item}label:{VStack(spacing:7){Image(systemName:item.symbol).font(.system(size:18));Text(item.rawValue).font(.system(size:11,weight:.medium))}.frame(width:106,height:64).background(selectedSection==item ? .white.opacity(0.08):.clear,in:RoundedRectangle(cornerRadius:10))}.buttonStyle(.plain).foregroundStyle(selectedSection==item ? .white:RelayTheme.muted)};Spacer()}.padding(.horizontal,20).padding(.vertical,12)
             Divider().overlay(RelayTheme.line)
             ScrollView{VStack(alignment:.leading,spacing:24){content}.padding(.horizontal,32).padding(.vertical,28).frame(maxWidth:760,alignment:.leading).frame(maxWidth:.infinity)}
         }.frame(width:920,height:670).background(RelayTheme.base).foregroundStyle(.white).preferredColorScheme(.dark).disabled(model.fixture)
@@ -28,7 +32,7 @@ import RelayAccount
             .fileImporter(isPresented:$selectingVAD,allowedContentTypes:[.folder]){if case .success(let url)=$0{model.vadFolder=url.path}}
     }
     @ViewBuilder private var content:some View {
-        switch section {
+        switch selectedSection {
         case .general:
             settingsTitle("Conversation","Choose what Relay listens to. Audio starts only when you start a session.")
             RelaySourceControls(model:model)

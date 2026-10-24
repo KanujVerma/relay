@@ -94,7 +94,7 @@ import RelayScreenContext
     func testCommandRouterUsesExistingPortsAndRechecksStateAtDispatch()async {
         var state=RelaySessionPresentation(running:true,hasQuestion:true,hasAnswer:true)
         var controls:[ControlAction]=[],starts=0,context=0,shown=0
-        let router=RelayCommandRouter(state:{state},control:{controls.append($0)},start:{starts+=1},cancelPreparation:{},retryPreparation:{},openContext:{context+=1},openSettings:{},showSession:{shown+=1})
+        let router=RelayCommandRouter(state:{state},control:{controls.append($0)},start:{starts+=1},cancelPreparation:{},retryPreparation:{},openContext:{context+=1},openSettings:{},openAISettings:{},showSession:{shown+=1})
         router.perform(.showSession);XCTAssertEqual(shown,1)
         router.perform(.help);router.perform(.copy);router.perform(.expand)
         XCTAssertEqual(controls,[.requestHelp,.copyAnswer,.expandAnswer])
@@ -111,7 +111,7 @@ import RelayScreenContext
         let model=SessionApplicationModel(arguments:["relay","--fixture-suite","coding","--repository",root.path])
         let window=NSWindow(contentRect:NSRect(x:0,y:0,width:690,height:500),styleMask:[.titled],backing:.buffered,defer:false)
         window.isReleasedWhenClosed=false;model.attachWindow(window,scrollView:nil)
-        let router=RelayCommandRouter(state:{model.relayPresentation},control:model.performWindowAction,start:{await model.start()},cancelPreparation:model.cancelPreparation,retryPreparation:{await model.retryPreparation()},openContext:{},openSettings:{},showSession:{})
+        let router=RelayCommandRouter(state:{model.relayPresentation},control:model.performWindowAction,start:{await model.start()},cancelPreparation:model.cancelPreparation,retryPreparation:{await model.retryPreparation()},openContext:{},openSettings:{},openAISettings:{},showSession:{})
         if let operation=router.perform(.start){await operation.value}
         try await waitUntil{model.snapshot.card != nil}
         router.perform(.expand);XCTAssertTrue(model.expanded)

@@ -51,7 +51,7 @@ private struct RelayAppCommands:Commands {
     @ObservedObject var shell:RelayWindowShell
     @Environment(\.openWindow) private var openWindow
     init(model:SessionApplicationModel,shell:RelayWindowShell){self.model=model;self.shell=shell;setup=model.speechSetup;visual=model.visual}
-    private var router:RelayCommandRouter{RelayCommandRouter(state:{model.relayPresentation},control:model.performWindowAction,start:{await model.start();if model.running{openWindow(id:"relay-live")}},cancelPreparation:model.cancelPreparation,retryPreparation:{await model.retryPreparation();if model.running{openWindow(id:"relay-live")}},openContext:{openWindow(id:"relay-context")},openSettings:{openWindow(id:"relay-settings")},showSession:{openWindow(id:"relay-live")})}
+    private var router:RelayCommandRouter{RelayCommandRouter(state:{model.relayPresentation},control:model.performWindowAction,start:{await model.start();if model.running{openWindow(id:"relay-live")}},cancelPreparation:model.cancelPreparation,retryPreparation:{await model.retryPreparation();if model.running{openWindow(id:"relay-live")}},openContext:{openWindow(id:"relay-context")},openSettings:{openWindow(id:"relay-settings")},openAISettings:{model.showAISettings{openWindow(id:"relay-settings")}},showSession:{openWindow(id:"relay-live")})}
     var body:some View {
         RelayHomeView(state:model.relayPresentation,preparation:model.relayPreparation,aiEnabled:model.oauth,error:model.error,fixture:model.fixture,assistant:model.assistant,openHistory:{openWindow(id:"relay-history")},onAction:{router.perform($0)}){RelaySourceControls(model:model)}
             .task{if model.fixture && shell.claimFixtureStart(){await model.start();if model.running{openWindow(id:"relay-live")}}}
@@ -80,7 +80,7 @@ private struct RelayAppCommands:Commands {
     @Environment(\.openWindow) private var openWindow
     @State private var startedAt:Double?
     init(model:SessionApplicationModel,shell:RelayWindowShell){self.model=model;self.shell=shell;setup=model.speechSetup;visual=model.visual}
-    private var router:RelayCommandRouter{RelayCommandRouter(state:{model.relayPresentation},control:model.performWindowAction,start:{await model.start()},cancelPreparation:model.cancelPreparation,retryPreparation:{await model.retryPreparation()},openContext:{openWindow(id:"relay-context")},openSettings:{openWindow(id:"relay-settings")},showSession:{openWindow(id:"relay-live")})}
+    private var router:RelayCommandRouter{RelayCommandRouter(state:{model.relayPresentation},control:model.performWindowAction,start:{await model.start()},cancelPreparation:model.cancelPreparation,retryPreparation:{await model.retryPreparation()},openContext:{openWindow(id:"relay-context")},openSettings:{openWindow(id:"relay-settings")},openAISettings:{model.showAISettings{openWindow(id:"relay-settings")}},showSession:{openWindow(id:"relay-live")})}
     var body:some View {
         TimelineView(.periodic(from:.now,by:1)){_ in
             LiveSessionView(state:model.relayPresentation,question:model.snapshot.question,answer:model.relayAnswer,status:model.snapshot.status,contextLabel:model.relayContextLabel,contextDetail:model.contextStatus.isEmpty ? nil:model.contextStatus,error:model.error,elapsed:elapsed,fixture:model.fixture,assistant:model.assistant,attachScroll:{window,scroll in model.attachWindow(window,scrollView:scroll)},expanded:$shell.expanded,detailExpanded:$model.expanded,onAction:{router.perform($0)})

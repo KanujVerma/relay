@@ -1,6 +1,8 @@
 # Optional local session history and notes
 
-Status: proposal for controller review, 2026-10-23. No history storage, recording hook, key purpose or notes API is implemented by this document. Base: `5575b184a081450308b88b622ec5fcb5eb81318a` (`build/history-foundation-2026-10-23`). The accepted résumé branch stays frozen.
+Status: controller-approved design with amendments, 2026-10-23. Original design checkpoint `e242746` used base `5575b184a081450308b88b622ec5fcb5eb81318a`; implementation starts from `ac70eb3b8526331b074cd5a9e24f0d775ecad4f9`. Publication of this document itself implements no storage. The accepted résumé and idle authority remain dependencies.
+
+Approval amendment: all six seams below are approved for manual History/notes implementation. Fixed key service is `com.relay.history.v1`, account `local-history-aes256`; location `Application Support/Relay/History/history.relayvault`, authenticated header `RELAYHISTORY1\n`. The lane owns complete isolated Model/Home/Settings/lifecycle/package/key-purpose integration as well as store/coordinator/DTO/export/validated-final observation. It narrowly incorporates accepted account728's compatible `.profile/.chatGPTCredentials` enum, without importing unreviewed account app code. Controller independently reviews/reconciles and owns GUI verification. Generated notes still require a later exact contract and have no stub.
 
 ## Recommendation and approval decisions
 
@@ -162,4 +164,4 @@ Notes checkpoint adds actual injected HTTPX completed-stream proof, unsupported 
 | GRDB disk SQLite / SwiftData / Core Data | Familiar durable queries and app tooling. | Plain persistent stores/journals/indexes do not meet the proposed encrypted-at-rest boundary. A new disk encryption strategy or SQLCipher is separate architecture, not a reason to silently weaken the boundary. SwiftData history reference was GPL-noticed, not adopted. |
 | JSON encrypted record files | Small initial format, record-level writes. | Must implement indexing, migration, atomic multi-record deletion/notes references, ordering and transactional limits. Existing SQLite plus GRDB is a stronger reusable fit. |
 
-No new runtime dependency, key namespace, storage policy or API in this proposal is accepted merely because this document is committed. Exact implementation work begins after controller approval. Long-session capacity, generated note quality, real OS/capture/account behavior and secure deletion beyond the current live encrypted file remain explicit limits.
+The approval amendment above authorizes the bounded manual History implementation; each source/app checkpoint still receives independent review before assembly/exposure. Generated-note inference remains a separate contract. Long-session capacity, generated note quality, real OS/capture/account behavior and secure deletion beyond the current live encrypted file remain explicit limits.

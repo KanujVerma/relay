@@ -66,11 +66,11 @@ existing `_personal` branch; new `tests/test_resume_personal_answers.py`.
 Files: new strict review-context DTO; narrow `ProfileController`,
 `ProfilePreparationView`, pure presentation helpers and native tests.
 
-- [ ] Add failing DTO Unicode-code-point/bounds/version and actual client
+- [x] Add failing DTO Unicode-code-point/bounds/version and actual client
   command tests, using fake keys/temp vault and actual synthetic stdio helper.
-- [ ] Display all proposed associations before existing actor/Save; route exact
+- [x] Display all proposed associations before existing actor/Save; route exact
   displayed v2 digest through `decide_v2`, without a second acknowledgement.
-- [ ] Show truthful partial extraction and keep source/Lock/busy lifecycle.
+- [x] Show truthful partial extraction and keep source/Lock/busy lifecycle.
 - [ ] Run affected profile package tests and actual app build; freeze native
   checkpoint for root review, without editing outer app/Model.
 

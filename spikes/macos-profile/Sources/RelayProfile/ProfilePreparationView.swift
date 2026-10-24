@@ -205,11 +205,25 @@ import UniformTypeIdentifiers
         VStack(alignment: .leading, spacing: 16) {
             Label("Choose what Relay remembers", systemImage: "sparkle").font(.headline)
             Text(card.snippet).font(.system(size: 16)).textSelection(.enabled)
-            Picker("Whose work is this?", selection: $actor) {
+            if let context = card.reviewContext {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Review this entry context too").font(.callout.weight(.semibold))
+                    ForEach(context.fields) { field in
+                        HStack(alignment: .top, spacing: 12) {
+                            Text(field.label).font(.caption).foregroundStyle(.secondary).frame(width: 105, alignment: .leading)
+                            Text(field.text).font(.callout).textSelection(.enabled)
+                        }
+                    }
+                    Text("Save approves the statement and these source associations together. Skip it if an association is wrong.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+            }
+            Picker(card.reviewContext == nil || card.claimKind == "contribution" ? "Whose work is this?" : "Whose background is this?", selection: $actor) {
                 Text("Choose ownership").tag("unknown")
-                Text("My own work").tag("self")
-                Text("Our team’s work").tag("team")
-                Text("A teammate’s work").tag("teammate")
+                Text(card.reviewContext == nil || card.claimKind == "contribution" ? "My own work" : "My background").tag("self")
+                Text("Our team’s work or background").tag("team")
+                Text("A teammate’s work or background").tag("teammate")
             }.frame(maxWidth: 380, alignment: .leading)
             Text("Only information you approve supports personal suggestions.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -282,6 +296,10 @@ import UniformTypeIdentifiers
                     VStack(alignment: .leading, spacing: 3) {
                         Text(source.label).font(.callout.weight(.medium))
                         Text(defaultLabel(source.purpose)).font(.caption).foregroundStyle(.secondary)
+                        if let coverage = source.resumeCoverage, !coverage.codes.isEmpty {
+                            Text("Some text was not turned into review items. Add missing details as notes.")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
                     }
                     Spacer()
                     Button("Remove from Relay") { Task { await controller.revoke(source) } }.font(.caption)

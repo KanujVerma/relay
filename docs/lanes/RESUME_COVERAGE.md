@@ -30,10 +30,11 @@ admission still scans the complete retained semantic request. Original bundle
 identity/revision and native final gates are unchanged. Every reviewed field's
 text counts toward the existing 8,000-character retrieval budget.
 
-The native DTO/view/Save route and new real-format converter acceptance are
-**not yet implemented/verified at this backend checkpoint**. Existing native
-clients will reject the new review command path rather than approve it. This
-is not a completed app feature or template-parsing claim.
+At the original backend checkpoint f353, the native DTO/view/Save route and
+new real-format converter acceptance were not yet implemented/verified. Old
+native clients cannot approve context-dependent cards. Later native/fixture
+checkpoints below remain subject to their own independent review; this is not
+a universal template-parsing or shipping-readiness claim.
 
 ## Verification and scope
 
@@ -103,3 +104,28 @@ normalized names are equal withhold as ambiguous; unique Unicode-normalized
 lookup retains exact source text. Employer/project prefix and Unicode/case
 actual-Host regressions fail three assertions on082; all62 affected cases pass
 after correction. No authority or displayed source text is normalized.
+
+## Native review checkpoint
+
+Strict v2 native DTOs validate known keys/version, bounded exact fields and
+hashes, distinct field kinds and Python-code-point offsets using
+`unicodeScalars`. Combining marks/emoji deliberately distinguish these ranges
+from Swift graphemes and UTF-16. ProfileController automatically uses the
+displayed v2 receipt for Save/Skip; its unchanged current-card/lifecycle guards
+reject a modified copied card before any command. Save persists through the
+actual profile helper and encrypted temporary vault with fake keys, then a
+fresh helper reopens the approved primary fact. Skip sends explicit null
+approval fields and does not add memory. Unknown/malformed cards fail closed.
+
+All entry context appears above the existing ownership/Save controls, with no
+extra acknowledgement click. Background ownership wording and fixed partial
+extraction guidance are visible; source fields remain selectable exact text.
+No Model, outer-app, account or Vault implementation is modified.
+
+Four initial focused native cases failed 19 assertions on the old DTO/controller
+source. The five final focused cases pass, including actual stdio commands and
+fake-key protected persistence. Complete profile package: 50 tests pass, no
+skips/failures (13.717 s). Actual `relay-panel-session` app compiles with existing
+pinned public Swift dependencies in an isolated scratch directory (58.74 s).
+This is a compiler/test gate, not notarization or actual visible UI acceptance.
+The locked Mac has not been captured, unlocked or used for private input.

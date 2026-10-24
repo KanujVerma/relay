@@ -9,6 +9,8 @@ struct RelayHomeView<SourceControls:View>:View {
     let error:String?
     var fixture=false
     var assistant:TypedAssistantController?
+    var guideLabel:String?
+    var onResponsePreferences:(()->Void)?
     let onAction:(RelayUIAction)->Void
     @ViewBuilder let sourceControls:()->SourceControls
     private var offersChatGPTSetup:Bool{!aiEnabled && !fixture}
@@ -43,6 +45,7 @@ struct RelayHomeView<SourceControls:View>:View {
                     VStack(alignment:.leading,spacing:8){
                         HStack{
                             Text("Ask Relay").font(.system(size:15,weight:.semibold));Spacer()
+                            if let guideLabel,let onResponsePreferences{ResponseGuideButton(name:guideLabel,action:onResponsePreferences)}
                             if state.assistantActive{Button("Open assistant"){onAction(.showSession)}.buttonStyle(.plain).font(.system(size:12)).foregroundStyle(RelayTheme.secondary)}
                         }
                         Text("Ask a question without starting audio recording.").font(.system(size:12)).foregroundStyle(RelayTheme.muted)

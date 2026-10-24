@@ -46,12 +46,13 @@ private struct RelayAppCommands:Commands {
     @ObservedObject var model:SessionApplicationModel
     @ObservedObject private var setup:SpeechSetupCoordinator
     @ObservedObject private var visual:VisualInputSetupState
+    @ObservedObject private var preferences:ResponsePreferencesCoordinator
     @ObservedObject var shell:RelayWindowShell
     @Environment(\.openWindow) private var openWindow
-    init(model:SessionApplicationModel,shell:RelayWindowShell){self.model=model;self.shell=shell;setup=model.speechSetup;visual=model.visual}
+    init(model:SessionApplicationModel,shell:RelayWindowShell){self.model=model;self.shell=shell;setup=model.speechSetup;visual=model.visual;preferences=model.responsePreferences}
     private var router:RelayCommandRouter{RelayCommandRouter(state:{model.relayPresentation},control:model.performWindowAction,start:{await model.start();if model.running{openWindow(id:"relay-live")}},cancelPreparation:model.cancelPreparation,retryPreparation:{await model.retryPreparation();if model.running{openWindow(id:"relay-live")}},openContext:{openWindow(id:"relay-context")},openSettings:{openWindow(id:"relay-settings")},openAISettings:{model.showAISettings{openWindow(id:"relay-settings")}},showSession:{openWindow(id:"relay-live")})}
     var body:some View {
-        RelayHomeView(state:model.relayPresentation,preparation:model.relayPreparation,aiEnabled:model.oauth,error:model.error,fixture:model.fixture,assistant:model.assistant,onAction:{router.perform($0)}){RelaySourceControls(model:model)}
+        RelayHomeView(state:model.relayPresentation,preparation:model.relayPreparation,aiEnabled:model.oauth,error:model.error,fixture:model.fixture,assistant:model.assistant,guideLabel:model.responseGuideName,onResponsePreferences:{model.showResponsePreferences{openWindow(id:"relay-settings")}},onAction:{router.perform($0)}){RelaySourceControls(model:model)}
             .task{if model.fixture && shell.claimFixtureStart(){await model.start();if model.running{openWindow(id:"relay-live")}}}
             .onChange(of:model.running){_,running in if running{shell.expanded=true;openWindow(id:"relay-live")}}
             .onChange(of:model.assistantActive){_,active in if active{shell.expanded=true;openWindow(id:"relay-live")}}
@@ -75,13 +76,14 @@ private struct RelayAppCommands:Commands {
     @ObservedObject var shell:RelayWindowShell
     @ObservedObject private var setup:SpeechSetupCoordinator
     @ObservedObject private var visual:VisualInputSetupState
+    @ObservedObject private var preferences:ResponsePreferencesCoordinator
     @Environment(\.openWindow) private var openWindow
     @State private var startedAt:Double?
-    init(model:SessionApplicationModel,shell:RelayWindowShell){self.model=model;self.shell=shell;setup=model.speechSetup;visual=model.visual}
+    init(model:SessionApplicationModel,shell:RelayWindowShell){self.model=model;self.shell=shell;setup=model.speechSetup;visual=model.visual;preferences=model.responsePreferences}
     private var router:RelayCommandRouter{RelayCommandRouter(state:{model.relayPresentation},control:model.performWindowAction,start:{await model.start()},cancelPreparation:model.cancelPreparation,retryPreparation:{await model.retryPreparation()},openContext:{openWindow(id:"relay-context")},openSettings:{openWindow(id:"relay-settings")},openAISettings:{model.showAISettings{openWindow(id:"relay-settings")}},showSession:{openWindow(id:"relay-live")})}
     var body:some View {
         TimelineView(.periodic(from:.now,by:1)){_ in
-            LiveSessionView(state:model.relayPresentation,question:model.snapshot.question,answer:model.relayAnswer,status:model.snapshot.status,contextLabel:model.relayContextLabel,contextDetail:model.contextStatus.isEmpty ? nil:model.contextStatus,error:model.error,elapsed:elapsed,fixture:model.fixture,assistant:model.assistant,attachScroll:{window,scroll in model.attachWindow(window,scrollView:scroll)},expanded:$shell.expanded,detailExpanded:$model.expanded,onAction:{router.perform($0)})
+            LiveSessionView(state:model.relayPresentation,question:model.snapshot.question,answer:model.relayAnswer,status:model.snapshot.status,contextLabel:model.relayContextLabel,contextDetail:model.relayContextDetail,error:model.error,elapsed:elapsed,fixture:model.fixture,assistant:model.assistant,guideLabel:model.responseGuideName,onResponsePreferences:{model.showResponsePreferences{openWindow(id:"relay-settings")}},attachScroll:{window,scroll in model.attachWindow(window,scrollView:scroll)},expanded:$shell.expanded,detailExpanded:$model.expanded,onAction:{router.perform($0)})
         }
         .background(RelayLiveWindowAttachment(shell:shell,attach:{window in model.attachWindow(window,scrollView:nil)}))
         .onAppear{if model.running{startedAt=ProcessInfo.processInfo.systemUptime}}

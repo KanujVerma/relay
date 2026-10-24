@@ -78,8 +78,11 @@ class SessionHost:
         self.visual=HostVisualInput(self,visual_transport)
         from .assistant_scope import AssistantScopeCoordinator
         self.assistant=AssistantScopeCoordinator(self)
+        from .response_preferences import HostResponsePreferences
+        self.response_preferences=HostResponsePreferences(self)
 
     def _invalidate(self):
+        self.response_preferences.retire_request()
         self.user.invalidate_retired_help()
         self.visual.retire_request()
         if self.active is not None:
@@ -95,6 +98,7 @@ class SessionHost:
         if callable(invalidate):invalidate()
 
     def close(self,*,preserve_visual=False):
+        self.response_preferences.close()
         if not preserve_visual:self.visual.disable(cancel_work=False)
         self.user.close()
         self._clear_context_provider()
@@ -121,7 +125,7 @@ class SessionHost:
             self.tasks.difference_update(task for task in batch if task.done())
         await self.user.drain()
 
-    def _current(self,request):
+    def _current_base(self,request):
         try:
             snippet=self._supplemental.get(request.native['requestID'])
             if snippet is not None:
@@ -135,8 +139,14 @@ class SessionHost:
         except Exception:
             return False
 
+    def _current(self,request):
+        return self._current_base(request) and self.response_preferences.current_for(request)
+
     def _result(self,request,disposition,reason,card=None,*,kind=None,provenance=None,pending=False):
         if not self._current(request): return False
+        return self._emit_result(request,disposition,reason,card,kind=kind,provenance=provenance,pending=pending)
+
+    def _emit_result(self,request,disposition,reason,card=None,*,kind=None,provenance=None,pending=False):
         n=request.native
         value={key:n[key] for key in ('captureSessionID','sessionEpoch','presentationGeneration','requestID','eventSequence')}
         value.update(schemaVersion=1,resultRevision=1 if pending else 2,disposition=disposition,reasonCode=reason,
@@ -311,6 +321,7 @@ class SessionHost:
 
     def _route(self,req):
         if self._personal_question(req.question):
+            self.response_preferences.discard(req.native)
             discard=getattr(self.supplemental_provider,'discard_staged',None)
             if callable(discard):discard()
             self._personal(req);return
@@ -318,6 +329,7 @@ class SessionHost:
         if supplemental is None:
             route=publish_reference(PolicyInput(req.question,self.role,'sql',source_channel=req.origin,question_status='final',host_authorized=True),turns=self.machine.turns,token=req.token,consent=self.permission,on_present=lambda _:None)
             if route.card:
+                self.response_preferences.discard(req.native)
                 authorized=[]
                 render_queued_card(route.card,turns=self.machine.turns,consent=self.permission,on_paint=authorized.append)
                 if authorized:
@@ -325,14 +337,36 @@ class SessionHost:
                     self._result(req,'answer','reviewed_full_question',{'lead':card.text,'points':['Filter rows with WHERE; filter grouped results with HAVING.'],'detail':None},kind='reviewed_reference',provenance={'referenceID':card.reference_id,'sourceRef':card.source_ref})
                 return
             if route.reason_code=='reviewed_fixture_changed':
+                self.response_preferences.discard(req.native)
                 self._result(req,'abstain','reference_unavailable');return
         dialogue=(req.projection or self.context).snapshot()
         if dialogue.task.state!='ready':
+            self.response_preferences.discard(req.native)
             self._result(req,'clarify','task_context_'+('overflow' if dialogue.task.state=='overflow' else 'unresolved'));return
         if self.complete is None:
+            self.response_preferences.discard(req.native)
             self._result(req,'abstain','inference_disabled');return
+        self.response_preferences.claim(req.native)
         self._result(req,'pending','generating_with_task_context' if supplemental is not None else 'generating',pending=True)
         self._queue_work(req,dialogue)
+
+    def handle_response_preferences(self,value):
+        try:return self.response_preferences.stage(value)
+        except Exception:self.close();raise WireError('invalid_response_preferences') from None
+
+    def handle_response_preferences_retirement(self,value):
+        try:return self.response_preferences.retire(value)
+        except Exception:self.close();raise WireError('invalid_preferences_retirement') from None
+
+    def response_preferences_changed(self,native):
+        request=self.active
+        if request is None or request.native is not native:return
+        # A fixed terminal carries no guidance/answer. Its original full token
+        # can be withheld after optional preferences retire, while every other
+        # native/source/personal/visual base guard remains mandatory.
+        if self._current_base(request):self._emit_result(request,'abstain','response_preferences_changed')
+        if self._pending_work is not None and self._pending_work[0] is request:self._pending_work=None
+        if self._worker_request is request and self._worker is not None and not self._worker.done():self._worker.cancel()
 
     async def handle_user_question(self,raw):
         return await self.user.question(raw)
@@ -413,9 +447,11 @@ class SessionHost:
                 # A just-started session may have cancelled an idle probe. The
                 # same stream must actually quiesce before the answer uses it.
                 await self.visual.drain_probe()
+                if not self._current(req):return
                 supplemental=self._supplemental.get(req.native['requestID'])
                 permit=self.visual.prepare(req,supplemental)
-                prompt=make_prompt(req.question,dialogue,req.bundle,supplemental=supplemental,current_utterance=req.display_question)
+                preferences=self.response_preferences.prompt_for(req)
+                prompt=make_prompt(req.question,dialogue,req.bundle,supplemental=supplemental,current_utterance=req.display_question,response_preferences=preferences)
                 candidate=await self.complete(prompt,INSTRUCTIONS,visual_attachment=permit) if permit is not None else await self.complete(prompt,INSTRUCTIONS)
                 if not await self.visual.validate_publication(req,permit=permit):
                     self.visual.failed_request(req);self._result(req,'abstain','answer_unavailable');return
@@ -423,6 +459,8 @@ class SessionHost:
             code_required=bool(re.search(r'\b(?:write|show|provide)\b.{0,30}\b(?:code|function|query|sql)\b',req.display_question,re.I))
             card=parse_generated_card(candidate,code_required=code_required)
             provenance={'model':getattr(getattr(self.complete,'__self__',None),'model','injected_fixture_transport'),'checks':list(card.checks),'independentlyReviewed':False}
+            preference_revision=self.response_preferences.used_revision(req)
+            if preference_revision is not None:provenance['responsePreferencesRevision']=preference_revision
             if supplemental is not None:
                 provenance['taskContext']={'provenance':supplemental.provenance,'source':supplemental.source,'capturedUptimeNanoseconds':supplemental.captured_uptime_ns}
                 digest=self.visual.used_image_digest(req)
@@ -496,6 +534,10 @@ async def run_stdio(args,*,oauth_stream=None):
             for value in decoder.feed(chunk):
                 if isinstance(value,dict) and value.get('kind')=='assistant_scope_request':
                     host.handle_assistant_scope(value)
+                elif isinstance(value,dict) and value.get('kind')=='response_preferences':
+                    host.handle_response_preferences(value)
+                elif isinstance(value,dict) and value.get('kind')=='response_preferences_retired':
+                    host.handle_response_preferences_retirement(value)
                 elif isinstance(value,dict) and value.get('kind')=='visual_input_request':
                     host.handle_visual_control(value)
                 elif isinstance(value,dict) and value.get('kind')=='profile_request':

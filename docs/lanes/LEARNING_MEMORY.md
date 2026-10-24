@@ -70,6 +70,14 @@ Actual90case gate:89passed/1intentional CF child-witness skip/0failures, externa
 
 Preflight23.360GiB Relay temp/46.636GiB free with1GiB reserve; existing History cache/jobs2/external180-second owned deadline. Candidate sourceSHA: Store d267b14874a6c05e7f8d58a8e6c511f47654c963359d17c8b7751d521f91c2d5; LearningLedger610afe3a96ed6b02d1c585a14bf115b46bf27ba1aeb4c32103d973207588e1c7. The Store frontier is frozen for independent review and narrow Notes-delete composition. Actual History factory/private ports, Model publication/request bridge, visible why/undo and later-session app acceptance remain unfinished.
 
+## Actual History factory and native use provenance
+
+Original3case factory API-red failed on missing makeLearningCoordinator; original2case wire runtime red produced two malformed-frame assertions for otherwise valid general/personal learning use. The factory now returns only the owned coordinator: actual scope, admitted-observation affiliation, complete read and mutation closures remain private, using the existing single History run/HistoryAdmission, real permit expiry and actual control-save receipt. Start/End has priority over optional background writes. Source reason recordChanged/sessionStarting does not erase valid original-row learning. No Store/queue/run/generic DATA save is exposed to the app.
+
+Actual66case gate passes65/1intentional CF child-witness skip/0failures,63.783s external (58panel2.436s +8actualdraft2.008s). Factory3passes0.296s prove default-off no file/key, actual End joining original+learning writes with3later retained examples, metadata-only note changes preserving support, and actual private source-delete prefix clearing off-retention semantic data before the write receipt while future live text/listening remain. Wire2passes accept a separate valid learning revision on actual general and confirmed-personal frames while malformed/local-reference claims stay rejected. Accepted Source11/receipt6/draft8 plus all Learning/Ledger regressions pass.
+
+Factory fixtureSHA2ac7558baea38fec71aaf5cf7307f58441ac61b060accc1a811787279564961e and wire fixtureSHAabd1cb7dffc30fc4a6a0c3ccd9ccb622ab43a2324a4ad6787254dbfedf2c59df are unchanged. Preflight23.377GiBtemp/45.463GiBfree+1reserve; same retained cache/jobs2/external180-second deadline. This is the actual storage/factory foundation; actual app publication/window visibility/request bridge/12-Help/why-undo and later-session card acceptance remain required.
+
 ## Next exact action
 
 Obtain accepted Notesv2 storage ref, then complete pure deterministic derivation and schema3 with exact source support validation/deletion/expiry/undo/restart tests. Wire one after-drain actual Model availability seam shared with descriptive latency, request bridge/currentness, and inspectable opt-in/why/undo controls. No store/schema/current Model integration or later-session end-to-end claim is made at this checkpoint.

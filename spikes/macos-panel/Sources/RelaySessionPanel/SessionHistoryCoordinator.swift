@@ -29,6 +29,7 @@ final class HistoryAdmission:@unchecked Sendable {
     fileprivate var captureID:String?
     fileprivate var blocked:Set<TranscriptSource>=[]
     fileprivate var finishGap:HistoryGap?
+    fileprivate var learningExpiresAt:TimeInterval?
     fileprivate let resuming:Bool
     fileprivate init(recordID:UUID,intentID:UUID,resuming:Bool){self.recordID=recordID;self.intentID=intentID;self.resuming=resuming}
 }
@@ -87,6 +88,65 @@ final class HistoryAdmission:@unchecked Sendable {
                 clock:@escaping @Sendable ()->Date={Date()}){
         factory=storageFactory;self.preferences=preferences;self.canEnable=canEnable;self.clock=clock
         state.epoch=epoch;state.savingEnabled=preferences.savingEnabled;snapshot=state
+    }
+    /// The app receives an owned feature, not generic Store/run or DATA-save
+    /// access. Every durable closure below remains inside this single owner.
+    public func makeLearningCoordinator(preferences:any LearningControlPreferences,canEnable:@escaping @MainActor ()->Bool)->LearningMemoryCoordinator{
+        LearningMemoryCoordinator(preferences:preferences,persistence:LearningPersistencePorts(scope:{[weak self] in self?.learningScope()},load:{[weak self] in
+            guard let self else{throw HistoryError.closed};return try await self.loadLearningArchive()
+        },mutate:{[weak self] mutation in
+            guard let self else{throw HistoryError.closed};return try await self.mutateLearningArchive(mutation)
+        },affiliation:{[weak self] observation in self?.learningAffiliation(observation)}),canEnable:canEnable,clock:clock)
+    }
+    private var learningBaseCurrent:Bool{
+        opened && state.phase == .ready && preferences.savingEnabled && retirement==nil && exclusive==nil && !closeRequested
+    }
+    private func learningScope()->LearningPersistenceScope?{
+        guard learningBaseCurrent else{return nil}
+        let admitted=current.flatMap{permit->HistorySessionPermit? in
+            guard !permit.preparing,!permit.retiring,permit.acceptsNew,owns(permit),let expires=permit.learningExpiresAt,clock().timeIntervalSince1970<expires else{return nil};return permit
+        }
+        return LearningPersistenceScope(workspaceEpoch:epoch,recordID:admitted?.recordID,expiresAt:admitted?.learningExpiresAt)
+    }
+    private func learningAffiliation(_ observation:ValidatedTranscriptObservation)->LearningPersistenceScope?{
+        guard learningBaseCurrent,let permit=current,!permit.preparing,!permit.retiring,permit.acceptsNew,owns(permit),
+              permit.captureID==HistoryCapture.identity(observation.event.captureSessionID,observation.event.sessionEpoch),
+              observation.final.map({!permit.blocked.contains($0.source)}) ?? true else{return nil}
+        return learningScope()
+    }
+    private func waitForLearningStorage(epoch original:UUID,gate:HistoryAdmission)async throws{
+        while true{
+            try Task.checkCancellation()
+            guard epoch==original,gate.allowed,opened,preferences.savingEnabled,retirement==nil,exclusive==nil,!closeRequested else{throw HistoryError.stale}
+            if isBusy{await waitForQuiescence();continue}
+            // A real Start/End retains priority over optional background data.
+            if current?.preparing==true || current?.retiring==true{await Task.yield();continue}
+            guard state.phase == .ready else{throw HistoryError.unavailable};return
+        }
+    }
+    private func loadLearningArchive()async throws->LearningArchiveReceipt{
+        let original=epoch,gate=HistoryAdmission()
+        return try await withTaskCancellationHandler(operation:{
+            try await waitForLearningStorage(epoch:original,gate:gate)
+            let value=try await run(gate:gate){try $0.learningArchive()}
+            guard epoch==original,gate.allowed,!Task.isCancelled,learningBaseCurrent else{throw HistoryError.stale}
+            return LearningArchiveReceipt(workspaceEpoch:original,archive:value)
+        },onCancel:{gate.retire()})
+    }
+    private func mutateLearningArchive(_ mutation:LearningMutation)async throws->LearningArchiveReceipt{
+        let original=epoch,gate=HistoryAdmission()
+        return try await withTaskCancellationHandler(operation:{
+            try await waitForLearningStorage(epoch:original,gate:gate)
+            pauseWriter=true
+            defer{if epoch==original,retirement==nil,exclusive==nil,exportTask==nil{pauseWriter=false;startWriter()}}
+            let outcome=try await run(gate:gate){try $0.mutateLearning(mutation,admission:{gate.allowed})}
+            if !outcome.cleanupComplete{fail(HistoryError.closed);throw HistoryError.closed}
+            if case .control(let pending)=mutation{
+                guard outcome.controlReceipt?.control==pending.target else{throw HistoryError.invalid}
+            }
+            guard epoch==original,gate.allowed,!Task.isCancelled,learningBaseCurrent else{throw HistoryError.stale}
+            return LearningArchiveReceipt(workspaceEpoch:original,archive:outcome.archive)
+        },onCancel:{gate.retire()})
     }
     private var publishingSnapshot=false,publicationPending=false
     private func publish(){
@@ -302,6 +362,7 @@ final class HistoryAdmission:@unchecked Sendable {
             guard epoch==original,current === permit,gate.allowed,preferences.savingEnabled,isCurrent(),!isBusy,!Task.isCancelled else{throw HistoryError.stale}
             opened=true
             permit.preparing=false;permit.acceptsNew=true
+            permit.learningExpiresAt=result.0.expiresAt
             permit.blocked=Set(result.0.blockedSources);let page=result.1
             state.phase = .ready;state.records=page.records;state.nextOffset=page.nextOffset;state.recordingID=id;state.message="Saving session text locally";publish()
             guard owns(permit),!isBusy,isCurrent(),!Task.isCancelled else{throw HistoryError.stale}

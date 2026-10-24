@@ -520,7 +520,22 @@ private actor FixtureRecognizer: ActivityRecognizer {
             // Failure changes the helper generation before clearing this still
             // current owner's display. Only replacement of the owner fences it.
             guard let self,let owner,self.currentOwner === owner else{return}
-            self.snapshot=owner.presentation.panel.snapshot
+            self.publishPanelSnapshot(from:owner)
+        }
+    }
+    private var publishingPanelSnapshot=false,panelSnapshotPending=false
+    private func publishPanelSnapshot(from owner:ConversationOwner){
+        guard currentOwner === owner else{return}
+        panelSnapshotPending=true
+        guard !publishingPanelSnapshot else{return}
+        publishingPanelSnapshot=true;defer{publishingPanelSnapshot=false}
+        while panelSnapshotPending{
+            panelSnapshotPending=false
+            let original=currentOwner
+            // @Published notifies before storing. A synchronous subscriber may
+            // retire this card; drain its actual panel after that setter returns.
+            snapshot=(original?.presentation ?? idlePresentation).panel.snapshot
+            if currentOwner !== original{panelSnapshotPending=true}
         }
     }
     private func installCaptureOwner(_ transport:HelperTransport)throws {

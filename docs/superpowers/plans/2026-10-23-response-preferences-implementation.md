@@ -78,13 +78,15 @@ Use actual existing native question factory/framing test helpers and actual OAut
 
 **Interfaces:** Model owns lazy/injected coordinator plus per-original-owner preference-use records. Existing account preparation hook stays first; owned preference restore follows before native stamping. Actual ordered ingress freezes one activation before context await and sends its frame before original EOU/user request. Synchronous revision retirement enqueues control before releasing held work. The existing owner box, current request, native authority, profile/image validation and transport remain sole authorities.
 
-- [ ] Write failing actual Model tests: default typing inert, explicit idle Send/active capture fixture restore, failed/cancelled preparation preserving original draft/basis/new edits; built-in/custom Settings commands route real coordinator; no audio or account action from Save.
-- [ ] Join preparation using original intent/currentness after every await; never put account restore inside a self-owned startTask or replace its callback with preferences-only work.
-- [ ] Write failing actual held EOU/PNG tests: active guide change/General/delete retirement reaches accepted backend before actual envelope, zero old POST, genuine unchanged positive, unused personal/reference remains. Cover failed channel withholding EOU and old scope callback/retirement not clearing replacement.
-- [ ] Implement bridge and final MainActor use guard without another session lock in native commit; compose with actual async OCR/image validation and recheck synchronously afterward.
-- [ ] Add actual Responses Settings and quiet optional label, never mandatory chooser/upload/model selection. Editor has bounded validation, real Save/Use/Cancel/Delete busy/errors. General remains reachable while store unavailable.
-- [ ] Verify focused strict/native/store/helper/actual-app/held context and public synthetic end-to-end cases, then appropriate final build/affected gate once. Record exact skips/limits, update lane/handoff, freeze and request independent root review.
+- [x] Write failing actual Model tests: default typing inert, explicit idle Send/active capture fixture restore, failed/cancelled preparation preserving original draft/basis/new edits; built-in/custom Settings commands route real coordinator; no audio or account action from Save.
+- [x] Join preparation using original intent/currentness after every await; never put account restore inside a self-owned startTask or replace its callback with preferences-only work.
+- [x] Write failing actual held EOU/PNG tests: active guide change/General/delete retirement reaches accepted backend before actual envelope, zero old POST, genuine unchanged positive, unused personal/reference remains. Cover failed channel withholding EOU and old scope callback/retirement not clearing replacement.
+- [x] Implement bridge and final MainActor use guard without another session lock in native commit; compose with actual async OCR/image validation and recheck synchronously afterward.
+- [x] Add actual Responses Settings and quiet optional label, never mandatory chooser/upload/model selection. Editor has bounded validation, real Save/Use/Cancel/Delete busy/errors. General remains reachable while store unavailable.
+- [x] Verify focused strict/native/store/helper/actual-app/held context and public synthetic end-to-end cases, then appropriate final build/affected gate once. Record exact skips/limits, update lane/handoff, freeze and request independent root review.
 
 ## Verification and publication
 
 Use isolated Swift scratch/module caches and test Python `/private/tmp/relay-root-current-runtime/venv/bin/python` with `PYTHONDONTWRITEBYTECODE=1` / `PYTHONPATH=tests:.`. Public pinned caches may be copied to own temporary dirs only. Each test's red must fail on the intended behavior before its production change. Publish reviewable scoped commits/PR96 with exact component provenance; do not claim GUI, live usefulness, device/account or shipping artifact acceptance.
+
+All author implementation/verification steps are complete for the source candidate. Independent root review, actual GUI and newly packaged artifact are downstream gates and remain unclaimed. Accepted e846/account and160/navigation were joined as declared dependencies after the partial Task3 checkpoint.

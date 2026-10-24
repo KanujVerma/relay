@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import XCTest
 import RelayNativeSession
@@ -110,5 +111,47 @@ extension SessionPanelTests {
         XCTAssertTrue(try panel.accept(result(replacement)))
         panel.withholdGuideAnswer(for:current,status:"Old callback")
         XCTAssertEqual(panel.snapshot.status,"Talking points");XCTAssertNotNil(panel.snapshot.card)
+    }
+}
+
+private final class ResponsePaintFlag:@unchecked Sendable {
+    private let lock=NSLock();private var done=false
+    var finished:Bool{lock.withLock{done}}
+    func finish(){lock.withLock{done=true}}
+}
+extension SessionPanelTests {
+    @MainActor func test_response_guide_reentrant_withhold_inside_actual_publication_is_bounded()async throws {
+        let key="RELAY_RESPONSE_PAINT_CHILD"
+        if ProcessInfo.processInfo.environment[key]=="1"{
+            let finished=ResponsePaintFlag()
+            FileHandle.standardError.write(Data("RESPONSE_PAINT_CHILD_STARTED\n".utf8))
+            DispatchQueue.global().asyncAfter(deadline:.now()+3){if !finished.finished{Darwin._exit(86)}}
+            let authority=SessionPresentationAuthority();try authority.start()
+            let panel=SessionPanelController(authority:authority),native=try event(authority),binding=try XCTUnwrap(PanelRequestBinding(native))
+            panel.observe(native);let lease=authority.snapshot()
+            var invoked=false
+            panel.onChange={
+                guard !invoked else{return};invoked=true
+                panel.withholdGuideAnswer(for:binding,status:"Response guide changed. Ask again.")
+                panel.showPendingStatus(for:binding,status:"Must not unseal a terminal")
+            }
+            XCTAssertTrue(try panel.accept(result(native)))
+            XCTAssertTrue(invoked);XCTAssertNil(panel.snapshot.card);XCTAssertEqual(authority.snapshot(),lease)
+            XCTAssertEqual(panel.snapshot.status,"Response guide changed. Ask again.")
+            XCTAssertFalse(try panel.accept(result(native)));panel.onChange=nil;finished.finish();return
+        }
+        let child=Process(),finished=ResponsePaintFlag(),errors=Pipe()
+        child.executableURL=URL(fileURLWithPath:"/usr/bin/xcrun")
+        child.arguments=["xctest","-XCTest","RelaySessionPanelTests.SessionPanelTests/test_response_guide_reentrant_withhold_inside_actual_publication_is_bounded",Bundle(for:Self.self).bundleURL.path]
+        var environment=["PATH":"/usr/bin:/bin",key:"1"]
+        for name in ["DYLD_LIBRARY_PATH","DYLD_FRAMEWORK_PATH","DEVELOPER_DIR","TMPDIR"]{if let value=ProcessInfo.processInfo.environment[name]{environment[name]=value}}
+        child.environment=environment;child.standardOutput=FileHandle.nullDevice;child.standardError=errors
+        child.terminationHandler={_ in finished.finish()};try child.run();try errors.fileHandleForWriting.close()
+        for _ in 0..<2500{if finished.finished{break};try await Task.sleep(for:.milliseconds(2))}
+        if !finished.finished{child.terminate()}
+        for _ in 0..<500{if finished.finished{break};try await Task.sleep(for:.milliseconds(2))}
+        guard finished.finished else{_=Darwin.kill(child.processIdentifier,SIGKILL);XCTFail("Response publication child failed to exit");return}
+        let log=String(data:errors.fileHandleForReading.readDataToEndOfFile(),encoding:.utf8) ?? ""
+        XCTAssertTrue(log.contains("RESPONSE_PAINT_CHILD_STARTED"));XCTAssertEqual(child.terminationStatus,0,"Bounded actual publication: \(log)")
     }
 }

@@ -95,3 +95,13 @@ struct ResponseGuideEditorState:Equatable {
         }
     }
 }
+
+struct ResponseGuideButton:View {
+    let name:String
+    let action:()->Void
+    var body:some View {
+        Button(action:action){Text(name == "General" ? "General · automatic":"Guide: "+name).lineLimit(1).truncationMode(.tail).frame(maxWidth:160)}
+            .buttonStyle(.plain).font(.system(size:11)).foregroundStyle(RelayTheme.muted)
+            .help("Response guides in Settings").accessibilityLabel("Response guide: "+name+". Open Responses settings.")
+    }
+}

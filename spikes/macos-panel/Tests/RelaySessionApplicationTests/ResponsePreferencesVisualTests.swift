@@ -11,7 +11,10 @@ import RelayProfile
 @testable import RelayPanelSession
 
 @MainActor private final class PreferencePixels:ScreenFrameProvider {
+    var holdNext=false,held:CheckedContinuation<Void,Never>?
+    func release(){holdNext=false;let original=held;held=nil;original?.resume()}
     func capture(source:ScreenSource)async throws->ScreenFrame {
+        if holdNext{await withCheckedContinuation{held=$0}}
         let context=CGContext(data:nil,width:2,height:2,bitsPerComponent:8,bytesPerRow:8,space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue)!
         return ScreenFrame(image:context.makeImage()!,capturedUptimeNanoseconds:DispatchTime.now().uptimeNanoseconds)
     }
@@ -31,7 +34,7 @@ private actor PreferenceOCR:ScreenTextRecognizer {
     func release(){let old=held;held=nil;old?.resume()}
 }
 @MainActor final class ResponsePreferencesVisualTests:XCTestCase {
-    private enum Action:CaseIterable{case complete,general,feature,delete,onset,source,pause,end,disable,closedChannel}
+    private enum Action:CaseIterable{case complete,general,feature,delete,publicationChange,onset,source,pause,end,disable,closedChannel}
     private var root:URL{URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()}
     private func python()throws->String {
         let environment=ProcessInfo.processInfo.environment
@@ -58,6 +61,7 @@ private actor PreferenceOCR:ScreenTextRecognizer {
     func testReplacementGuideCannotAttachToHeldOriginalButFreshHelpCanUseIt()async throws{try await exercise(.feature)}
     func testDeleteOriginalGuideDuringHeldImageEndRetiresBeforeEOU()async throws{try await exercise(.delete)}
     func testFailedGuideRetirementChannelNeverReleasesHeldEOU()async throws{try await exercise(.closedChannel)}
+    func testGuideChangeDuringActualFinalPixelReobservationCannotPublishAndPreservesFreshHelp()async throws{try await exercise(.publicationChange)}
     func testOnsetRetiresHeldGuideAndImageBeforeOriginalEOU()async throws{try await exercise(.onset)}
     func testSourceChangeRetiresHeldGuideAndImageBeforeOriginalEOU()async throws{try await exercise(.source)}
     func testPauseJoinsOriginalGuideAndImageWithoutPOST()async throws{try await exercise(.pause)}
@@ -75,7 +79,7 @@ private actor PreferenceOCR:ScreenTextRecognizer {
         exec \(shellQuote(interpreter)) \(shellQuote(fixture.path)) --synthetic-preferences-test --trace \(shellQuote(trace.path)) --log \(shellQuote(log.path)) "$@"
         """
         try Data(script.utf8).write(to:launcher);try FileManager.default.setAttributes([.posixPermissions:0o700],ofItemAtPath:launcher.path)
-        let screen=ScreenContextCoordinator(provider:PreferencePixels(),recognizer:PreferenceOCR())
+        let pixels=PreferencePixels(),screen=ScreenContextCoordinator(provider:pixels,recognizer:PreferenceOCR())
         screen.enable();screen.select(ScreenSource(windowID:1,bundleID:"com.example.synthetic",processID:42,label:"Synthetic task"))
         let acknowledgment=PreferenceEndAcknowledgment();var nativeEvents:[NativeSessionEvent]=[]
         let store=ApplicationPreferenceStorage(),receipts=ApplicationPreferenceReceipts()
@@ -96,6 +100,7 @@ private actor PreferenceOCR:ScreenTextRecognizer {
             func onset(){model.ingestFixturePacket(SessionAudioPacket(source:.remoteAudio,streamGeneration:1,sequence:3,hostTime:mach_absolute_time(),samples:Array(repeating:0.2,count:512)))}
             switch action {
             case .complete:acknowledgment.release()
+            case .publicationChange:pixels.holdNext=true;acknowledgment.release()
             case .general:model.responsePreferences.useGeneral();acknowledgment.release()
             case .feature:try await model.responsePreferences.useBuiltin(.feature);acknowledgment.release()
             case .delete:
@@ -107,6 +112,21 @@ private actor PreferenceOCR:ScreenTextRecognizer {
             case .pause:model.beginRetirement(end:false)
             case .end:model.beginRetirement(end:true)
             case .disable:model.disableVisualInput()
+            }
+            if action == .publicationChange{
+                try await waitUntil{pixels.held != nil}
+                XCTAssertEqual(questionKinds(log),["image_question"]);XCTAssertNil(model.snapshot.card)
+                try await model.responsePreferences.useBuiltin(.feature)
+                pixels.release()
+                try await waitUntil{model.snapshot.status=="Response guide changed. Ask again."}
+                XCTAssertNil(model.snapshot.card);XCTAssertNil(model.snapshot.responsePreferencesRevision)
+                XCTAssertTrue(model.assistant.snapshot.canHelpCurrent)
+                try model.perform(.requestHelp)
+                try await waitUntil{model.snapshot.card != nil}
+                XCTAssertEqual(model.snapshot.responsePreferencesRevision,model.responsePreferences.capture()?.revision)
+                XCTAssertNotEqual(model.snapshot.responsePreferencesRevision,guide.revision)
+                XCTAssertEqual(questionKinds(log),["image_question","image_question"])
+                await model.stop();return
             }
             if action == .closedChannel{
                 try await waitUntil{model.stopping}
@@ -139,6 +159,6 @@ private actor PreferenceOCR:ScreenTextRecognizer {
             XCTAssertEqual(PanelRequestBinding(eou),original)
             XCTAssertEqual(nativeEvents.map(\.eventSequence),Array(1...UInt64(nativeEvents.count)))
             await model.stop()
-        }catch{acknowledgment.release();await model.stop();throw error}
+        }catch{pixels.release();acknowledgment.release();await model.stop();throw error}
     }
 }

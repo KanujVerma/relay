@@ -124,7 +124,13 @@ private actor FixtureRecognizer: ActivityRecognizer {
     private var display:ConversationPresentation{currentOwner?.presentation ?? idlePresentation}
     private var authority:SessionPresentationAuthority{display.authority}
     private let explicitAccountPreparation:(@MainActor (UUID,@escaping @MainActor ()->Bool)async throws->Void)?
-    func showResponsePreferences(){settingsSection = .responses}
+    func showResponsePreferences(openWindow:()->Void){settingsSection = .responses;openWindow()}
+    var responseGuideName:String{responsePreferences.snapshot.guideName}
+    var usedResponseGuideName:String?{
+        guard let owner=currentOwner,owns(owner),let binding=owner.presentation.currentBinding,
+              let revision=owner.presentation.panel.snapshot.responsePreferencesRevision else{return nil}
+        return owner.presentation.responsePreferences?.displayName(for:binding,revision:revision)
+    }
     private let responsePreferencesStorage:any ProtectedSnapshotStorage
     private let responsePreferencesReceipts:any ResponsePreferencesReceiptStore
     private var hasResponsePreferences=false

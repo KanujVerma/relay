@@ -2,6 +2,8 @@
 
 2026-10-23. **Approved for implementation by root after review of exact 5e09548.** Owner `/root/review_composition`, GPT-6.1 Sol xhigh. Frozen foundation `3e83f8e0157b7496674ece71ad3ded0f397b818f`, branch `feature/response-preferences-2026-10-23`. The author owns the complete native store/coordinator, actual Settings/Model, helper/prompt/publication and tests in this isolated branch. Root independently reviews, reconciles accepted account/history dependencies, and performs actual window/packaged-product acceptance.
 
+Current implementation and exact verification are recorded in `docs/lanes/RESPONSE_PREFERENCES.md`. The design-only review boundary at the end is historical; it does not describe the later implementation candidate.
+
 ## Product behavior
 
 General remains the default and automatically follows the current question, coding stage, user attempt, engineer feedback and feature-design stage. No mode choice is required before Start, Ask or Help. No new model request chooses a mode. No speech-model/detector selector appears in normal UI.
@@ -101,6 +103,6 @@ The author owns the full feature in this isolated branch, including the actual o
 
 Tests must include: zero-operation default/render/fixture; complete schema/UTF8/size/replay domains; storage corruption/cross-purpose/missing-key/unsafe-path and failed atomic-save preservation using injected keys; held real storage call cancelled/old-coalesced/replacement/newer-edit cases; original request/basis preservation through preparation; one generation per actual coding/case question; guidance present in actual captured prompt; no personal authority/configuration changes; local reference/personal/AI-off behavior; strict host-owned use metadata; reply-before-admission/late attach; held credential before POST and post-POST no retry; real 32-frame writer bounds unchanged; actual held EOU and image-end change/delete/General retirement order, including no active answer; unchanged source/image/native final guards; reentrant publication/old helper callback/End/Pause/AI/account/profile Lock/replacement and actual cleanup joins. Do not add tests that only mirror serialization implementation.
 
-## Review gate and limits
+## Original design review gate and limits (historical)
 
 This commit is design/research/handoff only. No runtime/API implementation, new key purpose, protocol, protected store IO, account, GUI, capture, model load or network inference is performed. Exact new fixed storage purpose, offer/use/retirement schemas, MainActor publication ordering, user-visible selection/cancellation semantics and full end-to-end ownership are the decisions submitted for root approval. After approval, write an implementation plan and proceed through the checkpoints above with red/green evidence and immutable independent review heads.

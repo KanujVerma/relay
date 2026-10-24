@@ -18,6 +18,7 @@ private final class BridgePreferenceStorage:ProtectedSnapshotStorage,@unchecked 
     func commit(_ revision:UUID){state=ResponsePreferencesReceipt(enabled:true,revision:revision)}
     func disable(){state=ResponsePreferencesReceipt(enabled:false,revision:nil)}
 }
+@MainActor private final class BridgeCurrentFlag{var current=true}
 @MainActor final class ResponsePreferencesBridgeTests:XCTestCase {
     private func controller()throws->NativeAssistantSessionController{
         let controller=NativeAssistantSessionController(),opened=try controller.begin(enqueue:{_ in})
@@ -75,14 +76,15 @@ private final class BridgePreferenceStorage:ProtectedSnapshotStorage,@unchecked 
     }
     func testDefaultGeneralSendsNothingAndClosedOldBridgeCannotOfferForReplacementScope()async throws {
         let preferences=ResponsePreferencesCoordinator(storage:BridgePreferenceStorage(),receipts:BridgePreferenceReceipts())
-        var frames=0,current=true
-        let bridge=ResponsePreferencesRequestBridge(capture:preferences.capture,owns:preferences.owns,send:{_ in frames+=1},isCurrent:{current})
+        var frames=0
+        let flag=BridgeCurrentFlag()
+        let bridge=ResponsePreferencesRequestBridge(capture:preferences.capture,owns:preferences.owns,send:{_ in frames+=1},isCurrent:{flag.current})
         let original=try issue(controller());try bridge.freeze(original);try bridge.sendOffer(for:original)
         XCTAssertEqual(frames,0)
         try await preferences.useBuiltin(.coding)
         let scope=try controller(),first=try issue(scope);try bridge.freeze(first);try bridge.sendOffer(for:first)
         XCTAssertEqual(frames,1)
-        current=false;bridge.close()
+        flag.current=false;bridge.close()
         let replacement=try issue(controller());try bridge.freeze(replacement);try bridge.sendOffer(for:replacement)
         XCTAssertEqual(frames,1);XCTAssertFalse(bridge.permits(first,revision:try XCTUnwrap(preferences.capture()).revision))
     }

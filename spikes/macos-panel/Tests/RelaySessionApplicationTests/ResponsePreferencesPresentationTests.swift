@@ -34,4 +34,19 @@ import RelayProfile
         XCTAssertEqual(try editor.validatedGuide(),guide)
         XCTAssertEqual(editor.catalogRevision,revision);XCTAssertEqual(editor.focus,.feature)
     }
+    func testSelectionReceiptRefreshesOnlySameUntouchedBlankEditor()async throws {
+        var blank=ResponseGuideEditorState(catalogRevision:UUID());let submitted=blank,revision=UUID()
+        XCTAssertTrue(blank.applySelectionReceipt(submitted:submitted,revision:revision))
+        XCTAssertEqual(blank.catalogRevision,revision);XCTAssertEqual(blank.id,submitted.id)
+        XCTAssertTrue(blank.name.isEmpty);XCTAssertTrue(blank.guidance.isEmpty)
+        var edited=submitted;edited.guidance="Newer text entered while Use was held."
+        XCTAssertFalse(edited.applySelectionReceipt(submitted:submitted,revision:revision))
+        XCTAssertEqual(edited.catalogRevision,submitted.catalogRevision)
+        var replacement=ResponseGuideEditorState()
+        XCTAssertFalse(replacement.applySelectionReceipt(submitted:submitted,revision:revision))
+        var existing=submitted;existing.name="Existing unsaved draft";existing.guidance="Keep it."
+        let oldDraft=existing
+        XCTAssertFalse(existing.applySelectionReceipt(submitted:oldDraft,revision:revision));XCTAssertEqual(existing,oldDraft)
+    }
+
 }

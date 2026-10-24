@@ -8,6 +8,10 @@ struct ResponseGuideEditorState:Equatable {
     init(catalogRevision:UUID?=nil){self.catalogRevision=catalogRevision}
     init(guide:ResponseGuide,catalogRevision:UUID){id=guide.id;name=guide.name;focus=guide.focus;guidance=guide.guidance;self.catalogRevision=catalogRevision}
     func validatedGuide()throws->ResponseGuide{try ResponseGuide(id:id,name:name,focus:focus,guidance:guidance)}
+    mutating func applySelectionReceipt(submitted:Self,revision:UUID)->Bool{
+        guard self==submitted,name.isEmpty,guidance.isEmpty,focus == .automatic else{return false}
+        catalogRevision=revision;return true
+    }
     mutating func applySaveReceipt(submitted:Self,revision:UUID)->Bool{
         guard id==submitted.id,catalogRevision==submitted.catalogRevision else{return false}
         // Acknowledge this same draft's actual earlier save, never replace or
@@ -36,13 +40,13 @@ struct ResponseGuideEditorState:Equatable {
             if !model.oauth{Text("AI suggestions are off. Your guide is saved for when you enable them.").font(.system(size:12)).foregroundStyle(RelayTheme.muted)}
             HStack(spacing:10){
                 Button("Use General"){actionID=UUID();actionBusy=false;error=nil;preferences.useGeneral()}.buttonStyle(RelayQuietButtonStyle())
-                Button("Use Coding"){run{try await preferences.useBuiltin(.coding)}}.buttonStyle(RelayQuietButtonStyle()).disabled(busy)
-                Button("Use Feature discussion"){run{try await preferences.useBuiltin(.feature)}}.buttonStyle(RelayQuietButtonStyle()).disabled(busy)
+                Button("Use Coding"){select{try await preferences.useBuiltin(.coding)}}.buttonStyle(RelayQuietButtonStyle()).disabled(busy)
+                Button("Use Feature discussion"){select{try await preferences.useBuiltin(.feature)}}.buttonStyle(RelayQuietButtonStyle()).disabled(busy)
             }
             if !guides.isEmpty{
                 VStack(spacing:10){ForEach(guides){guide in
                     HStack{Text(guide.name).font(.system(size:13));Spacer()
-                        Button("Use"){let revision=preferences.catalog?.revision;run{try await preferences.saveAndUse(guide,expectedCatalogRevision:revision)}}
+                        Button("Use"){let revision=preferences.catalog?.revision;select{try await preferences.saveAndUse(guide,expectedCatalogRevision:revision)}}
                         Button("Edit"){if let revision=preferences.catalog?.revision{editor=ResponseGuideEditorState(guide:guide,catalogRevision:revision);error=nil}}
                         Button("Delete"){delete(guide)}
                     }.disabled(busy)
@@ -69,6 +73,13 @@ struct ResponseGuideEditorState:Equatable {
             if actionID==id{actionBusy=false}
         }
     }
+    private func select(_ operation:@escaping @MainActor ()async throws->Void){
+        let submitted=editor
+        run{
+            try await operation()
+            if let revision=preferences.catalog?.revision{_ = editor.applySelectionReceipt(submitted:submitted,revision:revision)}
+        }
+    }
     private func load(){
         let editorID=editor.id
         run{
@@ -92,6 +103,7 @@ struct ResponseGuideEditorState:Equatable {
         run{
             try await preferences.delete(id:guide.id,expectedCatalogRevision:revision)
             if editor==submitted,editor.id==guide.id{editor=ResponseGuideEditorState(catalogRevision:preferences.catalog?.revision)}
+            else if let revision=preferences.catalog?.revision{_ = editor.applySelectionReceipt(submitted:submitted,revision:revision)}
         }
     }
 }

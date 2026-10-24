@@ -290,6 +290,32 @@ class VisualInputTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(permit.used_image)
         self.assertFalse(permit.validate_for_publication())
 
+    async def test_closed_transport_never_reads_credentials_or_validates_old_image_permit(self):
+        receipt = await self.verified(); permit, _ = self.attachment(receipt)
+        await self.stream.complete('question', 'instructions', visual_attachment=permit)
+        reads = []
+        async def token():
+            reads.append(True)
+            return self.token
+        self.stream._token = token
+        await self.stream.aclose()
+        self.assertFalse(await self.stream.validate_visual_publication(permit))
+        self.assertEqual(reads, [])
+        self.assertFalse(permit.validate_for_publication())
+
+    async def test_close_during_bearer_recheck_withholds_original_image_permit(self):
+        receipt = await self.verified(); permit, _ = self.attachment(receipt)
+        await self.stream.complete('question', 'instructions', visual_attachment=permit)
+        entered, release = asyncio.Event(), asyncio.Event()
+        async def token():
+            entered.set(); await release.wait(); return self.token
+        self.stream._token = token
+        task = asyncio.create_task(self.stream.validate_visual_publication(permit))
+        await asyncio.wait_for(entered.wait(), 1)
+        await self.stream.aclose(); release.set()
+        self.assertFalse(await task)
+        self.assertFalse(permit.validate_for_publication())
+
     async def test_source_changes_during_sse_veto_completion_and_release_bytes(self):
         receipt = await self.verified(); permit, port = self.attachment(receipt)
         original = self.handler

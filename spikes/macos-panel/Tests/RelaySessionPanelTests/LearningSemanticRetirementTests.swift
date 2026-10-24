@@ -70,4 +70,17 @@ import XCTest
         let next=SessionTranscriptStore();next.onHistoryObservation=memory.observe;var fresh=LearningTestEvents();fresh.start(next)
         XCTAssertTrue(memory.projection(question:"refunds order date").contains{$0.text.contains("original order date")})
     }
+    func testWorkspaceClosureClearsAffiliatedSemanticsWithRetentionOffOrOnButKeepsFutureLiveInput()async throws{
+        for enabled in [false,true]{
+            let(memory,source,transcript,initial)=try await rig(enabled:enabled);var events=initial
+            let original=try XCTUnwrap(memory.capture(question:"retention"));source.scope=nil
+            memory.retire(.workspace(workspaceEpoch:source.workspace))
+            XCTAssertFalse(memory.capture(question:"retention")?.payload.continuity.contains{$0.text.contains("seven days")} ?? false,"retention \(enabled)")
+            XCTAssertFalse(memory.owns(original),"retention \(enabled)")
+            events.final(2,text:"We decided fresh retention needs a new review.",source:1,into:transcript)
+            XCTAssertTrue(memory.capture(question:"fresh retention review")?.payload.continuity.contains{$0.text.contains("new review")} ?? false)
+            memory.retire(.workspace(workspaceEpoch:source.workspace))
+            XCTAssertTrue(memory.capture(question:"fresh retention review")?.payload.continuity.contains{$0.text.contains("new review")} ?? false)
+        }
+    }
 }

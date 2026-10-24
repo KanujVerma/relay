@@ -202,7 +202,9 @@ public final class LearningProjectionSnapshot:Sendable {
     public func retire(_ notice:LearningSourceRetirement){
         let affected:Set<String>,captures:Set<String>
         switch notice{
-        case .workspace:affected=[];captures=[]
+        case .workspace:
+            affected=Set(finalAffiliations.filter{$0.value.workspace==notice.workspaceEpoch}.map(\.key))
+            captures=Set(captureAffiliations.filter{$0.value.workspace==notice.workspaceEpoch}.map(\.key))
         case .record(_,let id):
             affected=Set(finalAffiliations.filter{$0.value.workspace==notice.workspaceEpoch && $0.value.record==id}.map(\.key))
             captures=Set(captureAffiliations.filter{$0.value.workspace==notice.workspaceEpoch && $0.value.record==id}.map(\.key))
@@ -213,7 +215,10 @@ public final class LearningProjectionSnapshot:Sendable {
         if !affected.isEmpty || !captures.isEmpty{
             session.removeFinals(affected);session.clearPendingAttribution(captureIDs:captures)
             finalAffiliations=finalAffiliations.filter{!affected.contains($0.key)}
-            if case .record=notice{captureAffiliations=captureAffiliations.filter{!captures.contains($0.key)}}
+            switch notice{
+            case .workspace,.record:captureAffiliations=captureAffiliations.filter{!captures.contains($0.key)}
+            case .source:break
+            }
             if case .source(_,_,_,let source)=notice{for capture in captures{captureAffiliations[capture]?.sources.remove(source)}}
         }
         if sourceEpoch==notice.workspaceEpoch{

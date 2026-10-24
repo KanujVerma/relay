@@ -1,62 +1,124 @@
-name: macOS copilot synthetic tests
+name: macOS focused presentation crash diagnostic
 
 on:
-  pull_request:
-    paths:
-      - 'spikes/macos-panel/**'
-      - 'spikes/macos-session/**'
-      - 'spikes/macos-profile/**'
-      - 'spikes/macos-context/**'
-      - 'spikes/macos-controls/**'
-      - 'spikes/macos-composition/**'
-      - 'spikes/macos-audio/**'
-      - 'relay_spike/**'
-      - 'tests/**'
-      - 'contracts/**'
-      - 'requirements-spike.txt'
-      - 'docs/NATIVE_PANEL_PROTOTYPE.md'
-      - '.github/workflows/panel-prototype.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: macos-panel-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  swift-panel-tests:
-    # Real M2 Pro validation is separate; avoid private-repo hosted Mac billing.
+  focused-presentation-diagnostic:
     if: ${{ !github.event.repository.private }}
     runs-on: macos-15-intel
-    timeout-minutes: 30
+    timeout-minutes: 15
     env:
-      # KeyboardShortcuts 3.1.0 requires Swift 6.2. This toolchain is included
-      # in the macos-15 runner image; do not silently use its Xcode 16 default.
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      RELAY_DIAGNOSTIC_SCRATCH: ${{ runner.temp }}/relay-presentation-build
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Runtime and assertions are the exact failing source, unchanged.
+          ref: 666d104ffff82dd17112872be08e4ef76e01adfe
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Show Swift version
-        run: swift --version
-      - name: Install pinned HTTP transport dependency (no models)
+      - name: Install the same pinned synthetic HTTP transport
         run: python -m pip install httpx==0.28.1
-      - name: Test Python transport and image ports with synthetic inputs
-        run: python -m unittest discover -s tests -q
-      - name: Test native packages with synthetic inputs only
+      - name: Build the one test package without running it
+        run: |
+          swift --version
+          test "$(git rev-parse HEAD)" = 666d104ffff82dd17112872be08e4ef76e01adfe
+          swift build --build-tests --scratch-path "$RELAY_DIAGNOSTIC_SCRATCH" --package-path spikes/macos-panel
+      - name: Diagnose only the failing test and its presentation class
         shell: bash
         run: |
-          set -euo pipefail
           export RELAY_TEST_PYTHON="$(command -v python3)"
-          for package in macos-session macos-profile macos-context macos-controls macos-composition macos-panel; do
-            if [[ -f "spikes/$package/Package.swift" ]]; then
-              swift test --package-path "spikes/$package"
-            else
-              echo "Package $package has not landed on this branch."
-            fi
-          done
-      - name: Compile native SwiftUI apps (do not launch)
-        run: swift build --package-path spikes/macos-panel
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, os, re, signal, subprocess, time
+
+          out = Path(os.environ['RUNNER_TEMP']) / 'relay-presentation-diagnostic'
+          out.mkdir()
+          developer = Path(os.environ['DEVELOPER_DIR'])
+          bin_path = Path(subprocess.check_output(
+              ['swift', 'build', '--scratch-path', os.environ['RELAY_DIAGNOSTIC_SCRATCH'],
+                  '--package-path', 'spikes/macos-panel', '--show-bin-path'], text=True).strip())
+          candidates = [bin_path / name for name in (
+              'RelayPanelPrototypePackageTests.xctest', 'RelaySessionApplicationTests.xctest')]
+          bundle = next((p for p in candidates if p.is_dir()), None)
+          if bundle is None:
+              raise SystemExit('Expected owned XCTest bundle was not built')
+          diagnostics = Path.home() / 'Library/Logs/DiagnosticReports'
+          started = time.time()
+          cases = [
+              ('single', 'RelaySessionApplicationTests.RelayPresentationTests/testPresentationAcceptsAnExplicitMicrophoneOnlySourceWithoutStartingIt', 1),
+              ('class', 'RelaySessionApplicationTests.RelayPresentationTests', 10),
+          ]
+          results = []
+          for name, selector, expected in cases:
+              command = [str(developer / 'usr/bin/lldb'), '--batch', '--one-line', 'run',
+                  '--one-line-on-crash', 'thread backtrace all', '--',
+                  str(developer / 'usr/bin/xctest'), '-XCTest', selector, str(bundle)]
+              process = subprocess.Popen(command, text=True, stdout=subprocess.PIPE,
+                  stderr=subprocess.STDOUT, start_new_session=True)
+              try:
+                  output, _ = process.communicate(timeout=120)
+                  code = process.returncode
+              except subprocess.TimeoutExpired:
+                  os.killpg(process.pid, signal.SIGKILL)
+                  output, _ = process.communicate()
+                  code = 124
+              # xctest can dump its environment for malformed invocations. Never
+              # retain that block, even on this isolated synthetic runner.
+              output = re.sub(r'(?ms)^Environment: \{.*?^\}\s*', '[environment omitted]\n', output)
+              (out / (name + '.log')).write_text(output)
+              print(output, flush=True)
+              executed = [int(v) for v in re.findall(r'Executed (\d+) tests?,', output)]
+              crashed = 'stop reason = signal' in output or 'stop reason = EXC_' in output
+              exits = re.findall(r'Process \d+ exited with status = (\d+)', output)
+              inferior_exit = int(exits[-1]) if exits else None
+              result = dict(case=name, debuggerExit=code, inferiorExit=inferior_exit, crashed=crashed,
+                  expectedTests=expected, observedTests=max(executed, default=0),
+                  completed=code == 0 and inferior_exit == 0 and not crashed and max(executed, default=0) == expected)
+              results.append(result)
+          # Only new reports from this synthetic XCTest host are eligible.
+          # Retain exception/termination and symbolized frames, never memory,
+          # process environment, unrelated reports or complete raw .ips files.
+          reports = []
+          if diagnostics.is_dir():
+              for path in diagnostics.glob('*.ips'):
+                  if not path.name.startswith(('xctest-', 'RelayPanelPrototypePackageTests-')):
+                      continue
+                  if path.stat().st_mtime < started:
+                      continue
+                  raw = path.read_text(errors='replace')
+                  objects, offset, decoder = [], 0, json.JSONDecoder()
+                  try:
+                      while offset < len(raw):
+                          while offset < len(raw) and raw[offset].isspace(): offset += 1
+                          if offset == len(raw): break
+                          value, offset = decoder.raw_decode(raw, offset)
+                          objects.append(value)
+                  except ValueError:
+                      continue
+                  for obj in objects:
+                      if obj.get('procName') not in ('xctest', 'RelayPanelPrototypePackageTests'):
+                          continue
+                      reports.append({key: obj[key] for key in (
+                          'procName', 'exception', 'termination', 'faultingThread') if key in obj} |
+                          {'threads': [{key: thread[key] for key in (
+                              'triggered', 'queue', 'frames') if key in thread}
+                              for thread in obj.get('threads', [])]})
+          (out / 'crash-frames.json').write_text(json.dumps(reports, indent=2))
+          (out / 'results.json').write_text(json.dumps(results, indent=2))
+          print(json.dumps(results, indent=2), flush=True)
+          raise SystemExit(0 if all(item['completed'] for item in results) else 1)
+          PY
+      - name: Preserve only the owned synthetic diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relay-presentation-diagnostic
+          path: ${{ runner.temp }}/relay-presentation-diagnostic/
+          if-no-files-found: warn
+          retention-days: 7

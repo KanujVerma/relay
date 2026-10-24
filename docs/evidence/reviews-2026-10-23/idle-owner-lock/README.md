@@ -1,0 +1,5 @@
+# Opt-in synthetic lock-order reproduction
+
+This is the unchanged root probe, not production/default test code. It uses actual authority/panel/owner classes with synthetic callbacks and a bounded watchdog process; no private files/account/capture. SHA256 `c30132155e572b6fdf12dc4ac055282d06340f82c468b66a8a53b974d098c465`.
+
+Use an isolated checkout at original91494693f2abfa69d69fce5f443b0eb064379a1f or corrected4972af688a37e33887228df396319fd79b9652b2, copy this file into `spikes/macos-panel/Tests/RelaySessionApplicationTests/`, and run the existing package with `RELAY_OWNER_LOCK_PROBE=active` and `--filter IdleLockOrderProbeTests`; repeat with `stale`. Root scratch/module caches and an external180second deadline are required. The watchdog active-child exit86 on original is a reproduced failure, never a skipped/successful timeout. Corrected active and stale both exit0. Remove the temporary probe afterward; the product contains the separate bounded three-schedule regression. This records local Swift6.4/arm64 behavior only.

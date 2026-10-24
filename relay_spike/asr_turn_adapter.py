@@ -14,6 +14,7 @@ import re
 from threading import Lock
 from typing import Literal
 
+from .correction_grammar import CORRECTION_PREFIX as _CORRECTION
 from .question_turns import (
     MIN_QUESTION_CONFIDENCE,
     MAX_EVENT_CHARS,
@@ -39,10 +40,6 @@ _DIRECT_QUESTION = re.compile(
     r"is|are|was|were|have you|has|should|would|"
     r"tell me|explain|describe|compare|write|show|"
     r"walk me through|implement|calculate|outline|give me)\b", re.I
-)
-_CORRECTION = re.compile(
-    r"^(?:no\b|actually\b|instead\b|sorry[, ]|i meant\b|"
-    r"make that\b|rather\b|let me rephrase\b)[\s,:-]*", re.I
 )
 _FOLLOWUP = re.compile(
     r"^(?:and\s+what\s+about|what\s+about|and\s+how\s+about|"
@@ -196,10 +193,11 @@ class SyntheticEOUBridge:
     A ready result is only a tentative turn handoff, subject to existing QA.
     """
 
-    def __init__(self, machine: QuestionTurnMachine) -> None:
+    def __init__(self, machine: QuestionTurnMachine, *, eligibility_strategy=None) -> None:
         if not isinstance(machine, QuestionTurnMachine):
             raise TypeError("QuestionTurnMachine required.")
         self.machine = machine
+        self._eligibility_strategy = eligibility_strategy
         self._lock = Lock()
         # Blank final identity is a bounded tombstone, not a transcript.
         self._blank_finals: OrderedDict[tuple[int, str], tuple[int, int, int]] = OrderedDict()
@@ -428,7 +426,14 @@ class SyntheticEOUBridge:
             event.text, has_current_question=active
         )
 
-        if event.confidence is None:
+        if self._eligibility_strategy is not None:
+            # Optional host policy runs only AFTER all existing source, finality,
+            # replay, tombstone and lifecycle guards. It never invents confidence.
+            intent = self._eligibility_strategy.assess(event, has_current_question=active)
+            if intent not in ("question", "follow_up", "correction", "unknown"):
+                raise ASRContractError("Invalid eligibility decision.")
+            reason = "confidence_free_contextual_intent"
+        elif event.confidence is None:
             # The upstream EOU API may not provide a calibrated score. Do not
             # assign a fictitious value or silently mark it trustworthy.
             intent = "unknown"

@@ -7,7 +7,7 @@ storage before real private documents can enter this flow.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from hashlib import sha256
 import re
 import secrets
@@ -16,6 +16,7 @@ from .personal_brain import (
     ACTORS, BrainError, BrainStore, InvalidState, MissingEvidence,
     UserConfirmation, _observed, _required,
 )
+from .resume_structure import ResumeContext, decode_context, digest as context_digest
 
 MAX_SELECTED_CHARS = 30_000
 MAX_CANDIDATES = 64
@@ -65,6 +66,15 @@ class ReviewCard:
     review_revision: int
     actor_hint: str
     card_fingerprint: str
+
+
+@dataclass(frozen=True)
+class ReviewCardV2(ReviewCard):
+    schema_version: int
+    claim_kind: str
+    review_context: ResumeContext
+    context_sha256: str
+    locator: str
 
 
 def _digest(text: str) -> str:
@@ -228,7 +238,7 @@ class ReviewGateway:
             row["snippet_sha256"], str(row["span_start"]),
             str(row["span_end"]), str(row["review_revision"]), row["actor"],
         ))
-        return ReviewCard(
+        card = ReviewCard(
             fact_id=row["id"], source_id=row["source_id"],
             source_sha256=row["source_sha256"], snippet=row["claim_text"],
             snippet_sha256=row["snippet_sha256"],
@@ -236,6 +246,29 @@ class ReviewGateway:
             review_revision=row["review_revision"],
             actor_hint=row["actor"], card_fingerprint=_digest(identity),
         )
+        structured = self._store.db.execute(
+            'SELECT * FROM candidate_resume_context WHERE fact_id=?', (fact_id,)).fetchone()
+        if structured is None: return card
+        context = decode_context(structured['context_json'])
+        if context_digest(asdict(context)) != structured['context_sha256']:
+            raise MissingEvidence('Résumé context no longer matches review evidence.')
+        location = self._store.db.execute('SELECT locator FROM profile_locator WHERE fact_id=?', (fact_id,)).fetchone()
+        if location is None: raise MissingEvidence('Résumé claim location is missing.')
+        from .resume_structure import _text
+        _text(card.snippet, 600, 2400)
+        if (not 0 <= card.span_start < card.span_end <= MAX_SELECTED_CHARS or
+                card.span_end-card.span_start != len(card.snippet) or
+                re.fullmatch(r'(?:text:line|pdf:page|docx:paragraph):[1-9][0-9]*', location[0]) is None or
+                len(location[0]) > 80):
+            raise MissingEvidence('Résumé claim source bounds are invalid.')
+        result = ReviewCardV2(**asdict(card), schema_version=2, claim_kind=structured['claim_kind'],
+            review_context=context, context_sha256=structured['context_sha256'], locator=location[0])
+        payload = asdict(result); del payload['card_fingerprint']
+        result = replace(result, card_fingerprint=context_digest(payload))
+        from .resume_structure import canonical
+        if len(canonical(asdict(result)).encode()) > 12*1024:
+            raise BrainError('Résumé review card exceeds its frame budget.')
+        return result
 
     def decide(self, card: ReviewCard, *, decision: str,
                capability: object, approved_actor: str | None = None,
@@ -246,6 +279,21 @@ class ReviewGateway:
         Each call generates a fresh one-use confirmation ID. A stale card,
         forged capability, changed source or previous approval fails closed.
         """
+        if isinstance(card, ReviewCardV2):
+            raise MissingEvidence('Use the context-aware review action for this card.')
+        self._decide(card, decision=decision, capability=capability, approved_actor=approved_actor,
+            claim_key=claim_key, replaces_fact_id=replaces_fact_id)
+
+    def decide_v2(self, card: ReviewCardV2, *, decision: str, capability: object,
+                  context_sha256: str, approved_actor: str | None = None,
+                  claim_key: str | None = None, replaces_fact_id: str | None = None) -> None:
+        if not isinstance(card, ReviewCardV2) or context_sha256 != card.context_sha256:
+            raise MissingEvidence('Displayed résumé context is stale.')
+        self._decide(card, decision=decision, capability=capability, approved_actor=approved_actor,
+            claim_key=claim_key, replaces_fact_id=replaces_fact_id, expected_context_sha256=context_sha256)
+
+    def _decide(self, card, *, decision, capability, approved_actor=None, claim_key=None,
+                replaces_fact_id=None, expected_context_sha256=None):
         self._require_host(capability)
         if not isinstance(card, ReviewCard) or self.preview(card.fact_id) != card:
             raise MissingEvidence("Reviewed card is stale or invalid.")
@@ -268,6 +316,7 @@ class ReviewGateway:
                 card.fact_id, confirmation=receipt,
                 reviewed_actor=approved_actor, reviewed_claim_key=claim_key,
                 expected_snippet_sha256=card.snippet_sha256,
+                expected_context_sha256=expected_context_sha256,
                 replaces_fact_id=replaces_fact_id,
                 reviewer_token=self.__ledger_guard,
             )

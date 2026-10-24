@@ -1,0 +1,2 @@
+# Optional continuous answer transport. Legacy infer CLI remains stdlib-only.
+httpx==0.28.1

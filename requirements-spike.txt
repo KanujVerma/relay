@@ -1,2 +1,5 @@
 # For cryptographic OIDC ID-token signature verification, only loaded during interactive sign-in
 PyJWT[crypto]>=2.10,<3
+
+# Explicit plan-backed answer streaming and optional visual-input verification
+httpx==0.28.1

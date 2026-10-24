@@ -6,6 +6,7 @@ on:
       - 'EVALS/**'
       - 'relay_spike/**'
       - 'tests/**'
+      - 'contracts/**'
       - 'requirements-spike.txt'
       - 'docs/**'
       - 'AGENTS.md'
@@ -35,6 +36,11 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned protocol and protected-storage test dependencies (no models)
+        run: python -m pip install httpx==0.28.1 PyJWT==2.15.1 cryptography==50.0.2
       - name: Validate fixture schema and coverage
         run: python3 EVALS/validate.py
       - name: Validate documentation and local links

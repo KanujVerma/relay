@@ -1,0 +1,9 @@
+# Joined résumé background coverage
+
+Controller runtimeab8c42d assembles accepted PR90 source: f353→f359a44,082→2dd91e2,c043→0d75a97,bd594→2b0b950,34ed→ab8c42d. Approved contract882 and its amendments were already present identically; the old pending-contract commit was not duplicated. No manual runtime conflict resolution was needed. Exact comparisons of backend review/storage/provider/extraction and native profile source against accepted34ed are empty; controller retains its separately reviewed query grammar6eb.
+
+Joined full Python637collected/611pass/26optional converter skips, zero failures,5.878s with the existing two localhost-only cases permitted. Existing unclosed SQLite ResourceWarnings remain. Joined full panel/application/state package134collected/128pass/6explicit opt-in skips (68panel/55app/11state), zero failures; real résumé PDF/DOCX opt-in enabled. Independent final feature proof also passed17Python and4actual app cases with no skips. [Final review](reviews-2026-10-23/review-resume-final-34ed5aa.md) records exact source and source/format/app boundaries.
+
+This is now integrated first-increment support for linear TXT/selectable PDF/plain body DOCX education, employment, projects, qualifications and listed skills, in addition to exact contribution facts. Explicit existing Save approves the shown source associations; no extra confirmation per fact. Real protected save/restore/Lock and named-entry relevance remain. Layout geometry, table/header/column recognition, long whole-unit detail and broader natural-language usefulness remain separate increments.
+
+The current self-contained artifact6eb predates this source. A new exact joined artifact must be rebuilt and pass actual bundled profile/resume gates; older artifact results do not certify schema3/new modules. Account/idle/history work remains separate. No private material, actual Keychain/account/capture or paid inference was used.

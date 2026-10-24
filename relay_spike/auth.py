@@ -26,6 +26,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import Request, urlopen
 import uuid
 import webbrowser
+from . import protected_storage as _storage
 
 ISSUER = "https://auth.openai.com"
 AUTHORIZE_URL = ISSUER + "/api/accounts/authorize"
@@ -65,67 +66,20 @@ class MalformedRefreshResponse(AuthError):
 
 
 def _durable_sync(fd: int) -> None:
-    """Best available file/directory flush for local rotating credentials.
-
-    Apple's ordinary fsync does not request the drive's hardware buffer flush.
-    On the target macOS platform, require F_FULLFSYNC (no silent downgrade).
-    This is an OS/filesystem assurance, not a blanket guarantee of power-loss
-    safety on every drive; actual APFS behavior requires a native Mac test.
-    """
-    if sys.platform == "darwin":
-        cmd = getattr(fcntl, "F_FULLFSYNC", None)
-        if cmd is None:
-            raise AuthError("Strong macOS credential sync is unavailable on this runtime.")
-        try:
-            fcntl.fcntl(fd, cmd)
-        except OSError:
-            raise AuthError(
-                "Strong macOS credential sync is unsupported on this filesystem."
-            ) from None
-    else:
-        os.fsync(fd)
+    try: _storage.durable_sync(fd)
+    except _storage.ProtectedStorageError as error: raise AuthError(str(error)) from None
 
 
 def _sync_parent_directory(path: Path) -> None:
-    """Sync the post-rename directory entry for crash-sensitive token rotation.
-
-    The OS/filesystem must support syncing directory descriptors; if not,
-    refuse to claim a durable rotation and explain the local limitation.
-    """
-    if not hasattr(os, "O_NOFOLLOW"):
-        raise AuthError("Secure credential-directory sync needs POSIX no-follow.")
-    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_DIRECTORY", 0)
-    try:
-        fd = os.open(path.parent, flags)
-        try:
-            if not stat.S_ISDIR(os.fstat(fd).st_mode):
-                raise AuthError("Credential parent is not a directory.")
-            _durable_sync(fd)
-        finally:
-            os.close(fd)
-    except OSError:
-        raise AuthError(
-            "Could not durably sync credential rotation on this filesystem."
-        ) from None
+    try: _storage.sync_parent(path, sync=_durable_sync)
+    except _storage.ProtectedStorageError as error: raise AuthError(str(error)) from None
 
 
 def _write_protected(path: Path, value: dict) -> None:
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if path.parent.is_symlink() or path.is_symlink():
-        raise AuthError("Refusing to write credential data through a symlink.")
-    os.chmod(path.parent, 0o700)
-    fd, temp_path = tempfile.mkstemp(dir=path.parent, prefix=".relay-", text=True)
     try:
-        os.chmod(temp_path, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as out:
-            json.dump(value, out)
-            out.flush()
-            _durable_sync(out.fileno())  # Hardware-aware flush on macOS.
-        os.replace(temp_path, path)
-        _sync_parent_directory(path)
-    finally:
-        if os.path.exists(temp_path):
-            os.unlink(temp_path)
+        _storage.replace_bytes(path, json.dumps(value).encode('utf-8'),
+                               sync=_durable_sync, sync_directory=_sync_parent_directory)
+    except _storage.ProtectedStorageError as error: raise AuthError(str(error)) from None
 
 
 def _read_protected(path: Path) -> dict | None:
@@ -182,38 +136,10 @@ def _nearing_expiry(record: dict) -> bool:
 
 @contextmanager
 def _refresh_lock():
-    """Serialize rotating refresh grants between independent CLI processes.
-
-    Lockfile remains on disk permanently: deleting/recreating it could allow
-    separate inode locks to be held at the same time. Uses POSIX flock on Mac
-    and Linux, with an owned regular file and no-follow open.
-    """
-    folder = TOKEN_PATH.parent
-    folder.mkdir(parents=True, mode=0o700, exist_ok=True)
-    if folder.is_symlink():
-        raise AuthError("Refusing to lock credentials through a symlinked directory.")
-    os.chmod(folder, 0o700)
-    path = folder / (TOKEN_PATH.name + ".lock")
-    flags = os.O_CREAT | os.O_RDWR
-    if not hasattr(os, "O_NOFOLLOW"):
-        raise AuthError("Secure refresh lock requires POSIX no-follow support.")
-    flags |= os.O_NOFOLLOW
+    """Same permanent interprocess lock; never unlink a rotating-grant lock."""
     try:
-        fd = os.open(path, flags, 0o600)
-    except OSError:
-        raise AuthError("Could not securely open the OAuth refresh lock.") from None
-    try:
-        info = os.fstat(fd)
-        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                or info.st_mode & 0o077):
-            raise AuthError("OAuth refresh lock must be an owner-only regular file.")
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
-    finally:
-        os.close(fd)
+        with _storage.credential_lock(TOKEN_PATH): yield
+    except _storage.ProtectedStorageError as error: raise AuthError(str(error)) from None
 
 
 def _clear_unusable_credentials(record: dict) -> None:
@@ -321,7 +247,8 @@ def pkce_pair() -> tuple[str, str]:
 
 
 def authorization_url(*, client_id: str, host_id: str, redirect_uri: str,
-                      state: str, nonce: str, challenge: str) -> str:
+                      state: str, nonce: str, challenge: str, id_token_hint: str | None = None,
+                      login_hint: str | None = None, enable_plan: bool = False) -> str:
     payload = {
         "client_id": client_id,
         "redirect_uri": redirect_uri,
@@ -336,6 +263,10 @@ def authorization_url(*, client_id: str, host_id: str, redirect_uri: str,
     }
     if client_id == "dynamic_agent_client":
         payload["agent_name_hint"] = "Relay"
+    if client_id != "dynamic_agent_client":
+        if id_token_hint: payload["id_token_hint"] = id_token_hint
+        if login_hint: payload["login_hint"] = login_hint
+    if enable_plan: payload["prompt"] = "consent"
     return AUTHORIZE_URL + "?" + urlencode(payload)
 
 
@@ -446,9 +377,18 @@ def verify_id_token(id_token: str, client_id: str, expected_nonce: str) -> dict:
         raise AuthError("Unexpected JWKS endpoint.")
     try:
         key = PyJWKClient(jwks_uri).get_signing_key_from_jwt(id_token)
+    except jwt.PyJWTError:
+        raise AuthError("OIDC ID token verification failed.") from None
+    return verified_id_claims(id_token, client_id, expected_nonce, key.key)
+
+
+def verified_id_claims(id_token: str, client_id: str, expected_nonce: str, key) -> dict:
+    """Shared signature/claims checks after a trusted published JWKS lookup."""
+    jwt, _ = require_verification_dependencies()
+    try:
         claims = jwt.decode(
             id_token,
-            key.key,
+            key,
             algorithms=["RS256"],
             audience=client_id,
             issuer=ISSUER,
@@ -485,7 +425,7 @@ def validate_token_fields(tokens: dict) -> tuple[str, list[str], int]:
     return access_token, scope.split(), lifetime
 
 
-def _callback_server(expected_state: str):
+def _callback_server(expected_state: str, *, server_factory=None, completion_message: bytes | None = None):
     result: dict = {}
 
     class Handler(BaseHTTPRequestHandler):
@@ -508,7 +448,7 @@ def _callback_server(expected_state: str):
                 self.send_error(400)
                 return
             result["query"] = query
-            body = b"Return to Relay in your terminal to finish sign-in."
+            body = completion_message or b"Return to Relay in your terminal to finish sign-in."
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -517,7 +457,7 @@ def _callback_server(expected_state: str):
             self.end_headers()
             self.wfile.write(body)
 
-    server = HTTPServer(("127.0.0.1", 0), Handler)
+    server = (server_factory or HTTPServer)(("127.0.0.1", 0), Handler)
     server.timeout = 1
     return server, result
 

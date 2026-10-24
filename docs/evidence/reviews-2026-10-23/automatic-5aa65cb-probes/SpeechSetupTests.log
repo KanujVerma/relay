@@ -1,0 +1,25 @@
+Test Suite 'SpeechSetupTests' started at 2026-10-23 18:15:09.962.
+Test Case '-[RelaySessionCaptureTests.SpeechSetupTests testCancellationRetiresIntentButWaitsForActualPreparationBeforeBecomingAvailable]' started.
+Test Case '-[RelaySessionCaptureTests.SpeechSetupTests testCancellationRetiresIntentButWaitsForActualPreparationBeforeBecomingAvailable]' passed (0.034 seconds).
+Test Case '-[RelaySessionCaptureTests.SpeechSetupTests testCancelledObsoleteCoalescedWaiterCannotCancelReplacementPreparation]' started.
+Test Case '-[RelaySessionCaptureTests.SpeechSetupTests testCancelledObsoleteCoalescedWaiterCannotCancelReplacementPreparation]' passed (0.018 seconds).
+Test Case '-[RelaySessionCaptureTests.SpeechSetupTests testConstructionIsInertAndConcurrentPreparationSharesOneOwnedOperation]' started.
+Test Case '-[RelaySessionCaptureTests.SpeechSetupTests testConstructionIsInertAndConcurrentPreparationSharesOneOwnedOperation]' passed (0.004 seconds).
+Test Case '-[RelaySessionCaptureTests.SpeechSetupTests testDelayedProgressCannotRegressValidationOrOverwriteCancelledIntent]' started.
+Test Case '-[RelaySessionCaptureTests.SpeechSetupTests testDelayedProgressCannotRegressValidationOrOverwriteCancelledIntent]' passed (0.004 seconds).
+Test Case '-[RelaySessionCaptureTests.SpeechSetupTests testManagedCapturePolicyNeverPretendsToBeUserAcknowledgmentOrRecordingConsent]' started.
+Test Case '-[RelaySessionCaptureTests.SpeechSetupTests testManagedCapturePolicyNeverPretendsToBeUserAcknowledgmentOrRecordingConsent]' passed (0.000 seconds).
+Test Case '-[RelaySessionCaptureTests.SpeechSetupTests testManifestUsesOnlyPinnedPublicURLsAndRejectsPathsOrHashesThatCannotBeValidated]' started.
+Test Case '-[RelaySessionCaptureTests.SpeechSetupTests testManifestUsesOnlyPinnedPublicURLsAndRejectsPathsOrHashesThatCannotBeValidated]' passed (0.001 seconds).
+Test Suite 'SpeechSetupTests' passed at 2026-10-23 18:15:10.023.
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.060 (0.061) seconds
+Test Suite 'RelaySessionCaptureTests.xctest' passed at 2026-10-23 18:15:10.023.
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.060 (0.061) seconds
+Test Suite 'Selected tests' passed at 2026-10-23 18:15:10.023.
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.060 (0.063) seconds
+Test Suite 'Selected tests' started at 2026-10-23 18:15:10.117.
+Test Suite 'RelayNativeSessionTests.xctest' started at 2026-10-23 18:15:10.118.
+Test Suite 'RelayNativeSessionTests.xctest' passed at 2026-10-23 18:15:10.118.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-10-23 18:15:10.118.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds

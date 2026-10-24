@@ -1,0 +1,9 @@
+# Résumé native review surface
+
+Exactbd59453f473d2a5b57d6eccbdbc7187084d3484a, PR90, independent clean detached work/relay-review-resume-native-bd59453. Native DTO/controller/view delta accepted after backendc043 correction; real format and actual joined app acceptance remain separate.
+
+Reviewed source validates supported v2 keys/kinds/digests, exact text/byte/scalar/span/locator bounds, six uniquely typed context fields and partial coverage status. Unicode-scalar offsets match Python code points rather than Swift graphemes/UTF16. Legacy DTO callers retain their path. New visible entry fields appear above the existing actor/Save action with clear association guidance, no extra per-fact checkbox. Save/Skip use exact decide_v2/context receipt; modified displayed DTOs cannot replace the actual current card. Source partial coverage is guidance, not approved knowledge.
+
+Independent5native cases pass0.377s. Actual ProfileController→recording port→real framed helper→temporary encrypted vault/fake key proves modified-card veto, exact nine-key Save, null-valued Skip fields, protected close/reopen and preserved approved memory. Unknown version/fields, missing context, hash/bounds/duplicate kinds/control text, Unicode offsets and source status negatives pass. This compiled the affected package using reviewer-owned caches. Author separately reports50full profile cases and app compilation; those totals are not claimed as independent root results here.
+
+No Model/outer app, account/Keychain purpose, vault format or new dependency is changed. No actual GUI, systemKeychain/private résumé/account/capture/model request used. Actual TXT/selectable PDF/plain DOCX plus joined Model/panel acceptance is the next checkpoint. Table/header/column geometry and whole facts over the existing detail budget remain separate increments.

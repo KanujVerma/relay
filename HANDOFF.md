@@ -1,5 +1,7 @@
 # Relay continuation handoff
 
+Isolated mixed candidate: `work/relay-account-idle-integration`, branch `feature/account-idle-integration-2026-10-23`, immutable basecd77aa930d97771607f090602000b33d9c76cfaa. It imports independently accepted protected account2047 into the accepted idle/résumé root while preserving ConversationOwnerBox4972 and the single four-request native profile-flight ledger. Capture readiness remains outside startTask; idle readiness precedes helper/scope creation; account mutation retires/reaps the actual old owner/helper/token/native callbacks without self-awaiting CURRENT preparation. [Own lane](docs/lanes/ACCOUNT_IDLE.md) records actual mixed proofs and pending final gates. This checkout is a review candidate, not canonical root/main or live account/device acceptance. Original account2047 source/artifacts stay frozen and both hosted checks are green.
+
 Updated 2026-10-23. Repository KanujVerma/relay. Work in `work/relay-build-integration`, branch `build/copilot-integration-2026-10-23`, draft [PR71](https://github.com/KanujVerma/relay/pull/71). Production checkpoint **ac70eb3b8526331b074cd5a9e24f0d775ecad4f9** joins accepted standalone idle Ask369/dae/914 plus deadlock correction4972 on complete résumé5575/query6eb; later documentation may advance HEAD. Main remains the earlier unmerged eb28d1586e52b7f0fd2e3b15580ae08ff295872e. Recheck live status/log before work. This workspace parent is not a Git repository; original projects/relay stays untouched.
 
 ## Product and authority

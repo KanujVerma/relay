@@ -437,6 +437,7 @@ class SessionHost:
 
 
 async def run_stdio(args,*,oauth_stream=None):
+    if getattr(args,'protected_account',False) and (not args.oauth or oauth_stream is None):return 2
     loop=asyncio.get_running_loop()
     reader=asyncio.StreamReader(limit=32768)
     await loop.connect_read_pipe(lambda:asyncio.StreamReaderProtocol(reader),sys.stdin.buffer)
@@ -455,7 +456,7 @@ async def run_stdio(args,*,oauth_stream=None):
     complete=None;visual_transport=None
     if args.oauth:
         from .oauth_answer_stream import OAuthAnswerStream
-        visual_transport=oauth_stream or OAuthAnswerStream(model=args.model)
+        visual_transport=oauth_stream if oauth_stream is not None else OAuthAnswerStream(model=args.model)
         complete=visual_transport.complete
     elif args.fixture_model:
         async def complete(prompt,instructions):
@@ -556,9 +557,20 @@ async def run_stdio(args,*,oauth_stream=None):
 
 
 def main():
-    parser=argparse.ArgumentParser(description='Relay contextual stdio helper; no capture or network by default.')
+    parser=argparse.ArgumentParser(description='Relay contextual stdio helper; no capture or network by default.',allow_abbrev=False)
     mode=parser.add_mutually_exclusive_group();mode.add_argument('--oauth',action='store_true');mode.add_argument('--fixture-model',action='store_true')
-    parser.add_argument('--model',default='gpt-6-luna')
+    parser.add_argument('--model')
+    parser.add_argument('--protected-account',action='store_true',help=argparse.SUPPRESS)
     parser.add_argument('--role',default='analytics')
-    return asyncio.run(run_stdio(parser.parse_args()))
+    args=parser.parse_args();stream=None
+    if args.protected_account:
+        if not args.oauth or args.model is None:return 2
+        try:
+            from .product_session import protected_answer_stream
+            # Exact raw descriptor read precedes attaching the normal asyncio
+            # reader, so a queued first native/profile command is not lost.
+            stream=protected_answer_stream(args.model,input_fd=sys.stdin.fileno())
+        except Exception:return 2
+    args.model=args.model or 'gpt-6-luna'
+    return asyncio.run(run_stdio(args,oauth_stream=stream))
 if __name__=='__main__': raise SystemExit(main())

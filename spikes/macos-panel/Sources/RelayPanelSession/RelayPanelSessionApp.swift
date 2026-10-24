@@ -22,7 +22,7 @@ private struct RelayAppCommands:Commands {
     @Environment(\.openWindow) private var openWindow
     var body:some Commands {
         CommandGroup(replacing:.appSettings){Button("Settings…"){openWindow(id:"relay-settings")}.keyboardShortcut(",",modifiers:.command)}
-        CommandGroup(replacing:.appTermination){Button("Quit Relay"){Task{await model.stop();NSApplication.shared.terminate(nil)}}.keyboardShortcut("q",modifiers:.command)}
+        CommandGroup(replacing:.appTermination){Button("Quit Relay"){Task{await model.shutdown();NSApplication.shared.terminate(nil)}}.keyboardShortcut("q",modifiers:.command)}
     }
 }
 @MainActor private struct RelayMenu:View {
@@ -39,7 +39,7 @@ private struct RelayAppCommands:Commands {
         Button("My Context"){openWindow(id:"relay-context")}.disabled(model.fixture)
         Button("Settings…"){openWindow(id:"relay-settings")}
         Divider()
-        Button("Quit Relay"){Task{await model.stop();NSApplication.shared.terminate(nil)}}
+        Button("Quit Relay"){Task{await model.shutdown();NSApplication.shared.terminate(nil)}}
     }
 }
 @MainActor private struct RelayHomeAdapter:View {
@@ -51,7 +51,7 @@ private struct RelayAppCommands:Commands {
     init(model:SessionApplicationModel,shell:RelayWindowShell){self.model=model;self.shell=shell;setup=model.speechSetup;visual=model.visual}
     private var router:RelayCommandRouter{RelayCommandRouter(state:{model.relayPresentation},control:model.performWindowAction,start:{await model.start();if model.running{openWindow(id:"relay-live")}},cancelPreparation:model.cancelPreparation,retryPreparation:{await model.retryPreparation();if model.running{openWindow(id:"relay-live")}},openContext:{openWindow(id:"relay-context")},openSettings:{openWindow(id:"relay-settings")},showSession:{openWindow(id:"relay-live")})}
     var body:some View {
-        RelayHomeView(state:model.relayPresentation,preparation:RelayPreparationPresentation(setup.snapshot),aiEnabled:model.oauth,error:model.error,fixture:model.fixture,assistant:model.assistant,onAction:{router.perform($0)}){RelaySourceControls(model:model)}
+        RelayHomeView(state:model.relayPresentation,preparation:model.relayPreparation,aiEnabled:model.oauth,error:model.error,fixture:model.fixture,assistant:model.assistant,onAction:{router.perform($0)}){RelaySourceControls(model:model)}
             .task{if model.fixture && shell.claimFixtureStart(){await model.start();if model.running{openWindow(id:"relay-live")}}}
             .onChange(of:model.running){_,running in if running{shell.expanded=true;openWindow(id:"relay-live")}}
             .onChange(of:model.assistantActive){_,active in if active{shell.expanded=true;openWindow(id:"relay-live")}}
@@ -65,7 +65,7 @@ private struct RelayAppCommands:Commands {
             HStack{
                 Picker("Conversation app",selection:$model.selectedBundleID){Text(model.microphoneEnabled ? "Microphone only":"Choose an app").tag("");ForEach(apps,id:\.processIdentifier){app in if let bundle=app.bundleIdentifier{Text(app.localizedName ?? bundle).tag(bundle)}}}.labelsHidden().frame(maxWidth:.infinity,alignment:.leading).accessibilityLabel("Conversation app")
                 Toggle("My microphone",isOn:$model.microphoneEnabled).font(.system(size:12)).toggleStyle(.checkbox)
-            }.disabled(model.running || model.starting || model.stopping || model.speechSetup.snapshot.isBusy)
+            }.disabled(model.running || model.starting || model.stopping || model.accountPreparationActive || model.accountPreparationCancelling || model.speechSetup.snapshot.isBusy)
             Toggle("This conversation permits recording and assistance",isOn:Binding(get:{model.authorizedConversation},set:{allowed in if !allowed && (model.running || model.starting){model.performWindowAction(.endSession)};model.authorizedConversation=allowed})).font(.system(size:12)).toggleStyle(.checkbox)
         }
     }

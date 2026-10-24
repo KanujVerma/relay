@@ -145,13 +145,17 @@ class OAuthAnswerStream:
             await self._owned_client.aclose()
             self._owned_client.cookies.clear()
 
-    async def _token(self):
+    async def _token(self, *, notes_owned=False):
         if self._token_provider is None:
             from .auth import active_access_token
             provider = active_access_token
         else:
             provider = self._token_provider
-        token = await asyncio.to_thread(provider)
+        if notes_owned:
+            from .account_oauth import owned_thread
+            token = await owned_thread(provider)
+        else:
+            token = await asyncio.to_thread(provider)
         if not isinstance(token, str) or not token.strip() or len(token) > 32768:
             raise AnswerTransportError('credential_unavailable')
         return token
@@ -219,7 +223,13 @@ class OAuthAnswerStream:
             decoder.finish(); assembler.finish()
             raise AnswerTransportError('missing_response_completed')
 
-    async def complete(self, question, instructions, *, visual_attachment=None):
+    async def complete(self, question, instructions, *, visual_attachment=None, notes_text_permit=None):
+        if notes_text_permit is not None:
+            from .notes_text_permit import is_issued_notes_permit,NotesPermitError
+            if not is_issued_notes_permit(notes_text_permit):raise NotesPermitError('notes_permit_unverified')
+            if visual_attachment is not None:
+                notes_text_permit.retire()
+                raise NotesPermitError('notes_image_not_allowed')
         if visual_attachment is not None and not isinstance(visual_attachment, VisualAttachmentPermit):
             raise VisualInputError('visual_permit_unverified')
         try:
@@ -227,19 +237,24 @@ class OAuthAnswerStream:
         except Exception:
             if visual_attachment is not None:
                 visual_attachment.retire()
+            if notes_text_permit is not None:notes_text_permit.retire()
             raise
         success = False
         timing=AnswerTimingAttempt(self._spent,self._clock)
         outcome='failed'
         try:
             async with asyncio.timeout(self.deadline):
-                token = await self._token()
+                token = await self._token(notes_owned=notes_text_permit is not None)
                 timing.mark('token_ready_ms')
                 part, guard = None, None
                 if visual_attachment is not None:
                     part = visual_attachment._begin_send(token=token, model=self.model, effort=self.effort, endpoint=self._endpoint)
                     guard = lambda: visual_attachment._check(token=token, model=self.model, effort=self.effort,
                                                              endpoint=self._endpoint, check_config=True)
+                if notes_text_permit is not None:
+                    notes_text_permit._begin_send(token=token,model=self.model,effort=self.effort,endpoint=self._endpoint,
+                        question=question,instructions=instructions)
+                    guard=lambda:notes_text_permit._check(token=token,model=self.model,effort=self.effort,endpoint=self._endpoint)
                 body = response_payload(self.model, question, instructions=instructions, effort=self.effort, image_input=part)
                 client=self._client()
                 timing.mark('client_ready_ms')
@@ -247,6 +262,9 @@ class OAuthAnswerStream:
                 if visual_attachment is not None:
                     current_token = await self._token()
                     visual_attachment._mark_completed(token=current_token, model=self.model, effort=self.effort, endpoint=self._endpoint)
+                if notes_text_permit is not None:
+                    current_token = await self._token(notes_owned=True)
+                    notes_text_permit._mark_completed(token=current_token,model=self.model,effort=self.effort,endpoint=self._endpoint)
                 success = True
                 outcome='completed'
                 return answer
@@ -270,6 +288,7 @@ class OAuthAnswerStream:
             self._leave()
             if visual_attachment is not None and not success:
                 visual_attachment.retire()
+            if notes_text_permit is not None and not success:notes_text_permit.retire()
 
     async def verify_visual_input(self, visual, consent, *, is_current):
         """Explicit user action only: account catalog plus exactly one image probe.

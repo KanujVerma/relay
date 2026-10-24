@@ -132,6 +132,16 @@ public final class HelperTransport: @unchecked Sendable {
     private var assistantScopeReplies:[UUID:(NativeAssistantScopeRequest,AssistantScopeResponse)]=[:]
     private var assistantScopeReplyOrder:[UUID]=[]
     private var assistantScopeIssued:Set<UUID>=[]
+    private var notesScopes:[UUID:(NotesScopeCommand,NotesPending<NotesScopeResponseData>)]=[:]
+    private var notesScopeReplies:[UUID:(NotesScopeCommand,NotesScopeResponseData)]=[:]
+    private var notesScopeReplyOrder:[UUID]=[]
+    private struct NotesGeneration {
+        let request:NotesNativeRequest,gate:NotesNativeGate,pending:NotesPending<NotesCompletedOperation>
+        var progress:NotesResultData?
+    }
+    private var notesGenerations:[UUID:NotesGeneration]=[:]
+    private var notesIssued:Set<UUID>=[]
+    private var notesLastTerminal:(UUID,String)?
     private var visualReplies:[UUID:VisualInputResponse]=[:]
     private var visualReplyOrder:[UUID]=[]
     private var visualRequestCount=0
@@ -186,6 +196,108 @@ public final class HelperTransport: @unchecked Sendable {
         };self.timer=timer;timer.resume()
     }
     public func send(_ event:NativeSessionEvent) throws { try enqueue(event.encodedFrame()) }
+    var notesConfiguredModel:String?{
+        switch mode{case .fixture:"relay-synthetic-fixture";case .protectedOAuth:model;case .noInference,.oauth:nil}
+    }
+    var notesPublicationAllowed:Bool{lock.withLock{!failed && process != nil && !exitReceipt.isFinished}}
+
+    /// Register BOTH responses and reserve the original opening under the one
+    /// writer lock. Cancellation's gate lock is released before its enqueue,
+    /// so an admitted close cannot overtake a later opening.
+    func openNotes(_ opening:NotesScopeCommand,closing:NotesScopeCommand,gate:NotesNativeGate,deadline:UInt64)throws
+        ->(NotesPending<NotesScopeResponseData>,NotesPending<NotesScopeResponseData>){
+        let frame=NotesEncoding.frame(try opening.json())
+        let result=try lock.withLock{()->(NotesPending<NotesScopeResponseData>,NotesPending<NotesScopeResponseData>) in
+            guard !failed,input != nil else{throw PanelBridgeError.closed}
+            guard notesScopes.count+notesGenerations.count<=2,notesIssued.count+2<=512 else{throw PanelBridgeError.overflow}
+            guard !notesIssued.contains(opening.operationID),!notesIssued.contains(closing.operationID),
+                  opening.scopeID==closing.scopeID,opening.epoch==closing.epoch,opening.action=="open",closing.action=="close",
+                  opening.operationID != closing.operationID else{throw PanelBridgeError.malformed}
+            let opened=NotesPending<NotesScopeResponseData>(),closed=NotesPending<NotesScopeResponseData>()
+            guard gate.reserveOpen() else{throw CancellationError()}
+            notesIssued.insert(opening.operationID);notesIssued.insert(closing.operationID)
+            notesScopes[opening.operationID]=(opening,opened);notesScopes[closing.operationID]=(closing,closed)
+            do{try enqueueLocked(frame)}catch{
+                notesScopes.removeValue(forKey:opening.operationID);notesScopes.removeValue(forKey:closing.operationID);throw error
+            }
+            return(opened,closed)
+        }
+        notesScopeDeadline(opening.operationID,pending:result.0,deadline:deadline)
+        // Cleanup can outlive publication. Expiry fails the channel; only its
+        // actual close/reap is subsequently a cleanup receipt.
+        let cleanup=deadline.addingReportingOverflow(5_000_000_000)
+        notesScopeDeadline(closing.operationID,pending:result.1,deadline:cleanup.overflow ? UInt64.max:cleanup.partialValue)
+        return result
+    }
+    private func notesScopeDeadline(_ id:UUID,pending:NotesPending<NotesScopeResponseData>,deadline:UInt64){
+        io.asyncAfter(deadline:DispatchTime(uptimeNanoseconds:deadline)){[weak self,weak pending] in
+            guard let self,let pending else{return}
+            let expired=self.lock.withLock{()->Bool in
+                guard self.notesScopes[id]?.1 === pending else{return false};return true
+            }
+            if expired{self.fail()}
+        }
+    }
+    func generateNotes(_ request:NotesNativeRequest,gate:NotesNativeGate,deadline:UInt64)throws->NotesPending<NotesCompletedOperation>{
+        let cancel=try request.cancel(),frame=NotesEncoding.frame(try request.generate())
+        let response=try lock.withLock{()->NotesPending<NotesCompletedOperation> in
+            guard !failed,input != nil,notesConfiguredModel != nil else{throw PanelBridgeError.closed}
+            guard notesScopes.count+notesGenerations.count<4,notesIssued.count<512 else{throw PanelBridgeError.overflow}
+            guard !notesIssued.contains(request.requestID) else{throw PanelBridgeError.malformed}
+            guard gate.reserveRequest(cancel:cancel) else{throw CancellationError()}
+            let response=NotesPending<NotesCompletedOperation>();notesIssued.insert(request.requestID)
+            notesGenerations[request.requestID]=NotesGeneration(request:request,gate:gate,pending:response)
+            do{try enqueueLocked(frame)}catch{notesGenerations.removeValue(forKey:request.requestID);throw error}
+            return response
+        }
+        let id=request.requestID
+        io.asyncAfter(deadline:DispatchTime(uptimeNanoseconds:deadline)){[weak self,weak response] in
+            guard let self,let response else{return}
+            if self.lock.withLock({self.notesGenerations[id]?.pending === response}){self.fail()}
+        }
+        return response
+    }
+    private func acceptNotesScope(_ reply:NotesScopeResponseData)throws{
+        let pending=try lock.withLock{()->NotesPending<NotesScopeResponseData>? in
+            guard let original=notesScopes[reply.operationID] else{
+                if notesScopeReplies[reply.operationID]?.1==reply{return nil};throw PanelBridgeError.malformed
+            }
+            guard original.0.matches(reply) else{throw PanelBridgeError.malformed}
+            notesScopes.removeValue(forKey:reply.operationID);notesScopeReplies[reply.operationID]=(original.0,reply)
+            notesScopeReplyOrder.append(reply.operationID)
+            while notesScopeReplyOrder.count>8{notesScopeReplies.removeValue(forKey:notesScopeReplyOrder.removeFirst())}
+            return original.1
+        }
+        pending?.finish(.success(reply))
+    }
+    private func acceptNotesResult(_ raw:Data)throws{
+        let fields=try StrictJSON.decode(raw).object(["schemaVersion","kind","scopeID","scopeEpoch","requestID","requestSequence","transferID",
+            "recordID","recordRevision","sourceDigest","resultRevision","status","reasonCode","notes"])
+        guard let id=UUID(uuidString:try fields["requestID"]!.string(36)) else{throw PanelBridgeError.malformed}
+        let hash=HistoryNotesData.digest(raw)
+        let original=try lock.withLock{()->NotesGeneration? in
+            if let original=notesGenerations[id]{return original}
+            if let last=notesLastTerminal,last.0==id,last.1==hash{return nil}
+            throw PanelBridgeError.malformed
+        }
+        guard let original else{return}
+        let reply=try NativeNotesWire.result(raw,source:original.request.sourceData)
+        guard original.request.matches(reply) else{throw PanelBridgeError.malformed}
+        let terminal=try lock.withLock{()->NotesGeneration? in
+            guard var current=notesGenerations[id],current.pending === original.pending else{throw PanelBridgeError.malformed}
+            if reply.status=="pending"{
+                guard current.progress==nil || current.progress==reply else{throw PanelBridgeError.malformed}
+                current.progress=reply;notesGenerations[id]=current;return nil
+            }
+            guard reply.status != "completed" || current.progress?.status=="pending" else{throw PanelBridgeError.malformed}
+            notesGenerations.removeValue(forKey:id);notesLastTerminal=(id,hash);return current
+        }
+        guard let terminal else{return}
+        if reply.status=="completed",terminal.gate.allowed,let model=notesConfiguredModel{
+            do{terminal.pending.finish(.success(try NotesCompletedOperation(result:reply,request:terminal.request,helper:self,gate:terminal.gate,model:model)))}
+            catch{terminal.pending.finish(.failure(error))}
+        }else{terminal.pending.finish(.failure(NotesSessionError.unavailable(reply.status=="completed" ? "cancelled":reply.reasonCode)))}
+    }
     public func sendJSON(_ data:Data) throws {
         _=try StrictJSON.decode(data);var n=UInt32(data.count).bigEndian
         var frame=withUnsafeBytes(of:&n) { Data($0) };frame.append(data);try enqueue(frame)
@@ -516,6 +628,10 @@ public final class HelperTransport: @unchecked Sendable {
                         try acceptAnswerCancellation(AnswerCancellationResponse(data:frame))
                     } else if case .object(let fields)=node,case .string("assistant_scope_response")?=fields["kind"] {
                         try acceptAssistantScope(AssistantScopeResponse(data:frame))
+                    } else if case .object(let fields)=node,case .string("notes_scope_response")?=fields["kind"] {
+                        try acceptNotesScope(NativeNotesWire.scopeResponse(frame))
+                    } else if case .object(let fields)=node,case .string("notes_result")?=fields["kind"] {
+                        try acceptNotesResult(frame)
                     } else { _=try SessionAnswerDecision(data:frame);try onFrame(frame) }
                 }
                 if decoder.hasPartial { if partialSince==nil { partialSince=DispatchTime.now().uptimeNanoseconds } } else { partialSince=nil }
@@ -551,6 +667,10 @@ public final class HelperTransport: @unchecked Sendable {
             cancellations.forEach{$0.1.finish(.failure(PanelBridgeError.closed))}
             let scopes=Array(assistantScopes.values);assistantScopes.removeAll()
             scopes.forEach{$0.1.finish(.failure(PanelBridgeError.closed))}
+            let notes=Array(notesScopes.values);notesScopes.removeAll()
+            notes.forEach{$0.1.finish(.failure(PanelBridgeError.closed))}
+            let generations=Array(notesGenerations.values);notesGenerations.removeAll()
+            generations.forEach{$0.pending.finish(.failure(PanelBridgeError.closed))}
             let visual=Array(visualRequests.values);visualRequests.removeAll()
             visual.forEach{$0.response.finish(.failure(PanelBridgeError.closed))}
             return (process,pending,Array(imageWrites.values))

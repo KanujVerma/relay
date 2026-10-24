@@ -36,7 +36,8 @@ final class ConversationOwner:@unchecked Sendable {
         presentation=ConversationPresentation(authority:authority)
     }
     var isRetired:Bool{lock.withLock{retired}}
-    func retireAdmission(){lock.withLock{retired=true;authority.stop()}}
+    func markRetired(){lock.withLock{retired=true}}
+    func retireAdmission(){markRetired();authority.stop()}
     func record(_ lease:PresentationLease){lock.withLock{if session==nil{session=(lease.captureSessionID,lease.sessionEpoch)}}}
     func matches(_ id:UUID,epoch:UInt64)->Bool{lock.withLock{session?.0==id && session?.1==epoch}}
 }
@@ -48,24 +49,34 @@ final class ConversationOwnerBox:@unchecked Sendable {
     private var owner:ConversationOwner?
     private var helperIdentity:UUID?
     private var helperFailed=false
+    private var retirement:UUID?
     var current:ConversationOwner?{lock.withLock{owner}}
     func activateHelper(_ identity:UUID){lock.withLock{helperIdentity=identity;helperFailed=false}}
     func install(_ value:ConversationOwner)->Bool {
         lock.withLock{
-            guard owner==nil,helperIdentity==value.helperIdentity,!helperFailed else{return false}
+            guard owner==nil,retirement==nil,helperIdentity==value.helperIdentity,!helperFailed else{return false}
             owner=value;return true
         }
     }
     func owns(_ value:ConversationOwner)->Bool{lock.withLock{owner === value && helperIdentity==value.helperIdentity}}
     func remove(_ value:ConversationOwner){lock.withLock{if owner === value{owner=nil}}}
     func failHelper(_ identity:UUID)->Bool {
-        let result=lock.withLock{()->(Bool,ConversationOwner?) in
-            guard helperIdentity==identity else{return(false,nil)}
-            helperFailed=true;owner?.retireAdmission();return(true,owner)
+        let result=lock.withLock{()->(Bool,ConversationOwner?,UUID?) in
+            guard helperIdentity==identity,!helperFailed else{return(false,nil,nil)}
+            helperFailed=true
+            guard let owner,owner.helperIdentity==identity,retirement==nil else{return(true,nil,nil)}
+            // One bounded reservation survives helper activation/removal. A
+            // delayed old failure cannot race a reused capture controller.
+            let ticket=UUID();retirement=ticket;owner.markRetired()
+            return(true,owner,ticket)
         }
-        // Source retirement may emit a native callback, which reads this box.
-        // Never acquire the native controller lock while holding the box lock.
-        result.1?.sourceController?.retire()
+        // Panel commits can read this box while holding the authority lock.
+        // Neither this box nor the owner's flag lock may acquire authority or
+        // source locks. Keep the original owner reserved until both retire.
+        if let original=result.1{
+            original.retireAdmission();original.sourceController?.retire()
+        }
+        if let ticket=result.2{lock.withLock{if retirement==ticket{retirement=nil}}}
         return result.0
     }
 }

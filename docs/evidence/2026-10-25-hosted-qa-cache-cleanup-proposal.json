@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "proposalOnly": true,
+  "deletionApproved": false,
+  "deletionExecuted": false,
+  "sourcePreparationRef": "75f5df1807f181de4fa86e64ab8e14dc387935ed",
+  "runtimeSourceRef": "04fdee09f7541c52f9292fca2370b985c0233f9d",
+  "privateExactInventorySHA256": "7fa111dfe2a38db116d39d98d898032e65aa9efce9247f7eb3f6a94819f4b6bd",
+  "reportedAllocatedBytes": 1387274240,
+  "reportedAllocatedGiB": 1.292,
+  "candidates": [
+    {
+      "candidate": "retained account compile intermediates",
+      "allocatedBytes": 449024000,
+      "treeSHA256": "1f8608c0c78a2e91bd0f5552605077cd22b9df6999df9ca72e9fd45387ead1aa",
+      "entries": 5166,
+      "regularFiles": 4967,
+      "rootMode": "0o755",
+      "noObservedConsumersAtInventory": true,
+      "impact": "rebuilds affected compile objects; history Products also removes compiled test runners and resources, not test sources or logs"
+    },
+    {
+      "candidate": "retained History compile intermediates",
+      "allocatedBytes": 502116352,
+      "treeSHA256": "0659f68b4c341384df4e951babeaf6ae8a8e41faeb2fc508d2317a319e96f58d",
+      "entries": 5733,
+      "regularFiles": 5515,
+      "rootMode": "0o755",
+      "noObservedConsumersAtInventory": true,
+      "impact": "rebuilds affected compile objects; history Products also removes compiled test runners and resources, not test sources or logs"
+    },
+    {
+      "candidate": "retained History compiled test products",
+      "allocatedBytes": 436133888,
+      "treeSHA256": "f9720a6980bbfed18fe4412beb8bf83d317cbaa153a1ae55d674f8a9c139e98f",
+      "entries": 390,
+      "regularFiles": 233,
+      "rootMode": "0o755",
+      "noObservedConsumersAtInventory": true,
+      "impact": "rebuilds affected compile objects; history Products also removes compiled test runners and resources, not test sources or logs"
+    }
+  ],
+  "provenance": "generated compiler/linker products; exact cached source revision is unknown and is not inferred from current HEAD",
+  "sourceAndEvidencePreserved": [
+    "source/uncommitted work/stashes",
+    "models and private user data",
+    "Python environment and retained dependency sources/artifacts/module caches",
+    "all test and build logs",
+    "all original and relocated application witnesses, including latest verified fixed signed app",
+    "retained account Debug/Release linked products"
+  ],
+  "latestFixedSignedAppPreservedHashes": {
+    "native": "066d1293cea7a96c6acbec6498cbd3122969ff7feabbfd63b64a5eeeb70118d3",
+    "helper": "73ffa8db72c4f6430622a858b12e533d358d4fd0f7c57285dc66d93c24ee7024",
+    "provenance": "4a3a476cab147c3e403208ca0611ee0bb1a4af4b9158c9e2b30e576f7f2cc5e9"
+  },
+  "resourceProjection": {
+    "sampledRelayTempGiB": 24.539047,
+    "sampledFreeGiB": 31.957714,
+    "proposedHostPeakReserveGiB": 1.5,
+    "reserveIsMeasuredPeak": false,
+    "reportedTempAfterAllCandidatesAndReserveGiB": 24.747047,
+    "physicalReclaimUnknown": true,
+    "postDeletionRemeasurementRequired": true
+  },
+  "beforeAnyApprovalOrDeletion": [
+    "Root confirms no selected compiled witness is among candidates",
+    "publish this sanitized summary and exact private inventory digest",
+    "fresh exact identity/full-tree/no-consumer checks",
+    "separate owner authorization for only named directories",
+    "remeasure actual allocation/free space before any later hosted compile"
+  ],
+  "cleanupLimit": "no source/model/env/log/application removal and no broad retained-root or temporary-directory deletion"
+}

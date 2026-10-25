@@ -6,6 +6,8 @@ The corrected signed Release app from `04fdee0` now restores the normal account 
 
 All three GPT-6.1 Sol xhigh workers are active again: native helper/bootstrap investigation, Python transport diagnostics, and bounded app-hosted speed/Notes compile preparation. Root owns SessionHost integration and the UI. No heavy job or additional real request is authorized merely by a worker restart. Next: identify the failed stage before another controlled live request. The source correction and earlier checkpoints below retain their own attribution.
 
+The standard app-host compile is separately resource-gated. A [sanitized exact three-directory proposal](docs/evidence/2026-10-25-hosted-qa-cache-cleanup-proposal.json) records 1.292GiB of generated intermediates/older test products and the private full-inventory digest. No deletion approval is inferred from the earlier four-app cleanup. Current signed app, sources, models, environments and logs are preserved; actual reclamation and build peak remain unmeasured.
+
 ## Confirmed current catalog cause and scoped correction
 
 The signed36cfapp's one normal saved-connection Restore produced a fresh owner-only diagnostic:HTTP200,65,738decoded bytes at stop,body_limit; model fields were not parsed and total response size is unknown. This confirms the64KiB reader rejection without exposing provider body/identity or submitting a question. [Exact safe observation](docs/evidence/2026-10-25-live-catalog-bound-observation.json).

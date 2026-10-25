@@ -1,5 +1,6 @@
 """Content-free transport timings; never an answer/publication authority."""
 from dataclasses import dataclass
+from .answer_diagnostics import TransportObservation, TransportObservationAttempt
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,7 @@ class AnswerTransportTiming:
     provider_terminal: str | None
     # A valid delta, complete JSON or format check cannot establish usefulness.
     first_useful_verified_ms: None = None
+    diagnostic: TransportObservation | None = None
 
 
 class AnswerTimingAttempt:
@@ -27,6 +29,7 @@ class AnswerTimingAttempt:
         self.marks = {}
         self.output_bytes = 0
         self.provider_terminal = None
+        self.diagnostic = TransportObservationAttempt()
 
     def mark(self, name):
         if name not in self.marks:
@@ -37,7 +40,7 @@ class AnswerTimingAttempt:
             *(self.marks.get(name) for name in ('token_ready_ms', 'client_ready_ms',
                 'request_started_ms', 'response_headers_ms', 'first_text_ms', 'response_completed_ms')),
             (self.clock() - self.start) * 1000, self.output_bytes, int(self.start * 1_000_000_000),
-            self.provider_terminal)
+            self.provider_terminal, diagnostic=self.diagnostic.snapshot())
 
 
 class HelperRequestTiming:

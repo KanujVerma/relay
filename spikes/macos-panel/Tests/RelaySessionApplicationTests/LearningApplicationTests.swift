@@ -19,9 +19,11 @@ import RelaySessionPanel
 }
 @MainActor private final class AppLearningContextPreferences:SessionContextUsePreferences{var useInSessions=false}
 @MainActor final class AppLearningProfileReceipt {
+    private let hold:Bool
+    init(hold:Bool=true){self.hold=hold}
     var entered=false;private var held:CheckedContinuation<Void,Never>?
     func observe(_ data:Data)async{
-        guard let value=try? JSONSerialization.jsonObject(with:data) as? [String:Any],value["command"] as? String=="select_begin" else{return}
+        guard hold,let value=try? JSONSerialization.jsonObject(with:data) as? [String:Any],value["command"] as? String=="select_begin" else{return}
         entered=true;await withCheckedContinuation{held=$0}
     }
     func release(){held?.resume();held=nil}
@@ -56,13 +58,16 @@ private final class LearningPaintFinished:@unchecked Sendable {
     // derivation coverage; mixing both would make a one-rule Undo ambiguous.
     static let reply="Check empty lists and return an item when present."
     private let remoteQuestion:String
-    init(remoteQuestion:String=LearningAppConversation.question){self.remoteQuestion=remoteQuestion}
+    private let microphoneReply:String,remoteContinuation:String
+    init(remoteQuestion:String=LearningAppConversation.question,microphoneReply:String=LearningAppConversation.reply,remoteContinuation:String="What about empty input?"){
+        self.remoteQuestion=remoteQuestion;self.microphoneReply=microphoneReply;self.remoteContinuation=remoteContinuation
+    }
     private var sequences:[UInt32:UInt64]=[:]
     func start(_ controller:NativeSessionController)throws{
         sequences=[:]
         try controller.start(selectedBundleID:"com.example.learning-fixture",microphoneEnabled:true,components:[
-            1:SourceComponents(vad:LearningAppVAD(),recognizer:LearningAppRecognizer([Self.reply,Self.reply])),
-            2:SourceComponents(vad:LearningAppVAD(),recognizer:LearningAppRecognizer([remoteQuestion,"What about empty input?"]))])
+            1:SourceComponents(vad:LearningAppVAD(),recognizer:LearningAppRecognizer([microphoneReply,microphoneReply])),
+            2:SourceComponents(vad:LearningAppVAD(),recognizer:LearningAppRecognizer([remoteQuestion,remoteContinuation]))])
     }
     func speak(_ source:PCMSource,through model:SessionApplicationModel)async throws{
         for _ in 0..<2{
@@ -94,18 +99,18 @@ private final class LearningPaintFinished:@unchecked Sendable {
     }
     private var root:URL{URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()}
     private func quote(_ text:String)->String{"'"+text.replacingOccurrences(of:"'",with:"'\\''")+"'"}
-    func rig(learning:Bool=true,question:String=LearningAppConversation.question,controlPreferences:(any LearningControlPreferences)?=nil,profileReceipt:AppLearningProfileReceipt?=nil,directory existingDirectory:URL?=nil,historyPreferences:(any HistorySavingPreferences)?=nil)throws->(SessionApplicationModel,LearningAppConversation,URL,AppLearningKey){
+    func rig(learning:Bool=true,question:String=LearningAppConversation.question,controlPreferences:(any LearningControlPreferences)?=nil,profileReceipt:AppLearningProfileReceipt?=nil,directory existingDirectory:URL?=nil,historyPreferences:(any HistorySavingPreferences)?=nil,microphoneReply:String=LearningAppConversation.reply,remoteContinuation:String="What about empty input?",responsePreferencesStorage:(any ProtectedSnapshotStorage)?=nil,responsePreferencesReceipts:(any ResponsePreferencesReceiptStore)?=nil,tracePersonal:Bool=false)throws->(SessionApplicationModel,LearningAppConversation,URL,AppLearningKey){
         let directory=existingDirectory ?? FileManager.default.temporaryDirectory.appendingPathComponent("relay-learning-application-"+UUID().uuidString)
         if existingDirectory==nil{try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:false,attributes:[.posixPermissions:0o700])}
         let python=ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"] ?? "/usr/bin/python3"
         let launcher=directory.appendingPathComponent("synthetic-helper"),helper=root.appendingPathComponent("tests/support/learning_memory_helper.py"),log=directory.appendingPathComponent("calls.jsonl")
-        let command="exec \(quote(python)) \(quote(helper.path)) --synthetic-learning-test --log "
+        let command="exec \(quote(python)) \(quote(helper.path)) --synthetic-learning-test "+(tracePersonal ? "--personal-trace ":"")+"--log "
         // End really terminates the child. Preserve the first exclusive log
         // and give each later child a new owned file instead of reusing it.
         let script="#!/bin/sh\nif [ -e \(quote(log.path)) ]; then\n\(command)\(quote(directory.appendingPathComponent("calls-").path))$$.jsonl \"$@\"\nfi\n\(command)\(quote(log.path)) \"$@\"\n"
         try Data(script.utf8).write(to:launcher)
         try FileManager.default.setAttributes([.posixPermissions:0o700],ofItemAtPath:launcher.path)
-        let key=AppLearningKey(),history=historyPreferences ?? AppLearningHistoryPreferences(),controls=controlPreferences ?? AppLearningPreferences(),conversation=LearningAppConversation(remoteQuestion:question)
+        let key=AppLearningKey(),history=historyPreferences ?? AppLearningHistoryPreferences(),controls=controlPreferences ?? AppLearningPreferences(),conversation=LearningAppConversation(remoteQuestion:question,microphoneReply:microphoneReply,remoteContinuation:remoteContinuation)
         let storage=HistoryVaultStorage(directory:directory.appendingPathComponent("Relay/History"),keys:key)
         let profileFactory:(@Sendable ()->ProfileVault)?
         let observer:(@MainActor (Data)async->Void)?
@@ -117,7 +122,8 @@ private final class LearningPaintFinished:@unchecked Sendable {
         }else{profileFactory=nil;observer=nil;context=nil}
         let model=SessionApplicationModel(arguments:["relay","--fixture-suite","coding","--role","developer","--repository",root.path,"--python",launcher.path],
             contextPreferences:context,profileVaultFactory:profileFactory,profileResponseObserved:observer,
-            historyPreferences:history,historyStorageFactory:{storage},learningPreferences:learning ? controls:nil,fixtureSessionStart:conversation.start)
+            historyPreferences:history,historyStorageFactory:{storage},learningPreferences:learning ? controls:nil,fixtureSessionStart:conversation.start,
+            responsePreferencesStorage:responsePreferencesStorage,responsePreferencesReceipts:responsePreferencesReceipts)
         diagnosticModel=model
         addTeardownBlock{await model.shutdown();if existingDirectory==nil{try? FileManager.default.removeItem(at:directory)}}
         return(model,conversation,directory,key)
@@ -133,7 +139,7 @@ private final class LearningPaintFinished:@unchecked Sendable {
             if condition(){return}
             guard ContinuousClock.now<deadline else{
                 let model=diagnosticModel,surface=diagnosticSurface,sample=model?.responseLatencySamples.last
-                let state="line=\(line) running=\(model?.running==true) card=\(model?.snapshot.card != nil) modelAvailable=\(sample?.modelAvailableAt != nil) windowVisible=\(sample?.windowVisibleAt != nil) surfaceVisible=\(surface?.isVisible==true) occlusion=\(surface?.occlusionState.contains(.visible)==true) appActive=\(NSApp.isActive) appRunning=\(NSApp.isRunning) key=\(surface != nil && NSApp.keyWindow === surface) rows=\(model?.assistant.transcript.snapshot.rows.count ?? -1) episodes=\(model?.learning.session.episodes.count ?? -1) retained=\(model?.learning.retainedEpisodes.count ?? -1)"
+                let state="line=\(line) running=\(model?.running==true) card=\(model?.snapshot.card != nil) modelAvailable=\(sample?.modelAvailableAt != nil) windowVisible=\(sample?.windowVisibleAt != nil) surfaceVisible=\(surface?.isVisible==true) occlusion=\(surface?.occlusionState.contains(.visible)==true) appActive=\(NSApp.isActive) appRunning=\(NSApp.isRunning) key=\(surface != nil && NSApp.keyWindow === surface) preparing=\(model?.assistant.snapshot.isPreparing==true) assistantActive=\(model?.assistantActive==true) assistantStatus=\(model?.assistant.snapshot.status ?? "none") error=\(model?.error ?? "none") rows=\(model?.assistant.transcript.snapshot.rows.count ?? -1) episodes=\(model?.learning.session.episodes.count ?? -1) retained=\(model?.learning.retainedEpisodes.count ?? -1)"
                 XCTFail(state,file:file,line:line);throw HistoryError.unavailable
             }
             try await Task.sleep(for:.milliseconds(3))

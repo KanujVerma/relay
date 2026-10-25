@@ -14,7 +14,12 @@ class SyntheticLearningCompletion:
         text=value['current_request'].lower()
         semantic=value.get('semantic_request','').lower()
         coding='function' in text or 'code' in text or 'function' in semantic or 'code' in semantic
-        if coding:
+        if 'recruiter' in text or 'recruiter' in semantic:
+            lead='Explain the opening structure, then show a concise example before closing with clear transitions.'
+            points=['Keep each part easy to follow.','Keep transitions explicit and avoid unrelated detail.'];detail=None
+            if 'concise_lead' in adjustments:
+                lead='Explain the opening structure with clear transitions.';points=['Keep each part easy to follow.']
+        elif coding:
             lead='Check the input contract, then explain the empty-list case before returning the first item.'
             points=['Use an explicit guard for an empty list.','Keep the original item order.']
             detail={'kind':'code','language':'python','text':'def first_or_none(items):\n    return items[0] if items else None\n'}
@@ -48,6 +53,7 @@ def main():
     parser=argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument('--synthetic-learning-test',action='store_true',required=True)
     parser.add_argument('--log',required=True)
+    parser.add_argument('--personal-trace',action='store_true')
     options=parser.parse_args(arguments[:boundary])
     runtime=arguments[boundary:]
     if runtime[:2]!=['-m','relay_spike.session_host'] or '--fixture-model' not in runtime:return 2
@@ -60,6 +66,24 @@ def main():
             class SyntheticHost(original):
                 def __init__(self,**values):
                     values['complete']=SyntheticLearningCompletion(log)
+                    emit=values.get('emit')
+                    def witnessed(frame):
+                        if options.personal_trace and isinstance(frame,dict):
+                            if 'disposition' in frame:
+                                log.write(json.dumps({'kind':'synthetic_decision_observed','requestID':frame['requestID'],
+                                    'disposition':frame['disposition'],'reasonCode':frame['reasonCode'],
+                                    'modelRequests':self.model_requests},separators=(',',':'))+'\n');log.flush()
+                            elif frame.get('kind')=='assistant_scope_response':
+                                log.write(json.dumps({'kind':'synthetic_scope_observed','status':frame.get('status')},separators=(',',':'))+'\n');log.flush()
+                        provenance=frame.get('provenance') if isinstance(frame,dict) else None
+                        if isinstance(provenance,dict) and provenance.get('personal') is True:
+                            # Actual host-issued provenance/counters only. Never
+                            # log a prompt, claim text, transcript or card body.
+                            log.write(json.dumps({'kind':'synthetic_personal_emitted','requestID':frame['requestID'],'facts':provenance['facts'],
+                                'learningRevision':provenance.get('learningMemoryRevision'),
+                                'modelRequests':self.model_requests},separators=(',',':'))+'\n');log.flush()
+                        if emit is not None:emit(frame)
+                    values['emit']=witnessed
                     super().__init__(**values)
             host_module.SessionHost=SyntheticHost
             # Use the actual framed loop, native request/retirement gates and

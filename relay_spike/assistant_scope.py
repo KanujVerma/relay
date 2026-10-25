@@ -49,7 +49,8 @@ class AssistantScopeCoordinator:
 
     def _work_pending(self):
         h=self.host
-        return (self.closing or h._worker is not None and not h._worker.done()
+        return (self.closing or getattr(h,'notes',None) is not None and h.notes.busy
+                or h._worker is not None and not h._worker.done()
                 or any(not task.done() for task in h.tasks)
                 or any(not task.done() for task in h.user.cancel_tasks)
                 or h.visual._probe_task is not None)

@@ -10,10 +10,16 @@ struct RelayAnswerPresentation {
 struct AnswerCardView:View {
     let answer:RelayAnswerPresentation
     @Binding var expanded:Bool
+    var surfaceIdentity:LearningAnswerSurfaceIdentity?
+    var attachSurface:(@MainActor (LearningAnswerSurfaceView)->Void)?
     var body:some View {
         VStack(alignment:.leading,spacing:16){
-            Text(answer.lead).font(.system(size:14,weight:.medium)).lineSpacing(7).fixedSize(horizontal:false,vertical:true)
-            ForEach(Array(answer.points.prefix(2).enumerated()),id:\.offset){_,point in HStack(alignment:.top,spacing:10){Text("•").foregroundStyle(RelayTheme.muted);Text(point).lineSpacing(5)}.font(.system(size:14)).foregroundStyle(RelayTheme.secondary)}
+            VStack(alignment:.leading,spacing:16){
+                Text(answer.lead).font(.system(size:14,weight:.medium)).lineSpacing(7).fixedSize(horizontal:false,vertical:true)
+                ForEach(Array(answer.points.prefix(2).enumerated()),id:\.offset){_,point in HStack(alignment:.top,spacing:10){Text("•").foregroundStyle(RelayTheme.muted);Text(point).lineSpacing(5)}.font(.system(size:14)).foregroundStyle(RelayTheme.secondary)}
+            }.frame(maxWidth:.infinity,alignment:.leading).background{
+                if let surfaceIdentity,let attachSurface{LearningAnswerSurfaceAttachment(identity:surfaceIdentity,changed:attachSurface).accessibilityHidden(true)}
+            }
             if let detail=answer.detail {
                 if expanded {
                     VStack(alignment:.leading,spacing:10){

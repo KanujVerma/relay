@@ -67,5 +67,18 @@ Load command 3
             for key in ("PYTHONPATH","PYTHONHOME","VIRTUAL_ENV","PIP_INDEX_URL","PIP_EXTRA_INDEX_URL"):self.assertNotIn(key,value)
             self.assertEqual(value["PIP_CONFIG_FILE"],os.devnull);self.assertEqual(value["PATH"],"/usr/bin:/bin")
 
+    def test_native_history_resource_copy_contains_actual_grdb_privacy_bundle_and_license(self):
+        with tempfile.TemporaryDirectory() as name:
+            root=Path(name);binary=root/"native";resources=root/"Resources";resources.mkdir()
+            for bundle in ("KeyboardShortcuts_KeyboardShortcuts.bundle","FluidAudio_LuxTtsG2pResources.bundle","GRDB_GRDB.bundle"):
+                folder=binary/bundle;folder.mkdir(parents=True);(folder/"fixture.txt").write_text(bundle)
+            (binary/"GRDB_GRDB.bundle/PrivacyInfo.xcprivacy").write_text("synthetic privacy manifest")
+            self.module.copy_native_resources(binary,resources)
+            self.assertEqual((resources/"GRDB_GRDB.bundle/PrivacyInfo.xcprivacy").read_text(),"synthetic privacy manifest")
+            notice=(resources/"RelayNativeNotices.txt").read_text()
+            self.assertIn("b83108d10f42680d78f23fe4d4d80fc88dab3212",notice)
+            self.assertIn("Copyright (C) 2015-2025 Gwendal Roué",notice)
+            self.assertIn("Permission is hereby granted",notice)
+
 
 if __name__=="__main__":unittest.main()

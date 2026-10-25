@@ -19,6 +19,7 @@ class ResponseAssembler:
         self.sequence = -1
         self.items = {}
         self.parts = {}
+        self.reasoning_parts = {}
         self.finished = set()
         self.terminal = False
         self.bytes = 0
@@ -50,11 +51,36 @@ class ResponseAssembler:
             if type(index) is not int or not 0 <= index < 32 or index in self.items or not isinstance(item,dict): reject()
             if not isinstance(item.get('id'),str) or item.get('type') not in ('message','reasoning') or any(v['id']==item['id'] for v in self.items.values()): reject()
             self.items[index] = item
-        elif typ in ('response.content_part.added','response.output_text.delta','response.output_text.done','response.content_part.done'):
+        elif typ in ('response.content_part.added','response.output_text.delta','response.output_text.done',
+                     'response.reasoning_text.delta','response.reasoning_text.done','response.content_part.done'):
             index, part = event.get('output_index'), event.get('content_index')
-            if index not in self.items or event.get('item_id') != self.items[index]['id'] or type(part) is not int or not 0 <= part < 16 or index in self.finished: reject()
+            if type(index) is not int or index not in self.items or event.get('item_id') != self.items[index]['id'] or type(part) is not int or not 0 <= part < 16 or index in self.finished: reject()
             key = (index,part)
-            if typ == 'response.content_part.added':
+            if self.items[index]['type'] == 'reasoning':
+                if typ in ('response.output_text.delta','response.output_text.done'): reject()
+                if typ == 'response.content_part.added':
+                    value=event.get('part')
+                    if key in self.reasoning_parts or not isinstance(value,dict) or value.get('type') != 'reasoning_text' or not isinstance(value.get('text'),str): reject()
+                    if len(value['text'].encode()) > 8192: reject()
+                    self.reasoning_parts[key] = dict(text=value['text'],text_done=False,part_done=False)
+                else:
+                    state=self.reasoning_parts.get(key)
+                    if state is None or state['part_done']: reject()
+                    if typ == 'response.reasoning_text.delta':
+                        delta=event.get('delta')
+                        if state['text_done'] or not isinstance(delta,str): reject()
+                        state['text'] += delta
+                        if len(state['text'].encode()) > 8192: reject()
+                    elif typ == 'response.reasoning_text.done':
+                        if state['text_done'] or event.get('text') != state['text']: reject()
+                        state['text_done']=True
+                    else:
+                        value=event.get('part')
+                        if not state['text_done'] or not isinstance(value,dict) or value.get('type') != 'reasoning_text' or value.get('text') != state['text']: reject()
+                        state['part_done']=True
+            elif typ in ('response.reasoning_text.delta','response.reasoning_text.done'):
+                reject()
+            elif typ == 'response.content_part.added':
                 if key in self.parts or event.get('part',{}).get('type') != 'output_text': reject()
                 self.parts[key] = ''
             elif typ == 'response.output_text.delta':
@@ -68,14 +94,26 @@ class ResponseAssembler:
                 if key not in self.parts or event.get('part',{}).get('text') != self.parts[key]: reject()
         elif typ == 'response.output_item.done':
             index,item = event.get('output_index'),event.get('item')
-            if index not in self.items or index in self.finished or not isinstance(item,dict) or item.get('id') != self.items[index]['id'] or item.get('status') != 'completed': reject()
+            if type(index) is not int or index not in self.items or index in self.finished or not isinstance(item,dict) or item.get('id') != self.items[index]['id']: reject()
             if item.get('type') != self.items[index].get('type'): reject()
-            content=item.get('content',[])
-            if not isinstance(content,list): reject()
-            for part in content:
-                if not isinstance(part,dict) or part.get('type') not in ('output_text',): reject()
-            for (i,p),text in self.parts.items():
-                if i == index and (p >= len(content) or content[p].get('text') != text): reject()
+            if item['type'] == 'reasoning':
+                if item.get('status') not in (None,'completed'): reject()
+                content=item.get('content')
+                if content is None: content=[]
+                if not isinstance(content,list): reject()
+                states={p:state for (i,p),state in self.reasoning_parts.items() if i==index}
+                if len(content) != len(states): reject()
+                for p,value in enumerate(content):
+                    state=states.get(p)
+                    if state is None or not state['text_done'] or not state['part_done'] or not isinstance(value,dict) or value.get('type') != 'reasoning_text' or value.get('text') != state['text']: reject()
+            else:
+                if item.get('status') != 'completed': reject()
+                content=item.get('content',[])
+                if not isinstance(content,list): reject()
+                for part in content:
+                    if not isinstance(part,dict) or part.get('type') not in ('output_text',): reject()
+                for (i,p),text in self.parts.items():
+                    if i == index and (p >= len(content) or content[p].get('text') != text): reject()
             self.items[index] = item
             self.finished.add(index)
         elif typ == 'response.completed':

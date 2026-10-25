@@ -1,7 +1,9 @@
 # Responses reasoning compatibility reproduction
 
-Source research and original synthetic tests only. Production is unchanged.
-This does not establish the cause of the observed live Relay answer failure.
+The original source-research receipt below is frozen in commit `42fe61f`.
+Production was unchanged at that checkpoint; the separately approved correction
+and its verification are recorded at the end. Neither checkpoint establishes
+the cause of the observed live Relay answer failure.
 
 ## Primary references
 
@@ -70,3 +72,61 @@ changes; Root review is still required.
 No account, model inference, live provider stream, credential, UI, native build
 or permission action occurred. The live failure's actual event type, response
 shape and terminal reason remain unknown to this lane.
+
+## Approved narrow correction and verification
+
+Root independently replayed the original 12 cases on unchanged source and
+reviewed the complete fixtures before authorizing this correction. The original
+fixture remains byte-identical, SHA-256
+`a2b3d85a6cb8c9ff0963fbe52cef7c71b3a706840ea9e0c5326bf963fbe831da`.
+
+Only `response_assembly.py` changes in production. Reasoning-text parts have
+separate state bound to the original reasoning item ID, integer output/content
+indices and part type. Added text, deltas, text-done, part-done and item-done
+must agree in order and content. Late/duplicate deltas or completion, unfinished
+parts, extra unobserved final parts and final-response mismatch are rejected.
+Each reasoning part retains the existing 8,192-byte text bound, within the
+unchanged 524,288-byte global lifecycle budget and item/part count limits.
+Reasoning never enters the returned message text.
+
+Only reasoning items may omit or null their optional status. Explicit
+in-progress, incomplete and unknown statuses still reject. Omitted/null
+reasoning content means an empty list only when no text part was observed;
+it cannot discard already observed reasoning. Message content/status rules,
+explicit item completion, final response completion, refusal/unknown rejection,
+identity/replay checks and exact final output remain intact. No transport,
+SessionHost, credential, provider or diagnostic file is changed.
+
+New `tests/test_response_reasoning_lifecycle.py` contains 24 cases, including
+subcase partitions for wrong item kind/ID/index, part kind/nonobject data,
+nontext deltas, out-of-order/missing/duplicate completion, post-done deltas,
+mismatched final text, UTF-8 byte bounds, refusal, optional-null positives and
+the actual HTTPX answer adapter with MockTransport. Every malformed-lifecycle
+test requires its valid prefix to succeed before the targeted bad event, so
+the original unsupported-part rejection cannot masquerade as a negative pass.
+The initial 22-case pre-implementation run had one wrong-part-kind assertion
+failure and 36 subcase errors while valid reasoning prefixes were unsupported.
+
+The first added adapter fixture incorrectly used an already consumed HTTPX
+response. A separate synthetic check reproduced `StreamConsumed` with eager
+content and success with a ByteStream; the fixture was corrected to stream
+bytes without changing runtime behavior. The final focused run passes:
+
+```text
+python -m unittest tests.test_response_reasoning_compatibility \
+  tests.test_response_reasoning_lifecycle tests.test_contextual_answers \
+  tests.test_oauth_answer_stream tests.test_answer_transport_lifetime \
+  tests.test_streaming_qa tests.test_response_latency
+92 cases passed, zero skips/failures, 0.386s; exit 0
+```
+
+One asyncio slow-task notice comes from the existing local-loopback completion
+test setup; no test failed. Transports are mocked or owned local fixture
+sockets, with synthetic tokens and no external account/provider request.
+
+Corrected production SHA-256:
+`733330bc3bc3b410f50d80d6583c27e89c5fbee18ff9e72aef0850d17d66449a`.
+New lifecycle fixture SHA-256:
+`9810f2a42f791d8ad02118fc21854b5d04014b2ffd4a498546e175a40bf2641d`.
+Diff validation passes. No native compilation, account/model call, UI,
+deployment, new dependency/environment/cache or live failure attribution.

@@ -90,7 +90,9 @@ private final class NotesProductExport:HistoryExportDestination,@unchecked Senda
         let ports=AccountApplicationPorts(storage:AccountStorage(sharedDirectory:directory.appendingPathComponent("Relay"),keys:NotesProductKey()),preferences:FixtureChatGPTPlanPreferences(),
             control:{_,_ in XCTFail("AI-off local edits cannot open account control");throw AccountError.unavailable},
             openBrowser:{_ in XCTFail("No browser in AI-off bundled control");return false},sessionArguments:{runtime,_ in runtime.arguments})
-        let model=SessionApplicationModel(arguments:["Relay","--role","analytics"],historyPreferences:NotesProductPreferences(),historyStorageFactory:{storage},accountPorts:ports,bundleURL:app,workingDirectory:URL(fileURLWithPath:"/"))
+        let model=SessionApplicationModel(arguments:["Relay","--role","analytics"],contextPreferences:BundledLocalOnlyPreferences(),historyPreferences:NotesProductPreferences(),historyStorageFactory:{storage},
+            learningPreferences:BundledLocalOnlyLearningControls(),responsePreferencesStorage:ApplicationPreferenceStorage(),responsePreferencesReceipts:ApplicationPreferenceReceipts(),
+            accountPorts:ports,bundleURL:app,workingDirectory:URL(fileURLWithPath:"/"))
         addTeardownBlock{await model.shutdown()}
         XCTAssertFalse(model.oauth);try await model.history.openExisting();try await model.openHistoryRecord(document.recordID)
         let notes=model.generatedMeetingNotes;XCTAssertNotNil(notes.snapshot.document);XCTAssertFalse(notes.snapshot.canGenerate)

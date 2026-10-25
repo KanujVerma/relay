@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 import time
+import weakref
 from .generated_answer import strict_json, CardError
 from .response_assembly import ResponseAssembler, ResponseProtocolError
 from .answer_timing import AnswerTimingAttempt
@@ -90,7 +91,7 @@ class SSEDecoder:
 class OAuthAnswerStream:
     def __init__(self, *, model='gpt-6-luna', effort=None, deadline=15.0,
                  token_provider=None, endpoint=RESPONSES, client_factory=None, models_endpoint=MODELS,
-                 clock=time.monotonic):
+                 clock=time.monotonic, attempt_diagnostic_sink=None):
         if not 0 < deadline <= 30: raise ValueError('Invalid deadline.')
         self.model,self.effort,self.deadline=model,effort,deadline
         self._token_provider,self._endpoint,self._client_factory=token_provider,endpoint,client_factory
@@ -104,11 +105,18 @@ class OAuthAnswerStream:
         self._closed=False
         self._close_task=None
         self._last_timing=None
+        self._last_timing_owner=None
+        self.attempt_diagnostic_sink=attempt_diagnostic_sink
 
     @property
     def last_timing(self):
         """The latest admitted complete() attempt only; one immutable snapshot."""
         return self._last_timing
+
+    def _owned_diagnostic_timing(self,previous):
+        current=self._last_timing
+        return current if (current is not None and current is not previous and self._last_timing_owner is not None
+            and self._last_timing_owner() is asyncio.current_task()) else None
 
     def _enter(self):
         if self._closed: raise AnswerTransportError('request_closed')
@@ -189,17 +197,20 @@ class OAuthAnswerStream:
             'Authorization': 'Bearer ' + token, 'Accept': 'text/event-stream', 'Accept-Encoding': 'identity',
         }) as response:
             if timing is not None: timing.mark('response_headers_ms')
+            if timing is not None: timing.diagnostic.response(response.status_code,response.headers.get('content-type'))
             if response.status_code != 200:
                 raise _response_error(await self._small_body(response), status=response.status_code)
             if not response.headers.get('content-type', '').lower().startswith('text/event-stream'):
                 raise AnswerTransportError('stream_invalid')
             decoder, assembler = SSEDecoder(), ResponseAssembler()
             async for chunk in response.aiter_raw():
+                if timing is not None: timing.diagnostic.chunk(len(chunk))
                 if guard is not None:
                     guard()
                 if len(chunk) > 65536:
                     raise AnswerTransportError('stream_budget')
                 for event in decoder.feed(chunk):
+                    if timing is not None: timing.diagnostic.event(event)
                     if timing is not None:
                         terminal={'response.failed':'failed','response.incomplete':'incomplete',
                             'response.refusal.delta':'refused','response.refusal.done':'refused'}.get(event.get('type'))
@@ -272,19 +283,38 @@ class OAuthAnswerStream:
             outcome='cancelled'
             raise
         except AnswerTransportError as error:
+            timing.diagnostic.failure('provider' if error.args and error.args[0]=='request_rejected' else 'sse',
+                code=error.args[0] if error.args else None,status=error.status,provider=error.provider_code,param=error.param_category)
             if (visual_attachment is not None
                     and error.provider_code == 'subscription_sharing_unsupported_capability'
                     and error.param_category in ('input', 'model')):
                 visual_attachment._controller._revoke_capability()
             raise
-        except VisualInputError: raise
-        except (TimeoutError,StreamError,ResponseProtocolError,ImportError):
+        except VisualInputError:
+            timing.diagnostic.failure('guard');raise
+        except TimeoutError:
+            timing.diagnostic.failure('deadline');raise AnswerTransportError('request_unavailable') from None
+        except (StreamError,ResponseProtocolError,ImportError) as error:
+            timing.diagnostic.failure('payload' if isinstance(error,StreamError) else 'response_protocol' if isinstance(error,ResponseProtocolError) else 'dependency',
+                code=error.args[0] if isinstance(error,ResponseProtocolError) and error.args else None)
             raise AnswerTransportError('request_unavailable') from None
-        except Exception:
+        except Exception as error:
+            kind='other';code=None
+            try:
+                import httpx
+                from .account_store import AccountStoreError
+                for typ,label in ((httpx.ConnectTimeout,'http_connect_timeout'),(httpx.ReadTimeout,'http_read_timeout'),
+                                  (httpx.WriteTimeout,'http_write_timeout'),(httpx.PoolTimeout,'http_pool_timeout'),
+                                  (httpx.TimeoutException,'http_timeout'),(httpx.HTTPError,'http_transport')):
+                    if isinstance(error,typ):kind=label;break
+                if isinstance(error,AccountStoreError):kind='credential';code=error.code
+            except Exception:pass
+            timing.diagnostic.failure(kind,code=code)
             # Provider/HTTP exceptions can contain credentials or private content.
             raise AnswerTransportError('request_unavailable') from None
         finally:
             self._last_timing=timing.finish(outcome)
+            self._last_timing_owner=weakref.ref(asyncio.current_task())
             self._leave()
             if visual_attachment is not None and not success:
                 visual_attachment.retire()

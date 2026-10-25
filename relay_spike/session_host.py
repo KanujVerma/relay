@@ -491,6 +491,7 @@ class SessionHost:
         timing=req.timing
         stream=getattr(self.complete,'__self__',None)
         previous_transport=getattr(stream,'last_timing',None)
+        host_outcome='retired';validation_code='not_run'
         try:
             if timing is not None:timing.mark('generationStartedUptimeNanoseconds',time.monotonic_ns())
             self.model_requests+=1
@@ -511,10 +512,12 @@ class SessionHost:
                 finally:
                     if timing is not None:timing.note_transport(previous_transport,getattr(stream,'last_timing',None))
                 if not await self.visual.validate_publication(req,permit=permit):
+                    host_outcome='publication_denied'
                     self.visual.failed_request(req);self._result(req,'abstain','answer_unavailable');return
             if not self._current(req): return
             code_required=bool(re.search(r'\b(?:write|show|provide)\b.{0,30}\b(?:code|function|query|sql)\b',req.display_question,re.I))
             card=parse_generated_card(candidate,code_required=code_required)
+            validation_code='passed'
             if timing is not None:timing.mark('validationFinishedUptimeNanoseconds',time.monotonic_ns())
             provenance={'model':getattr(getattr(self.complete,'__self__',None),'model','injected_fixture_transport'),'checks':list(card.checks),'independentlyReviewed':False}
             preference_revision=self.response_preferences.used_revision(req)
@@ -525,13 +528,28 @@ class SessionHost:
                 provenance['taskContext']={'provenance':supplemental.provenance,'source':supplemental.source,'capturedUptimeNanoseconds':supplemental.captured_uptime_ns}
                 digest=self.visual.used_image_digest(req)
                 if digest is not None:provenance['taskContext']['imageDigest']=digest
-            self._result(req,'answer','format_checked',card.as_dict(),kind='generated_suggestion',provenance=provenance)
+            emitted=self._result(req,'answer','format_checked',card.as_dict(),kind='generated_suggestion',provenance=provenance)
+            host_outcome='answer_emitted' if emitted else 'retired'
         except asyncio.CancelledError:
+            host_outcome='cancelled'
             self.visual.failed_request(req);return
         except TimeoutError:
+            host_outcome='host_timeout'
             self.visual.failed_request(req);self._result(req,'error','answer_timeout')
+        except CardError as error:
+            from .answer_diagnostics import card_code
+            validation_code=card_code(error)
+            self.visual.failed_request(req);emitted=self._result(req,'abstain','answer_unavailable')
+            host_outcome='abstain_emitted' if emitted else 'retired'
         except Exception:
-            self.visual.failed_request(req);self._result(req,'abstain','answer_unavailable')
+            self.visual.failed_request(req);emitted=self._result(req,'abstain','answer_unavailable')
+            host_outcome='abstain_emitted' if emitted else 'retired'
+        finally:
+            observe=getattr(stream,'_owned_diagnostic_timing',None);sink=getattr(stream,'attempt_diagnostic_sink',None)
+            current=observe(previous_transport) if callable(observe) else None
+            if sink is not None and current is not None:
+                try:await sink(current,host_outcome=host_outcome,validation_code=validation_code)
+                except (Exception,asyncio.CancelledError):pass
 
 
 async def run_stdio(args,*,oauth_stream=None):

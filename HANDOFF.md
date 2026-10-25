@@ -1,6 +1,12 @@
 # Relay continuation handoff
 
-## Owner stop checkpoint, 2026-10-24
+## Resumed active goal: proper signing and authorized live validation
+
+The goal control is active again. Root revalidated clean publishedf618525/runtimeD40 and no live build/model job before resuming. Existing feature/artifact checks remain valid; no settled source tests were restarted. A small local Xcode signing probe is prepared and its target/shared scheme parse successfully. It uses the existing Apple Development team context and the same non-secret Keychain query. No signing, profile issuance, device registration, developer-portal write or real model call has occurred. Proper matching macOS signing and an authorized main test host remain the next live prerequisites.
+
+Before additional large outputs, Root inventoried four superseded generated app copies: b270original/relocated and fd7original/relocated,0.673GiB reported allocation. Expected clean provenance, strict signatures, complete content digests and no consumers are recorded in the [sanitized inventory](docs/evidence/2026-10-24-superseded-app-inventory.json). The exact private paths are in the local signing/cleanup review plan. CurrentD40app/source/models/personal data are excluded. Deletion and external Apple-team/profile operations require their separate owner decisions; neither has executed. Parallel workers are researching the standard app-hosted test route and refining the uncompiled gated acceptance tests, with no credential bridge or weaker key storage.
+
+## Prior owner stop checkpoint, 2026-10-24
 
 The owner requested a feature-progress/ETA report and work end. All workers are stopped; the objective is unfinished. Current clean runtime source is d40f7ba101c00c38d45e21c8240f5abc5536d8d3, published in draftPR71. The newer stock app contains the identical-draft guard:89.135s build,182,730,688bytes,100native audits, strict signatures, one full relocation, six stock plus three relocated helper checks and11actual packaged-feature cases all pass without skips/failures. Actual Home/General/AI Settings were inspected. [Exact current artifact and setup evidence](docs/evidence/2026-10-24-current-app-and-signing.md).
 

@@ -2,7 +2,7 @@
 
 User-approved objective, 2026-10-24: dedicate parallel GPT-6.1 Sol extra-high workers to reducing response time, finishing Learning Memory and finishing AI meeting notes. Continue through end-to-end verification and keep verified progress/handoff on GitHub. Main merge remains separate. A component, validator, plan or synthetic timing is not the complete product.
 
-Current work state: owner requested work end after a progress/ETA update. All workers are stopped; the goal is unfinished. New d40f7ba stock build/signatures/relocation/bundled-feature checks pass. Actual UI setup exposed the Data Protection Keychain signing/profile precondition before ChatGPT connection. No real-account model/speed or device-capture gate is complete. Resume from the [current signing/setup evidence](../../evidence/2026-10-24-current-app-and-signing.md), preserving protected storage and explicit owner authority for developer-team/profile operations.
+Current work state: the goal resumed after the owner stop checkpoint. New d40f7ba stock build/signatures/relocation/bundled-feature checks pass. Actual UI setup exposed the Data Protection Keychain signing/profile precondition before ChatGPT connection. A local Xcode signing probe now parses, without signing/provisioning. Four superseded generated app copies are inventoried for an exact owner cleanup decision. Parallel source work is preparing standard authorized app-hosted validation; no real-account model/speed or device-capture gate is complete. Continue from the [current signing/setup evidence](../../evidence/2026-10-24-current-app-and-signing.md), preserving protected storage and explicit owner authority for developer-team/profile operations.
 
 ## Owners and integration
 

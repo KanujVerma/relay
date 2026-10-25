@@ -26,6 +26,7 @@ RAW_SECRET = 'synthetic-raw-body-secret-sentinel'
 MODEL = dict(slug='synthetic-model-name-sentinel', display_name='Synthetic display sentinel', visibility='list')
 FIELDS = {'schemaVersion', 'outcome', 'httpStatus', 'bytesAtStop', 'declaredContentLength',
           'modelsPresent', 'rawModelCount', 'visibleModelCount', 'monotonicNanoseconds'}
+CATALOG_LIMIT = 1048576  # Models-success policy; parent6122 preserves the original64KiB controls.
 
 
 class CatalogDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
@@ -80,33 +81,33 @@ class CatalogDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_oversize_records_bytes_at_stop_and_original_error_without_parsing_or_leaking(self):
         prefix = b'{"models":[],"ignored":"'; suffix = b'"}'
-        body = prefix + b'x' * (65537 - len(prefix) - len(suffix)) + suffix
+        body = prefix + b'x' * (CATALOG_LIMIT + 1 - len(prefix) - len(suffix)) + suffix
         with self.assertRaises(AccountOAuthError) as error:
             await self.service(httpx.Response(200, content=body)).catalog(self.identity, GENERATION)
         self.assertEqual(error.exception.code, 'authorization_failed')
         value = self.latest()
         self.assertEqual(value['outcome'], 'body_limit'); self.assertEqual(value['httpStatus'], 200)
-        self.assertEqual(value['bytesAtStop'], 65537); self.assertEqual(value['declaredContentLength'], 65537)
+        self.assertEqual(value['bytesAtStop'], CATALOG_LIMIT + 1); self.assertEqual(value['declaredContentLength'], CATALOG_LIMIT + 1)
         self.assertIsNone(value['modelsPresent']); self.assertIsNone(value['rawModelCount'])
         self.assertIsNone(value['visibleModelCount'])
 
-    async def test_exact_existing_limit_and_partial_oversize_count_are_distinct(self):
+    async def test_exact_catalog_limit_and_partial_oversize_count_are_distinct(self):
         prefix = b'{"models":[],"ignored":"'; suffix = b'"}'
-        exact = prefix + b'x' * (65536 - len(prefix) - len(suffix)) + suffix
+        exact = prefix + b'x' * (CATALOG_LIMIT - len(prefix) - len(suffix)) + suffix
         self.assertEqual(await self.service(httpx.Response(200, content=exact)).catalog(self.identity, GENERATION), [])
-        self.assertEqual(self.latest()['bytesAtStop'], 65536)
+        self.assertEqual(self.latest()['bytesAtStop'], CATALOG_LIMIT)
         self.assertEqual(self.latest()['outcome'], 'empty_visible')
         closed = []
         class Partial(httpx.AsyncByteStream):
             async def __aiter__(self):
-                yield b'x' * 65537
+                yield b'x' * (CATALOG_LIMIT + 1)
                 raise AssertionError('The reader must stop before the rest of the declared body')
             async def aclose(self): closed.append(True)
         with self.assertRaises(AccountOAuthError):
-            await self.service(httpx.Response(200, stream=Partial(), headers={'content-length': '131074'})).catalog(self.identity, GENERATION)
+            await self.service(httpx.Response(200, stream=Partial(), headers={'content-length': str((CATALOG_LIMIT+1)*2)})).catalog(self.identity, GENERATION)
         value = self.latest()
-        self.assertEqual(value['outcome'], 'body_limit'); self.assertEqual(value['bytesAtStop'], 65537)
-        self.assertEqual(value['declaredContentLength'], 131074); self.assertTrue(closed)
+        self.assertEqual(value['outcome'], 'body_limit'); self.assertEqual(value['bytesAtStop'], CATALOG_LIMIT + 1)
+        self.assertEqual(value['declaredContentLength'], (CATALOG_LIMIT+1)*2); self.assertTrue(closed)
 
     async def test_http_json_shape_and_visible_bounds_keep_existing_outcomes(self):
         cases = [
@@ -162,13 +163,13 @@ class CatalogDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
     async def test_cancel_during_error_cleanup_remains_cancelled_not_a_stale_error_label(self):
         closing = asyncio.Event()
         class HeldClose(httpx.AsyncByteStream):
-            async def __aiter__(self): yield b'x' * 65537
+            async def __aiter__(self): yield b'x' * (CATALOG_LIMIT + 1)
             async def aclose(self): closing.set(); await asyncio.Event().wait()
         task = asyncio.create_task(self.service(httpx.Response(200, stream=HeldClose())).catalog(self.identity, GENERATION))
         await closing.wait(); task.cancel()
         with self.assertRaises(asyncio.CancelledError): await task
         value = self.latest()
-        self.assertEqual(value['outcome'], 'cancelled'); self.assertEqual(value['bytesAtStop'], 65537)
+        self.assertEqual(value['outcome'], 'cancelled'); self.assertEqual(value['bytesAtStop'], CATALOG_LIMIT + 1)
 
     async def test_writer_failure_cannot_change_success_error_or_cancel(self):
         failures = []

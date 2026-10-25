@@ -2,6 +2,8 @@
 
 Base: `7bd1eaa8a5e701bb2a9ac17e0c886dd67acb6f40`. This diagnostic-only component preserves the existing catalog parser, 64 KiB response/strict-JSON limit, 256 raw-row and 32 visible-row limits, server order, complete native frame bound, normal clients, provider selection and errors. It changes no model/account permission or retry behavior.
 
+This is the original diagnostic-policy receipt. After Root confirmed the actual body-limit failure, the separately tested [models-only successful-response correction](2026-10-25-model-catalog-budget.md) raises only that response budget. Historical bounds/tests below retain their original attribution; token/discovery/JWKS and error bodies still use64KiB.
+
 One explicit catalog attempt may atomically replace `catalog-diagnostic.json` inside its existing validated Accounts directory. The file is at most 1,024 bytes, mode0600, with no history. It reuses existing owner-only directory and atomic replacement checks; symlinks/hardlinks and unsafe existing files are not adopted. Neither module import nor service/collector construction performs storage IO. A failed diagnostic writer cannot replace the catalog's successful result, existing error or cancellation. The Accounts store has no child allowlist and its metadata remains unchanged by this separate file.
 
 The exact fixed schema contains only:

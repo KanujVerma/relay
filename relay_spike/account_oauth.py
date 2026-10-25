@@ -106,24 +106,25 @@ class AccountOAuthService:
         self._now=now
         self._catalog_diagnostic_writer=catalog_diagnostic_writer or write_catalog_diagnostic
 
-    async def _json(self,client,method,url,*,form=None,token=None,catalog_diagnostic=None):
+    async def _json(self,client,method,url,*,form=None,token=None,catalog_diagnostic=None,max_bytes=65536):
         client.cookies.clear()
         headers={'Accept':'application/json'}
         if token is not None:headers['Authorization']='Bearer '+token
         try:
             async with client.stream(method,url,data=form,headers=headers) as response:
                 if catalog_diagnostic is not None:catalog_diagnostic.response(response.status_code,response.headers.get('content-length'))
+                budget=max_bytes if response.status_code==200 else 65536
                 data=bytearray()
                 async for chunk in response.aiter_bytes():
                     data.extend(chunk)
                     if catalog_diagnostic is not None:catalog_diagnostic.bytes_at_stop=len(data)
-                    if len(data)>65536:
+                    if len(data)>budget:
                         if catalog_diagnostic is not None:catalog_diagnostic.fail('body_limit')
                         raise AccountOAuthError('authorization_failed')
                 if response.status_code!=200:
                     if catalog_diagnostic is not None:catalog_diagnostic.fail('http_error')
                     raise AccountOAuthError('authorization_failed',status=response.status_code)
-                value=strict_json(bytes(data),max_bytes=65536)
+                value=strict_json(bytes(data),max_bytes=budget)
                 if not isinstance(value,dict):
                     if catalog_diagnostic is not None:catalog_diagnostic.fail('object_shape')
                     raise CardError('object_required')
@@ -220,7 +221,7 @@ class AccountOAuthService:
             token=await owned_thread(self.store.active_access_token,registration_id,generation,refresh=self.refresh);token_ready=True
             try:
                 async with asyncio.timeout(15),self._client(**_options()) as client:
-                    value=await self._json(client,'GET',auth.RESOURCE+'/models',token=token,catalog_diagnostic=diagnostic)
+                    value=await self._json(client,'GET',auth.RESOURCE+'/models',token=token,catalog_diagnostic=diagnostic,max_bytes=1048576)
             except TimeoutError:
                 diagnostic.fail('timeout');raise AccountOAuthError('catalog_unavailable') from None
             diagnostic.models(value);models=value.get('models')

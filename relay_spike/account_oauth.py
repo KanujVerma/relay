@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 import httpx
 from . import auth
 from .generated_answer import strict_json,CardError
+from .catalog_diagnostics import CatalogDiagnostic,write_catalog_diagnostic
 
 class AccountOAuthError(auth.AuthError):
     def __init__(self,code,*,status=None):
@@ -99,26 +100,37 @@ class CallbackListener:
         self._server.server_close()
 
 class AccountOAuthService:
-    def __init__(self,store,*,client_factory=None,sync_client_factory=None,listener_factory=None,now=time.time):
+    def __init__(self,store,*,client_factory=None,sync_client_factory=None,listener_factory=None,now=time.time,catalog_diagnostic_writer=None):
         self.store=store;self._client=client_factory or httpx.AsyncClient
         self._sync_client=sync_client_factory or httpx.Client;self._listener=listener_factory or CallbackListener
         self._now=now
+        self._catalog_diagnostic_writer=catalog_diagnostic_writer or write_catalog_diagnostic
 
-    async def _json(self,client,method,url,*,form=None,token=None):
+    async def _json(self,client,method,url,*,form=None,token=None,catalog_diagnostic=None):
         client.cookies.clear()
         headers={'Accept':'application/json'}
         if token is not None:headers['Authorization']='Bearer '+token
         try:
             async with client.stream(method,url,data=form,headers=headers) as response:
+                if catalog_diagnostic is not None:catalog_diagnostic.response(response.status_code,response.headers.get('content-length'))
                 data=bytearray()
                 async for chunk in response.aiter_bytes():
                     data.extend(chunk)
-                    if len(data)>65536:raise AccountOAuthError('authorization_failed')
-                if response.status_code!=200:raise AccountOAuthError('authorization_failed',status=response.status_code)
+                    if catalog_diagnostic is not None:catalog_diagnostic.bytes_at_stop=len(data)
+                    if len(data)>65536:
+                        if catalog_diagnostic is not None:catalog_diagnostic.fail('body_limit')
+                        raise AccountOAuthError('authorization_failed')
+                if response.status_code!=200:
+                    if catalog_diagnostic is not None:catalog_diagnostic.fail('http_error')
+                    raise AccountOAuthError('authorization_failed',status=response.status_code)
                 value=strict_json(bytes(data),max_bytes=65536)
-                if not isinstance(value,dict):raise CardError('object_required')
+                if not isinstance(value,dict):
+                    if catalog_diagnostic is not None:catalog_diagnostic.fail('object_shape')
+                    raise CardError('object_required')
                 return value
-        except (httpx.HTTPError,CardError,UnicodeError):raise AccountOAuthError('authorization_failed') from None
+        except (httpx.HTTPError,CardError,UnicodeError) as error:
+            if catalog_diagnostic is not None:catalog_diagnostic.fail('transport_error' if isinstance(error,httpx.HTTPError) else 'invalid_json')
+            raise AccountOAuthError('authorization_failed') from None
         finally:client.cookies.clear()
 
     async def _discovery(self,client):
@@ -203,25 +215,40 @@ class AccountOAuthService:
         except httpx.HTTPError:raise auth.AuthError('credential_request_failed') from None
 
     async def catalog(self,registration_id,generation):
-        token=await owned_thread(self.store.active_access_token,registration_id,generation,refresh=self.refresh)
+        diagnostic=CatalogDiagnostic();token_ready=False
         try:
-            async with asyncio.timeout(15),self._client(**_options()) as client:
-                value=await self._json(client,'GET',auth.RESOURCE+'/models',token=token)
-        except TimeoutError:raise AccountOAuthError('catalog_unavailable') from None
-        models=value.get('models')
-        if not isinstance(models,list) or len(models)>256:raise AccountOAuthError('catalog_unavailable')
-        result=[]
-        for model in models:
-            if not isinstance(model,dict) or model.get('visibility')!='list':continue
-            slug,name=model.get('slug'),model.get('display_name')
-            if (not isinstance(slug,str) or not 0<len(slug.encode())<=128 or not slug.isascii()
-                or any(c.isspace() for c in slug) or not isinstance(name,str) or not name.strip()
-                or not 0<len(name.encode())<=160
-                or any(unicodedata.category(c) in ('Cc','Cf','Cs','Zl','Zp') for c in slug+name)):
-                raise AccountOAuthError('catalog_unavailable')
-            result.append(dict(slug=slug,displayName=name))
-            if len(result)>32:raise AccountOAuthError('catalog_unavailable')
-        return result
+            token=await owned_thread(self.store.active_access_token,registration_id,generation,refresh=self.refresh);token_ready=True
+            try:
+                async with asyncio.timeout(15),self._client(**_options()) as client:
+                    value=await self._json(client,'GET',auth.RESOURCE+'/models',token=token,catalog_diagnostic=diagnostic)
+            except TimeoutError:
+                diagnostic.fail('timeout');raise AccountOAuthError('catalog_unavailable') from None
+            diagnostic.models(value);models=value.get('models')
+            if not isinstance(models,list):
+                diagnostic.fail('models_missing' if 'models' not in value else 'models_shape');raise AccountOAuthError('catalog_unavailable')
+            if len(models)>256:
+                diagnostic.fail('raw_limit');raise AccountOAuthError('catalog_unavailable')
+            result=[]
+            for model in models:
+                if not isinstance(model,dict) or model.get('visibility')!='list':continue
+                slug,name=model.get('slug'),model.get('display_name')
+                if (not isinstance(slug,str) or not 0<len(slug.encode())<=128 or not slug.isascii()
+                    or any(c.isspace() for c in slug) or not isinstance(name,str) or not name.strip()
+                    or not 0<len(name.encode())<=160
+                    or any(unicodedata.category(c) in ('Cc','Cf','Cs','Zl','Zp') for c in slug+name)):
+                    diagnostic.fail('model_fields_invalid');raise AccountOAuthError('catalog_unavailable')
+                result.append(dict(slug=slug,displayName=name))
+                if len(result)>32:
+                    diagnostic.fail('visible_limit');raise AccountOAuthError('catalog_unavailable')
+            diagnostic.outcome='valid' if result else 'empty_visible'
+            return result
+        except asyncio.CancelledError:
+            diagnostic.outcome='cancelled';raise
+        except Exception:
+            diagnostic.fail('token_unavailable' if not token_ready else 'catalog_unavailable');raise
+        finally:
+            try:self._catalog_diagnostic_writer(self.store.path.parent,diagnostic.record())
+            except Exception:pass
 
     async def revoke(self,record):
         if not record.get('refresh_token'):return True

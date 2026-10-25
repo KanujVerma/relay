@@ -203,6 +203,8 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     func prepareAccountForExplicitAction(intentID:UUID,isCurrent:@escaping @MainActor ()->Bool)async throws {
         try Task.checkCancellation();guard isCurrent() else{throw CancellationError()}
+        if hasGeneratedMeetingNotes{await generatedMeetingNotes.retireHelperDependents(excludingPreparation:intentID)}
+        try Task.checkCancellation();guard isCurrent() else{throw CancellationError()}
         guard oauth else{return}
         try await accountPreparation.prepare(intentID:intentID,isCurrent:isCurrent)
         try Task.checkCancellation();guard isCurrent(),let selection=account.inferenceSelection,account.owns(selection) else{throw CancellationError()}
@@ -221,6 +223,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     func retireSessionHelperForAccountChange()async throws {
         guard !running,!stopping,!assistantClosing,teardown==nil,(fixture || capture.phase == .idle) else{throw PanelBridgeError.closed}
         accountHelperRetiring=true;defer{accountHelperRetiring=false}
+        if hasGeneratedMeetingNotes{await generatedMeetingNotes.retireHelperDependents(excludingPreparation:accountPreparationStorage?.intentID)}
         let oldOwner=currentOwner,old=helper,oldProfile=profileStorage,oldBinding=profileBinding
         // Original owner and writer deny admission BEFORE optional callbacks can
         // release an old typed frame/image. Never acquire authority under box lock.
@@ -264,6 +267,54 @@ private actor FixtureRecognizer: ActivityRecognizer {
         return value
     }()
     let historyNoteDraft=HistoryNoteDraft()
+    let generatedMeetingNotesDraft=GeneratedMeetingNotesDraft()
+    @Published private(set) var historyCitationRowID:String?
+    @Published private(set) var historyCitationRevision=UUID()
+    private var hasGeneratedMeetingNotes=false
+    private var generatedMeetingNotesObservation:AnyCancellable?
+    lazy var generatedMeetingNotes:GeneratedMeetingNotesController = {
+        hasGeneratedMeetingNotes=true
+        let controller=GeneratedMeetingNotesController(history:history,prepareHelper:{[weak self] intent,current in
+            guard let self else{throw PanelBridgeError.closed}
+            return try await self.prepareGeneratedNotesHelper(intentID:intent,isCurrent:current)
+        },mayOfferGeneration:{[weak self] in self?.canOfferGeneratedNotes == true})
+        generatedMeetingNotesObservation=controller.$snapshot.dropFirst().sink{[weak self] _ in self?.objectWillChange.send()}
+        return controller
+    }()
+    private var canOfferGeneratedNotes:Bool{
+        (fixture || oauth) && !running && !starting && !stopping && !assistantClosing && !assistant.snapshot.isPreparing
+            && !accountMutationOwned && teardown==nil && !speechSetup.snapshot.isBusy && !visual.isBusy
+            && profileStorage?.busy != true && !(hasContextUse && contextUse.isBusy)
+    }
+    private func prepareGeneratedNotesHelper(intentID:UUID,isCurrent:@escaping @MainActor ()->Bool)async throws->HelperTransport{
+        try Task.checkCancellation();guard canOfferGeneratedNotes,isCurrent() else{throw CancellationError()}
+        try await prepareAccountForExplicitAction(intentID:intentID,isCurrent:isCurrent)
+        try Task.checkCancellation();guard isCurrent() else{throw CancellationError()}
+        if let owner=currentOwner{
+            guard owner.kind == .assistant else{throw PanelBridgeError.closed}
+            await closeAssistantScope(owner)
+            try Task.checkCancellation();guard isCurrent(),currentOwner==nil else{throw CancellationError()}
+        }
+        return try ensureHelper()
+    }
+    func openHistoryRecord(_ id:UUID)async throws{
+        if hasGeneratedMeetingNotes{await generatedMeetingNotes.retireAndWait()}
+        try Task.checkCancellation();historyCitationRowID=nil;historyCitationRevision=UUID()
+        try await history.openRecord(id);_=stageHistoryNoteDraft()
+        try await generatedMeetingNotes.loadSelectedRecord()
+    }
+    func revealGeneratedMeetingNotesCitation(_ original:GeneratedMeetingNotesSnapshot,_ citation:HistoryNotesCitationData)async throws{
+        let row=try await generatedMeetingNotes.revealCitation(original,citation)
+        try Task.checkCancellation()
+        let current=generatedMeetingNotes.snapshot
+        guard current.workspaceEpoch==original.workspaceEpoch,current.recordID==original.recordID,
+              current.recordRevision==original.recordRevision,current.document?.noteID==original.document?.noteID,
+              current.document?.noteRevision==original.document?.noteRevision,
+              history.snapshot.selected?.record.id==original.recordID,
+              history.snapshot.selected?.rows.contains(where:{$0.id==row.id})==true else{throw HistoryError.stale}
+        historyCitationRowID=row.id;historyCitationRevision=UUID()
+    }
+
     private var historyObservation:AnyCancellable?
     private var hasHistory=false
     private var historyPermit:HistorySessionPermit?
@@ -449,6 +500,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
         if let old=binding.helper,old === helper {
             // Close all old admission before the first await. Queued frames and
             // source events cannot cross into a replacement helper lifecycle.
+            if hasGeneratedMeetingNotes{generatedMeetingNotes.retireForOwnerChange()}
             let oldOwner=currentOwner
             let oldHistory=hasHistory ? history:nil
             let oldHistoryPermit=oldHistory?.retireCurrentSession(gap:.captureFailure)
@@ -465,6 +517,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
             }
             await events.drain()
             if let oldHistory,let oldHistoryPermit{try? await oldHistory.finishSession(oldHistoryPermit,paused:false);if historyPermit === oldHistoryPermit{historyPermit=nil}}
+            if hasGeneratedMeetingNotes{await generatedMeetingNotes.waitForQuiescence()}
             if hasLearning{await learning.waitForQuiescence()}
             if let oldOwner{rememberLatency(oldOwner);owners.remove(oldOwner)}
         }
@@ -631,6 +684,8 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     private func prepareAssistantSession(intent:UUID,isCurrent:@escaping @MainActor ()->Bool)async throws->PresentationLease {
         guard canPrepareAssistant,isCurrent() else{throw CancellationError()}
+        if hasGeneratedMeetingNotes{await generatedMeetingNotes.retireAndWait()}
+        try Task.checkCancellation();guard canPrepareAssistant,isCurrent() else{throw CancellationError()}
         error=nil
         if let explicitAccountPreparation{try await explicitAccountPreparation(intent,isCurrent)}
         else{try await prepareAccountForExplicitAction(intentID:intent,isCurrent:isCurrent)}
@@ -996,8 +1051,8 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     private func handleHistorySourceDenial(_ notice:HistorySourceDenial){
         if hasLearning{learning.handleHistorySourceDenial(notice)}
-        // Notes adds its independent original-source retirement here; this
-        // remains one owned fanout, never a readiness or membership publisher.
+        generatedMeetingNotesDraft.invalidate(notice)
+        if hasGeneratedMeetingNotes{generatedMeetingNotes.handleSourceDenial(notice)}
     }
     private func learningAllow(_ decision:SessionAnswerDecision,for binding:PanelRequestBinding,owner:ConversationOwner)->Bool{
         guard let revision=decision.learningMemoryRevision else{return true}
@@ -1204,7 +1259,19 @@ private actor FixtureRecognizer: ActivityRecognizer {
         }
     }
     func start() async {
-        guard canStartSession else { return }
+        guard canStartSession,accountStartIntent==nil else { return }
+        if hasGeneratedMeetingNotes,generatedMeetingNotes.isBusy{
+            let intent=UUID(),microphone=microphoneEnabled,bundle=selectedBundleID,authorized=authorizedConversation
+            accountStartIntent=intent
+            generatedMeetingNotes.retireForOwnerChange()
+            await generatedMeetingNotes.waitForQuiescence()
+            guard !Task.isCancelled,accountStartIntent==intent,microphoneEnabled==microphone,
+                  selectedBundleID==bundle,authorizedConversation==authorized else{
+                if accountStartIntent==intent{accountStartIntent=nil};return
+            }
+            accountStartIntent=nil
+            guard canStartSession else{return}
+        }
         if oauth {
             if !fixture {
                 guard authorizedConversation else{error="Confirm this is a permitted conversation before starting.";return}
@@ -1380,6 +1447,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     var canEnableHistory:Bool{(!fixture || historyStorageFactory != nil) && !running && !starting && !stopping && !paused && !assistantActive && !assistantClosing && !assistant.snapshot.isPreparing && !accountMutationOwned && !speechSetup.snapshot.isBusy && !visual.isBusy && !(hasResponsePreferences && responsePreferences.isBusy)}
     var canEnableLearning:Bool{canEnableHistory && (!fixture || (historyStorageFactory != nil && learningPreferencesOverride != nil))}
     func beginRetirement(end:Bool,historyGap:HistoryGap?=nil) {
+        if hasGeneratedMeetingNotes{generatedMeetingNotes.retireForOwnerChange()}
         denyAccountStart()
         endRequested = endRequested || end
         if end{paused=false}
@@ -1414,6 +1482,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
         oldContextUse?.retireForHelperChange()
         teardown=Task{[weak self] in
             guard let self else{return}
+            if self.hasGeneratedMeetingNotes{await self.generatedMeetingNotes.waitForQuiescence()}
             await self.speechSetup.waitForQuiescence();await oldStart?.value
             await self.assistant.waitForPreparationQuiescence()
             await oldContextUse?.waitForQuiescence()

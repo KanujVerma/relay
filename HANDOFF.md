@@ -1,5 +1,15 @@
 # Relay continuation handoff
 
+## Latest live integration: signing fixed; model catalog remains unavailable
+
+The owner approved the existing Apple team/profile/Mac-registration step and exact four-app cleanup. All four approved b270/fd7generated copies were revalidated and removed; reported Relay temporary allocation fell24.816→24.143GiB and sampled free space34.120→34.631GiB. Both currentD40witnesses/source/models/personal data were preserved. The original inventory remains immutable; [completion evidence](docs/evidence/2026-10-24-signing-and-cleanup-result.json) is separate.
+
+Xcode obtained a matching Mac profile and signed the non-secret probe using the exact approved existing identity. Its device-only Add changes-34018→0 and own-test-item cleanup returns0. Root then signed the closed current relocatedD40app: all file-backed native sections/helper/provenance unchanged, only signature/Profile metadata changed,100native audits and strict signatures pass. [Repeatable signing procedure and test-host requirements](docs/MACOS_DEVELOPMENT_SIGNING.md). The unsigned/ad-hocD40build witness remains preserved; the original prototype is untouched.
+
+The owner completed normal ChatGPT sign-in in the signed app. Selected account/plan-AI-on were verified with identifiers redacted. ONE declared Release UI SQL submission failed preparation and kept its draft; no answer or answer-latency result was observed. Current Settings explicitly says model availability could not be verified; there is no Automatic Model label/native selection. One normal catalog Refresh did not recover it. Next: inspect bounded content-free catalog diagnostics before changing bounds, parser or model policy. Diagnosticsa784plus612now have both independent findings closed and join asd6681c9/47b05a7. Root complete Python858collected/826passed/32optional skips/zero failures in12.655seconds; docs/local links pass. Fresh frozen rebuild/readiness action still follows. No live question retry occurred. The owner later opened My Context; preserve those choices/private facts and use inert test-owned source controls for benchmarks.
+
+The new [Cluely ordinary-UI audit](docs/research/2026-10-24-cluely-runtime-observations.md) is read-only: compact Ask/Listen layout and source/shortcut clarity are useful P1directions. No competitor capture/private-history/model call occurred, and no memory/backend framework rewrite is justified. Finish actual useful-answer readiness first.
+
 ## Resumed active goal: proper signing and authorized live validation
 
 The goal control is active again. Root revalidated clean publishedf618525/runtimeD40 and no live build/model job before resuming. Existing feature/artifact checks remain valid; no settled source tests were restarted. A small local Xcode signing probe is prepared and its target/shared scheme parse successfully. It uses the existing Apple Development team context and the same non-secret Keychain query. No signing, profile issuance, device registration, developer-portal write or real model call has occurred. Proper matching macOS signing and an authorized main test host remain the next live prerequisites.

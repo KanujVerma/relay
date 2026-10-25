@@ -1,6 +1,18 @@
 # Relay continuation handoff
 
-Documentation mirror source: [published root `36cfbc55238d218509960b348a897365e6144161`](https://github.com/KanujVerma/relay/tree/36cfbc55238d218509960b348a897365e6144161). This branch contains the documentation and tracked public evidence snapshot only. Local runtime files are inherited from the mirror base and are not the current implementation. Use the [complete pinned runtime tree](https://github.com/KanujVerma/relay/tree/36cfbc55238d218509960b348a897365e6144161) for source, tests and packaging. Relative links to omitted runtime files/directories are pinned to that exact commit.
+Documentation mirror source: [published root `75f5df1807f181de4fa86e64ab8e14dc387935ed`](https://github.com/KanujVerma/relay/tree/75f5df1807f181de4fa86e64ab8e14dc387935ed). This branch contains the documentation and tracked public evidence snapshot only. Local runtime files are inherited from the mirror base and are not the current implementation. Use the [complete pinned runtime tree](https://github.com/KanujVerma/relay/tree/75f5df1807f181de4fa86e64ab8e14dc387935ed) for source, tests and packaging. Relative links to omitted runtime files/directories are pinned to that exact commit.
+
+## Latest: live catalog succeeds; first generated answer still fails
+
+The corrected signed Release app from `04fdee0` now restores the normal account and selects Automatic GPT-6.1-Sol. The actual safe catalog record is HTTP200/653,033 decoded bytes/raw11/visible8/valid. One new synthetic SQL question reached Thinking, then Answer unavailable without a card. Exact provider latency, POST count and failure stage are unknown; there was no automatic retry. Root ended that test session and restored the prior My Context setting without reading or publishing private facts. [Exact runtime evidence and remaining gates](docs/evidence/2026-10-25-live-answer-readiness.md).
+
+All three GPT-6.1 Sol xhigh workers are active again: native helper/bootstrap investigation, Python transport diagnostics, and bounded app-hosted speed/Notes compile preparation. Root owns SessionHost integration and the UI. No heavy job or additional real request is authorized merely by a worker restart. Next: identify the failed stage before another controlled live request. The source correction and earlier checkpoints below retain their own attribution.
+
+## Confirmed current catalog cause and scoped correction
+
+The signed36cfapp's one normal saved-connection Restore produced a fresh owner-only diagnostic:HTTP200,65,738decoded bytes at stop,body_limit; model fields were not parsed and total response size is unknown. This confirms the64KiB reader rejection without exposing provider body/identity or submitting a question. [Exact safe observation](docs/evidence/2026-10-25-live-catalog-bound-observation.json).
+
+The reviewed correction2926joins as1f6a33b: only successful model-catalog GET opts into1MiB, matching existing stream catalog policy; auth/discovery/JWKS defaults and all non200bodies stay64KiB. Strict JSON/raw256/visible32/field/order/native-frame/currentness/default-provider checks remain. Root complete Python863collected/831passed/32optional skips/zero failures16.923seconds; docs/local links pass. Next build/sign the fresh helper and inspect one actual catalog action before any declared answer QA. The complete catalog and usable native model selection are not yet proven. No automatic question retry or model-policy change occurred.
 
 ## Latest live integration: signing fixed; model catalog remains unavailable
 

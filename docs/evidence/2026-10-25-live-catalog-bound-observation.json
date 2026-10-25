@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "observedRuntimeSource": "36cfbc55238d218509960b348a897365e6144161",
+  "normalAction": "restore_saved_connection",
+  "questionSubmitted": false,
+  "diagnostic": {
+    "bytesAtStop": 65738,
+    "declaredContentLength": null,
+    "httpStatus": 200,
+    "modelsPresent": null,
+    "monotonicNanoseconds": 232469991366125,
+    "outcome": "body_limit",
+    "rawModelCount": null,
+    "schemaVersion": 1,
+    "visibleModelCount": null
+  },
+  "recordFreshAndOwnerOnlyValidated": true,
+  "rawBodyHeadersTokenIdentityIncluded": false,
+  "fullResponseSizeKnown": false,
+  "completeCatalogValidOrModelAvailableProven": false
+}

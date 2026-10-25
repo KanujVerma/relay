@@ -1,5 +1,11 @@
 # Relay continuation handoff
 
+## Confirmed current catalog cause and scoped correction
+
+The signed36cfapp's one normal saved-connection Restore produced a fresh owner-only diagnostic:HTTP200,65,738decoded bytes at stop,body_limit; model fields were not parsed and total response size is unknown. This confirms the64KiB reader rejection without exposing provider body/identity or submitting a question. [Exact safe observation](docs/evidence/2026-10-25-live-catalog-bound-observation.json).
+
+The reviewed correction2926joins as1f6a33b: only successful model-catalog GET opts into1MiB, matching existing stream catalog policy; auth/discovery/JWKS defaults and all non200bodies stay64KiB. Strict JSON/raw256/visible32/field/order/native-frame/currentness/default-provider checks remain. Root complete Python863collected/831passed/32optional skips/zero failures16.923seconds; docs/local links pass. Next build/sign the fresh helper and inspect one actual catalog action before any declared answer QA. The complete catalog and usable native model selection are not yet proven. No automatic question retry or model-policy change occurred.
+
 ## Latest live integration: signing fixed; model catalog remains unavailable
 
 The owner approved the existing Apple team/profile/Mac-registration step and exact four-app cleanup. All four approved b270/fd7generated copies were revalidated and removed; reported Relay temporary allocation fell24.816→24.143GiB and sampled free space34.120→34.631GiB. Both currentD40witnesses/source/models/personal data were preserved. The original inventory remains immutable; [completion evidence](docs/evidence/2026-10-24-signing-and-cleanup-result.json) is separate.

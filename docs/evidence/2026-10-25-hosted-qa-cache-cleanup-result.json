@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "status": "complete",
+  "ownerApprovedOnlyThree": true,
+  "inventorySHA256": "7fa111dfe2a38db116d39d98d898032e65aa9efce9247f7eb3f6a94819f4b6bd",
+  "publicProposalSHA256": "7047b11b7bee405594e2aa7690667a8f40fe78cdf7969e2cc01f30a0f186c7dc",
+  "removedCount": 3,
+  "removed": [
+    {
+      "candidate": "retained account compile intermediates",
+      "treeSHA256": "1f8608c0c78a2e91bd0f5552605077cd22b9df6999df9ca72e9fd45387ead1aa"
+    },
+    {
+      "candidate": "retained History compile intermediates",
+      "treeSHA256": "0659f68b4c341384df4e951babeaf6ae8a8e41faeb2fc508d2317a319e96f58d"
+    },
+    {
+      "candidate": "retained History compiled test products",
+      "treeSHA256": "f9720a6980bbfed18fe4412beb8bf83d317cbaa153a1ae55d674f8a9c139e98f"
+    }
+  ],
+  "before": {
+    "tempGiB": 24.539047241210938,
+    "freeGiB": 31.087196350097656
+  },
+  "after": {
+    "tempGiB": 23.247047424316406,
+    "freeGiB": 32.32680892944336
+  },
+  "currentAppPreserved": true,
+  "seconds": 26.407,
+  "limits": "Only three approved generated directories removed. Current app, source, models, personal data, environments, module caches and logs preserved. Fresh resource measurement required before later builds.",
+  "sampledFreeSpaceIncreaseGiB": 1.2396125793457031,
+  "measurementLimit": "Concurrent system activity and shared blocks can change free space; the sampled increase is not an exclusive physical-reclamation measurement."
+}

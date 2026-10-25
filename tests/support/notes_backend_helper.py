@@ -17,6 +17,7 @@ def _arguments(argv):
     parser=_Parser(add_help=False,allow_abbrev=False)
     parser.add_argument('--synthetic-notes-test',action='store_true',required=True)
     parser.add_argument('--log',required=True);parser.add_argument('--release',required=True)
+    parser.add_argument('--hold-response',action='store_true')
     args=parser.parse_args(head)
     role='developer'
     if tail:
@@ -31,11 +32,11 @@ def _arguments(argv):
     roots={Path(tempfile.gettempdir()).resolve(),Path('/private/tmp').resolve(),Path('/tmp').resolve()}
     if (not any(parent.is_relative_to(root) for root in roots) or metadata.st_uid!=os.geteuid()
         or stat.S_IMODE(metadata.st_mode)!=0o700):raise ValueError('synthetic_test_owned_temporary_paths_required')
-    return log,release,role
+    return log,release,role,args.hold_response
 
 
 def main(argv=None):
-    try:log,release,role=_arguments(sys.argv[1:] if argv is None else argv)
+    try:log,release,role,hold_response=_arguments(sys.argv[1:] if argv is None else argv)
     except (ValueError,OSError,SystemExit):return 2
     # Test-only source import, after explicit synthetic argument validation.
     # This path is never used by the product resolver or bundled acceptance.
@@ -79,7 +80,7 @@ def main(argv=None):
                     nonlocal poll
                     accepted=super().handle_notes(value)
                     kind=value['kind'];event('command',kind)
-                    if accepted and kind=='notes_source_begin':
+                    if accepted and kind=='notes_source_begin' and not hold_response:
                         reader_transport.pause_reading();event('staging_held')
                         poll=loop.call_later(.002,resume,time.monotonic()+10)
                     return accepted
@@ -90,8 +91,18 @@ def main(argv=None):
                 quote=row['text'].encode()[:240].decode('utf-8',errors='ignore')
                 output={'schemaVersion':1,'summary':[{'text':'Injected synthetic saved-text summary.',
                     'citations':[{'rowID':row['id'],'quote':quote}]}],'decisions':[],'nextSteps':[]}
+                wire=completed_wire(json.dumps(output,separators=(',',':')))
+                class HeldResponse(httpx.AsyncByteStream):
+                    async def __aiter__(self):
+                        event('model_held');deadline=time.monotonic()+10
+                        try:
+                            while not release.exists() and time.monotonic()<deadline:await asyncio.sleep(.002)
+                        except asyncio.CancelledError:
+                            while not release.exists() and time.monotonic()<deadline:await asyncio.sleep(.002)
+                        yield wire
+                    async def aclose(self):event('model_closed')
                 return httpx.Response(200,headers={'content-type':'text/event-stream'},
-                    stream=httpx.ByteStream(completed_wire(json.dumps(output,separators=(',',':')))))
+                    stream=HeldResponse() if hold_response else httpx.ByteStream(wire))
             stream=OAuthAnswerStream(model='relay-synthetic-fixture',token_provider=lambda:'synthetic-notes-only',
                 client_factory=lambda **kw:httpx.AsyncClient(transport=httpx.MockTransport(response),**kw))
             args=SimpleNamespace(oauth=True,protected_account=False,fixture_model=False,model=stream.model,role=role)

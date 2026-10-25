@@ -1,9 +1,11 @@
 # Response speed continuation
 
-2026-10-24, Relay, branch `feature/response-latency-2026-10-24`.
+2026-10-24, Relay, branch `feature/response-latency-model-gate-2026-10-24`.
 Verified published implementation: `bfc077a3830923fcd2144ffc345054040e7652a9`;
 measured source is exact `6672985`. The bounded effort harness is `b6f7b5a`.
-Verify live Git before continuing; the four actual Model fixtures remain pending.
+Dependency merge `9123c1a` imports exact tested shared Model
+`c5de3af0acbaf4ca1398d45a16d3152691614e84`; its product sources are byte-equal
+to that frontier. Tested evaluation work through `6302ddc` is preserved.
 
 ## GOAL
 
@@ -80,6 +82,16 @@ answer denial and actual cleanup. Product timing targets remain unachieved.
   escapes and effort restores. New three-case API-red and four-case additions
   have focused benchmark/socket/lifetime/effort green, 34 / zero skips / 0.278 s.
   No callbacks, hidden persistence, retry or runtime change.
+- The four original actual Model fixtures now pass unchanged, SHA-256
+  `8ae0893be81dcfff47202f7142f8818a3a1bdda7c1c689d26d206dd0c5479df0`.
+  The authorized combined gate passes 23 / zero skips / zero failures in
+  6.010 s; command 98.719 s, with all owned compiler/test/helper processes joined.
+  It includes original reentry, held-image, idle and lock-watchdog controls.
+  Local receipt: `response-latency-shared-model-23-green.log`. Fresh sampled
+  budget 23.588 GiB temporary / 34.636 GiB free / 0.75 GiB reserve; retained
+  caches, jobs 2 and 180 s deadline. No live model/download opt-ins. The shared
+  owner's separate 14-case gate and this 23-case gate verify components, not
+  whole-product, account, paint, speech-end or usefulness latency.
 
 ## IN PROGRESS
 
@@ -89,14 +101,15 @@ Tasks 1–4 are verified: the benchmark passed once on unchanged actual local
 public inputs, then the approved narrow normal assembly selected safePrefixes.
 Generic injected SourceComponents retains closedSpan. The composition behavior
 check passes without model load/download, and Root's broader actual speech
-regression passes with its original assertions. Task 5 remains active: actual
-Model observation, protected-account comparison and whole-app timing/usefulness.
+regression passes with its original assertions. Actual Model observation now
+passes its unchanged cases. Task 5 remains active for the protected-account
+comparison and whole-app timing/usefulness.
 
 ## AT RISK
 
-The actual Model four-case fixture remains uncommitted in
-`spikes/macos-panel/Tests/RelaySessionApplicationTests/ResponseLatencyApplicationTests.swift`
-and intentionally cannot compile until the shared observation seam joins.
+The actual Model four-case fixture is verified against the accepted shared
+frontier. It uses synthetic source/helper output and no displayed window;
+its test durations cannot establish production response speed.
 The actual ASR result is recorded in the sanitized evidence files; it is not
 cloud, full-app, visible-window or usefulness acceptance. The normal assembly
 selection and broader actual speech-to-reducer regression are now verified.
@@ -147,9 +160,8 @@ the single Model observation hook outside the native publication lock.
 
 ## NEXT STEP
 
-Obtain the accepted shared Model observation seam and run the unchanged four
-actual Model cases plus original publication/held-image/watchdog controls under
-root's lease. Retain Root's immutable broader speech acceptance above.
+Retain the accepted shared Model/23-case gate and Root's immutable broader
+speech acceptance above. Root coordinates the remaining protected-account gate.
 Keep generic injected fixtures on closedSpan. Run the protected account gate only
 after root coordinates current setup/authorization. The normal local factory
 selection has passed its approved activation check; full app acceptance has not.

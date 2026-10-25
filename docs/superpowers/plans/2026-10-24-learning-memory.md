@@ -57,7 +57,7 @@
 
 **Interfaces:** one app-only observation after outer `panel.accept` returns outside the authority lock and after its Model publication drain, with original owner/binding/card replacement/question/card/guide+learning revision/monotonic time/actual attached-window visibility. `LearningMemoryRequestBridge.freeze/sendOffer/permits/retire/close` retains exact native request identity. Final `learningMemoryRevision` is separately decoded and rechecked before publication.
 
-- [ ] Red actual Model reentrant retirement and hidden/attached surface fixtures before hook implementation.
+- [x] Red actual Model API/reentrant retirement and hidden/attached surface fixtures before hook implementation. The actual reentrant/hidden cases now pass individually; full-suite/viewport acceptance is separate.
 - [ ] Wire validated original observer fan-out; preserve same logical meeting quotes across Pause, clear on End/source retirement; no native authority revival.
 - [ ] Add explicit opt-in description including assistant suggestions/spoken examples, why/support/date, undo/reset/disable and current-answer adjustment explanation.
 - [ ] Verify later-session actual request/advice differs with held-out correctness/biography/currentness regressions and no extra request; record local overhead separately from account/model latency.

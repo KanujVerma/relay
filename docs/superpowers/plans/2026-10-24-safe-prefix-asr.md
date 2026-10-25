@@ -131,10 +131,12 @@ component factory only after the observed gate and root approval.
 owned by Memory/root, existing EVALS prompt comparison and own evidence report.
 
 - [x] Four actual Model cases observed missing-readonly-API red in 59.903 s.
-- [ ] Import only root-accepted shared Model hooks, keeping post-accept original
+- [x] Import only root-accepted shared Model hooks, keeping post-accept original
   owner/currentness checks outside the native publication lock.
-- [ ] Under lease run the unchanged four cases and original publication/held
+- [x] Under lease run the unchanged four cases and original publication/held
   image/watchdog controls; keep window state distinct from paint/usefulness.
+  Exact shared c5 frontier is byte-preserved; 23 pass / zero skips / zero
+  failures, 6.010 s cases and 98.719 s command. This is component acceptance.
 - [ ] Root coordinates current explicit protected account setup and bounded
   synthetic comparison; no credential fallback or live call before authorization.
 - [ ] Review matched actual results and preserve all failures. Current worker

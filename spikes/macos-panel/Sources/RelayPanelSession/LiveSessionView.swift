@@ -16,6 +16,10 @@ struct LiveSessionView:View {
     var assistant:TypedAssistantController?
     var guideLabel:String?
     var onResponsePreferences:(()->Void)?
+    var learningExplanation:String?
+    var onLearningSettings:(()->Void)?
+    var answerSurfaceIdentity:LearningAnswerSurfaceIdentity?
+    var attachAnswerSurface:(@MainActor (LearningAnswerSurfaceView)->Void)?
     var attachScroll:(@MainActor (NSWindow,NSScrollView?)->Void)?
     @Binding var expanded:Bool
     @Binding var detailExpanded:Bool
@@ -33,7 +37,12 @@ struct LiveSessionView:View {
                             if let question,state.running || state.assistantActive {
                                 HStack{Spacer(minLength:60);VStack(alignment:.leading,spacing:6){Text("CURRENT QUESTION").font(.system(size:10,weight:.semibold)).tracking(1).foregroundStyle(RelayTheme.muted);Text(question).font(.system(size:13,weight:.medium)).lineSpacing(5).textSelection(.enabled)}.padding(.horizontal,14).padding(.vertical,10).frame(maxWidth:530,alignment:.leading).background(.white.opacity(0.065),in:UnevenRoundedRectangle(topLeadingRadius:17,bottomLeadingRadius:17,bottomTrailingRadius:6,topTrailingRadius:17))}
                             }
-                            if let answer,state.running || state.assistantActive{AnswerCardView(answer:answer,expanded:$detailExpanded)}
+                            if let answer,state.running || state.assistantActive{
+                                AnswerCardView(answer:answer,expanded:$detailExpanded,surfaceIdentity:answerSurfaceIdentity,attachSurface:attachAnswerSurface)
+                                if let learningExplanation,let onLearningSettings{
+                                    HStack(alignment:.top){Text(learningExplanation).font(.system(size:11)).foregroundStyle(RelayTheme.muted);Spacer(minLength:10);Button("Why this response",action:onLearningSettings).buttonStyle(.plain).font(.system(size:11)).foregroundStyle(RelayTheme.secondary)}
+                                }
+                            }
                             else{emptyContent}
                             if let error{Label(error,systemImage:"exclamationmark.circle").font(.system(size:12)).foregroundStyle(.orange).fixedSize(horizontal:false,vertical:true)}
                         }.padding(.horizontal,18).padding(.top,12).padding(.bottom,18).frame(maxWidth:.infinity,alignment:.leading)

@@ -450,11 +450,11 @@ private actor FixtureRecognizer: ActivityRecognizer {
             // Close all old admission before the first await. Queued frames and
             // source events cannot cross into a replacement helper lifecycle.
             let oldOwner=currentOwner
-            if hasLearning{learning.endSession()}
             let oldHistory=hasHistory ? history:nil
             let oldHistoryPermit=oldHistory?.retireCurrentSession(gap:.captureFailure)
             oldOwner?.retireAdmission();assistant.cancelPreparation()
             if oldOwner?.kind == .capture{if fixture{native.beginStop()}else{capture.retireAdmission(reason:.transportClosed)}}
+            if hasLearning{learning.endSession()}
             retireOptionalWork();helperIdentity=UUID();owners.activateHelper(helperIdentity)
             visual.retireForHelperChange()
             forwardedSessionID=nil;helper=nil;running=false;assistantActive=false;paused=false

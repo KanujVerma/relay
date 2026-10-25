@@ -12,6 +12,7 @@ import weakref
 from .generated_answer import strict_json, CardError
 from .response_assembly import ResponseAssembler, ResponseProtocolError
 from .answer_timing import AnswerTimingAttempt
+from .answer_diagnostics import INSPECTION_DEADLINE, inspect_non_sse
 from .stream import MODELS, RESPONSES, response_payload, StreamError
 from .visual_input import (VisualInputController, VisualAttachmentPermit, VisualInputError,
                            PROBE_QUESTION, PROBE_INSTRUCTIONS)
@@ -187,7 +188,7 @@ class OAuthAnswerStream:
         except CardError:
             return None
 
-    async def _request(self, client, body, token, *, guard=None, timing=None):
+    async def _request(self, client, body, token, *, guard=None, timing=None, inspection_deadline=None):
         if guard is not None:
             guard()
         # A retained client must not add a provider cookie to a later bearer.
@@ -197,10 +198,15 @@ class OAuthAnswerStream:
             'Authorization': 'Bearer ' + token, 'Accept': 'text/event-stream', 'Accept-Encoding': 'identity',
         }) as response:
             if timing is not None: timing.mark('response_headers_ms')
-            if timing is not None: timing.diagnostic.response(response.status_code,response.headers.get('content-type'))
+            if timing is not None: timing.diagnostic.response(response.status_code,response.headers.get('content-type'),response.headers.get('content-encoding'))
             if response.status_code != 200:
                 raise _response_error(await self._small_body(response), status=response.status_code)
             if not response.headers.get('content-type', '').lower().startswith('text/event-stream'):
+                host_deadline=INSPECTION_DEADLINE.get()
+                if timing is not None and self.attempt_diagnostic_sink is not None and host_deadline is not None and inspection_deadline is not None:
+                    try:await inspect_non_sse(response,timing.diagnostic,min(host_deadline,inspection_deadline))
+                    except asyncio.CancelledError:raise
+                    except Exception:timing.diagnostic.fields['nonSse']['inspectionOutcome']='read_error'
                 raise AnswerTransportError('stream_invalid')
             decoder, assembler = SSEDecoder(), ResponseAssembler()
             async for chunk in response.aiter_raw():
@@ -254,7 +260,7 @@ class OAuthAnswerStream:
         timing=AnswerTimingAttempt(self._spent,self._clock)
         outcome='failed'
         try:
-            async with asyncio.timeout(self.deadline):
+            async with asyncio.timeout(self.deadline) as request_timeout:
                 token = await self._token(notes_owned=notes_text_permit is not None)
                 timing.mark('token_ready_ms')
                 part, guard = None, None
@@ -269,7 +275,7 @@ class OAuthAnswerStream:
                 body = response_payload(self.model, question, instructions=instructions, effort=self.effort, image_input=part)
                 client=self._client()
                 timing.mark('client_ready_ms')
-                answer = await self._request(client, body, token, guard=guard, timing=timing)
+                answer = await self._request(client, body, token, guard=guard, timing=timing,inspection_deadline=request_timeout.when())
                 if visual_attachment is not None:
                     current_token = await self._token()
                     visual_attachment._mark_completed(token=current_token, model=self.model, effort=self.effort, endpoint=self._endpoint)

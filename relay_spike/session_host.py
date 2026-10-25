@@ -495,7 +495,7 @@ class SessionHost:
         try:
             if timing is not None:timing.mark('generationStartedUptimeNanoseconds',time.monotonic_ns())
             self.model_requests+=1
-            async with asyncio.timeout(max(0,self.deadline-(time.monotonic()-req.accepted_at))):
+            async with asyncio.timeout(max(0,self.deadline-(time.monotonic()-req.accepted_at))) as request_timeout:
                 # A just-started session may have cancelled an idle probe. The
                 # same stream must actually quiesce before the answer uses it.
                 await self.visual.drain_probe()
@@ -507,9 +507,12 @@ class SessionHost:
                 prompt=make_prompt(req.question,dialogue,req.bundle,supplemental=supplemental,current_utterance=req.display_question,response_preferences=preferences,learning_memory=learning)
                 if learning is not None and 'learning_memory' not in json.loads(prompt):self.learning_memory.omitted(req)
                 if timing is not None:timing.mark('transportStartedUptimeNanoseconds',time.monotonic_ns())
+                from .answer_diagnostics import INSPECTION_DEADLINE
+                inspection_token=INSPECTION_DEADLINE.set(request_timeout.when()) if getattr(stream,'attempt_diagnostic_sink',None) is not None else None
                 try:
                     candidate=await self.complete(prompt,INSTRUCTIONS,visual_attachment=permit) if permit is not None else await self.complete(prompt,INSTRUCTIONS)
                 finally:
+                    if inspection_token is not None:INSPECTION_DEADLINE.reset(inspection_token)
                     if timing is not None:timing.note_transport(previous_transport,getattr(stream,'last_timing',None))
                 if not await self.visual.validate_publication(req,permit=permit):
                     host_outcome='publication_denied'

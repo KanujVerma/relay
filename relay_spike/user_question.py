@@ -160,6 +160,7 @@ class UserQuestionCoordinator:
         owner=h._worker if h._worker_request is not None and self.key(h._worker_request.native)==key else None
         self.retired[key]=owner
         h.response_preferences.retire_native(n)
+        h.learning_memory.retire_native(n)
         if h.active is not None and self.key(h.active.native)==key:
             original=h.active.native
             token=h.active.token

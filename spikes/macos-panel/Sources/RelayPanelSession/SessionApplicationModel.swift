@@ -91,6 +91,12 @@ private actor FixtureRecognizer: ActivityRecognizer {
 @MainActor private final class FixtureContextPreferences:SessionContextUsePreferences {
     var useInSessions=false
 }
+@MainActor private final class FixtureHistoryPreferences:HistorySavingPreferences{var savingEnabled=false}
+@MainActor private final class FixtureLearningControls:LearningControlPreferences {
+    func read()->LearningControlReceipt{LearningControlReceipt(revision:nil,enabled:false,pending:nil)}
+    func deny(_ pending:LearningPendingControl)throws->LearningControlReceipt{throw HistoryError.unavailable}
+    func commit(_ control:LearningControlRecord)throws->LearningControlReceipt{throw HistoryError.unavailable}
+}
 
 @MainActor final class SessionApplicationModel: ObservableObject {
     @Published private(set) var snapshot=SessionPanelSnapshot()
@@ -230,8 +236,8 @@ private actor FixtureRecognizer: ActivityRecognizer {
             oldOwner.presentation.panel.clear(status:"ChatGPT connection updated")
         }
         visual.retireForHelperChange();assistant.transcript.end()
-        if let oldOwner{owners.remove(oldOwner)}
-        assistantActive=false;assistantClosing=false;paused=false
+        if let oldOwner{rememberLatency(oldOwner);owners.remove(oldOwner)}
+        assistantActive=false;assistantClosing=false;paused = paused && hasHistory && history.hasPausedSession
         assistant.refresh() // Keeps CURRENT preparer's draft/basis and task.
         if hasContextUse{contextUse.retireForHelperChange()}
         if let oldProfile,oldProfile.opened || oldProfile.busy{await oldProfile.close()}
@@ -243,6 +249,52 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     private var hasContextUse=false
     private var contextUseObservation:AnyCancellable?
+    private let historyPreferencesOverride:(any HistorySavingPreferences)?
+    private let historyStorageFactory:(@Sendable ()throws->any ProtectedSnapshotStorage)?
+    private let learningPreferencesOverride:(any LearningControlPreferences)?
+    private let fixtureSessionStart:(@MainActor (NativeSessionController)throws->Void)?
+    private var learningObservation:AnyCancellable?
+    private var hasLearning=false
+    lazy var learning:LearningMemoryCoordinator = {
+        hasLearning=true
+        let controls:any LearningControlPreferences=learningPreferencesOverride ?? (fixture ? FixtureLearningControls():CFPreferencesLearningControls())
+        let value=history.makeLearningCoordinator(preferences:controls,canEnable:{[weak self] in self?.canEnableLearning==true})
+        value.onRetire={[weak self] epoch in self?.retireLearningProjection(epoch)}
+        learningObservation=value.$snapshot.dropFirst().sink{[weak self] _ in self?.objectWillChange.send()}
+        return value
+    }()
+    let historyNoteDraft=HistoryNoteDraft()
+    private var historyObservation:AnyCancellable?
+    private var hasHistory=false
+    private var historyPermit:HistorySessionPermit?
+    lazy var history:SessionHistoryCoordinator = {
+        hasHistory=true
+        let preferences:any HistorySavingPreferences=historyPreferencesOverride ?? (fixture ? FixtureHistoryPreferences():UserDefaultsHistoryPreferences())
+        let factory:@Sendable ()throws->any ProtectedSnapshotStorage
+        if let historyStorageFactory{factory=historyStorageFactory}
+        else if fixture{factory={throw HistoryError.unavailable}}
+        else{factory={
+            let directory=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("Relay/History",isDirectory:true)
+            return HistoryVaultStorage(directory:directory,keys:KeychainProfileKey(purpose:.history))
+        }}
+        let coordinator=SessionHistoryCoordinator(storageFactory:factory,preferences:preferences,canEnable:{[weak self] in
+            self?.canEnableHistory==true
+        })
+        coordinator.onRecordsUnavailable={ [weak self] in self?.historyNoteDraft.invalidate($0) }
+        assistant.transcript.onHistoryObservation={ [weak self,weak coordinator] observation in
+            coordinator?.observe(observation);self?.learning.session.observe(observation)
+        }
+        coordinator.onSourceDenial={[weak self] notice in self?.handleHistorySourceDenial(notice)}
+        historyObservation=coordinator.$snapshot.dropFirst().sink{[weak self] _ in self?.objectWillChange.send()}
+        return coordinator
+    }()
+    @discardableResult func stageHistoryNoteDraft(discardingChanges:Bool=false)->Bool{
+        let coordinator=history,view=coordinator.snapshot
+        guard let record=view.selected?.record,
+              coordinator.allowsManualNoteDraft(record.id,revision:record.revision,epoch:view.epoch) else{return false}
+        let staged=historyNoteDraft.stage(record:record,epoch:view.epoch,discardingChanges:discardingChanges)
+        return staged && coordinator.allowsManualNoteDraft(record.id,revision:record.revision,epoch:view.epoch)
+    }
     lazy var contextUse:SessionContextUseCoordinator = {
         hasContextUse=true
         let preferences:any SessionContextUsePreferences=contextPreferencesOverride ?? (fixture ? FixtureContextPreferences():UserDefaultsSessionContextUsePreferences())
@@ -398,8 +450,11 @@ private actor FixtureRecognizer: ActivityRecognizer {
             // Close all old admission before the first await. Queued frames and
             // source events cannot cross into a replacement helper lifecycle.
             let oldOwner=currentOwner
+            let oldHistory=hasHistory ? history:nil
+            let oldHistoryPermit=oldHistory?.retireCurrentSession(gap:.captureFailure)
             oldOwner?.retireAdmission();assistant.cancelPreparation()
             if oldOwner?.kind == .capture{if fixture{native.beginStop()}else{capture.retireAdmission(reason:.transportClosed)}}
+            if hasLearning{learning.endSession()}
             retireOptionalWork();helperIdentity=UUID();owners.activateHelper(helperIdentity)
             visual.retireForHelperChange()
             forwardedSessionID=nil;helper=nil;running=false;assistantActive=false;paused=false
@@ -408,7 +463,10 @@ private actor FixtureRecognizer: ActivityRecognizer {
             if oldOwner?.kind == .capture {
                 if fixture{await native.waitForQuiescence();native.finishStop(quiesced:true)}else{await capture.stop(reason:.transportClosed)}
             }
-            if let oldOwner{owners.remove(oldOwner)}
+            await events.drain()
+            if let oldHistory,let oldHistoryPermit{try? await oldHistory.finishSession(oldHistoryPermit,paused:false);if historyPermit === oldHistoryPermit{historyPermit=nil}}
+            if hasLearning{await learning.waitForQuiescence()}
+            if let oldOwner{rememberLatency(oldOwner);owners.remove(oldOwner)}
         }
         await binding.shutdown()
         if profileBinding === binding { profileBinding=nil;profileStorage=nil }
@@ -421,6 +479,10 @@ private actor FixtureRecognizer: ActivityRecognizer {
          contextPreferences:(any SessionContextUsePreferences)?=nil,
          profileVaultFactory:(@MainActor ()->ProfileVault)?=nil,
          profileResponseObserved:(@MainActor (Data) async ->Void)?=nil,
+         historyPreferences:(any HistorySavingPreferences)?=nil,
+         historyStorageFactory:(@Sendable ()throws->any ProtectedSnapshotStorage)?=nil,
+         learningPreferences:(any LearningControlPreferences)?=nil,
+         fixtureSessionStart:(@MainActor (NativeSessionController)throws->Void)?=nil,
          explicitAccountPreparation:(@MainActor (UUID,@escaping @MainActor ()->Bool)async throws->Void)?=nil,
          responsePreferencesStorage:(any ProtectedSnapshotStorage)?=nil,
          responsePreferencesReceipts:(any ResponsePreferencesReceiptStore)?=nil,
@@ -433,6 +495,8 @@ private actor FixtureRecognizer: ActivityRecognizer {
         self.responsePreferencesReceipts=responsePreferencesReceipts ?? UserDefaultsResponsePreferencesReceipts()
         contextPreferencesOverride=contextPreferences;self.profileVaultFactory=profileVaultFactory
         self.profileResponseObserved=profileResponseObserved
+        historyPreferencesOverride=historyPreferences;self.historyStorageFactory=historyStorageFactory
+        learningPreferencesOverride=learningPreferences;self.fixtureSessionStart=fixtureSessionStart
         accountPortsOverride=accountPorts
         self.contextCoordinatorOverride=contextCoordinator
         self.contextWriteAcknowledged=contextWriteAcknowledged;self.ingressEnqueued=ingressEnqueued
@@ -473,6 +537,9 @@ private actor FixtureRecognizer: ActivityRecognizer {
         if hasContextUse{contextUse.retireForHelperChange()}
         if let focusObserver { NSWorkspace.shared.notificationCenter.removeObserver(focusObserver) }
         if let windowObserver { NotificationCenter.default.removeObserver(windowObserver) }
+        if let windowVisibilityObserver{NotificationCenter.default.removeObserver(windowVisibilityObserver)}
+        surfaceObservation?.cancel()
+        clearAnswerSurface()
         if let helper { helper.stop();Task.detached { await helper.shutdownAndWait() } }
     }
     private static func argument(_ key:String,_ args:[String]) -> String? { guard let i=args.firstIndex(of:key),args.indices.contains(i+1) else { return nil };return args[i+1] }
@@ -510,9 +577,15 @@ private actor FixtureRecognizer: ActivityRecognizer {
         owners.owns(owner) && helper === owner.helper && helperIdentity==owner.helperIdentity && (allowRetired || !owner.isRetired)
     }
     private func configure(_ owner:ConversationOwner){
+        retiredLatency=nil
         owner.presentation.responsePreferences=ResponsePreferencesRequestBridge(capture:{[weak self] in
             guard let self else{return nil};return self.responsePreferences.capture()
         },owns:{[weak self] value in self?.responsePreferences.owns(value)==true},send:{[weak self,weak owner] data in
+            guard let self,let owner,self.owns(owner) else{throw PanelBridgeError.closed};try owner.helper.sendJSON(data)
+        },isCurrent:{[weak self,weak owner] in guard let self,let owner else{return false};return self.owns(owner)})
+        owner.presentation.learning=LearningMemoryRequestBridge(capture:{[weak self] question in self?.learning.capture(question:question)},owns:{[weak self] value in
+            self?.learning.owns(value)==true
+        },send:{[weak self,weak owner] data in
             guard let self,let owner,self.owns(owner) else{throw PanelBridgeError.closed};try owner.helper.sendJSON(data)
         },isCurrent:{[weak self,weak owner] in guard let self,let owner else{return false};return self.owns(owner)})
         contextStatus=""
@@ -563,6 +636,17 @@ private actor FixtureRecognizer: ActivityRecognizer {
         else{try await prepareAccountForExplicitAction(intentID:intent,isCurrent:isCurrent)}
         try Task.checkCancellation()
         if !fixture{try await responsePreferences.prepareForExplicitAction(intentID:intent,isCurrent:isCurrent)}
+        guard canPrepareAssistant,isCurrent(),!Task.isCancelled else{throw CancellationError()}
+        do{try await learning.restore()}
+        catch{
+            guard canPrepareAssistant,isCurrent(),!Task.isCancelled else{throw CancellationError()}
+            if (try? await learning.needsRetainedSourcePreparation())==true{
+                guard canPrepareAssistant,isCurrent(),!Task.isCancelled else{throw CancellationError()}
+                _=try? await history.prepareExistingLearningHistory()
+                guard canPrepareAssistant,isCurrent(),!Task.isCancelled else{throw CancellationError()}
+                _=try? await learning.restore()
+            }
+        }
         guard canPrepareAssistant,isCurrent(),!Task.isCancelled else{throw CancellationError()}
         let use=contextUse,intendedUse=contextUse.useInSessions
         let target=intendedUse ? profileTarget():nil
@@ -659,8 +743,8 @@ private actor FixtureRecognizer: ActivityRecognizer {
                 }
             }
             await self.events.drain()
-            owner.presentation.forwarder?.retire();owner.presentation.composer?.retire();owner.presentation.publication.retire();owner.presentation.responsePreferences?.close()
-            if self.currentOwner === owner{self.owners.remove(owner);self.assistantActive=false;self.assistantClosing=false;self.assistant.refresh()}
+            owner.presentation.forwarder?.retire();owner.presentation.composer?.retire();owner.presentation.publication.retire();owner.presentation.responsePreferences?.close();owner.presentation.learning?.close()
+            if self.currentOwner === owner{self.rememberLatency(owner);self.owners.remove(owner);self.assistantActive=false;self.assistantClosing=false;self.assistant.refresh()}
             owner.cleanupFinished=true
             owner.closeTask=nil
         }
@@ -718,8 +802,12 @@ private actor FixtureRecognizer: ActivityRecognizer {
             guard helper != nil,forwardedSessionID==request.lease.captureSessionID else{return}
             do {
                 let binding=PanelRequestBinding(lease:request.lease,requestID:request.requestID,eventSequence:request.anchorEventSequence)
-                if owner.authority.snapshot()==binding.lease{try owner.presentation.responsePreferences?.freeze(binding)}
+                let learningQuestion=request.question ?? owner.presentation.acceptedQuestion ?? ""
                 if let original{try retireExplicitOriginal(original)}
+                if owner.authority.snapshot()==binding.lease{
+                    try owner.presentation.responsePreferences?.freeze(binding)
+                    try owner.presentation.learning?.freeze(binding,question:learningQuestion)
+                }
                 try eventForwarder(for:owner).enqueueUserQuestion(request,retiring:original)
             }catch{failSession()}
         case .answerCancel(let request,let original):
@@ -736,6 +824,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
         guard let helper else{throw PanelBridgeError.closed}
         try helper.sendJSON(original.retirementJSON())
         currentOwner?.presentation.responsePreferences?.retireNative(original)
+        currentOwner?.presentation.learning?.retireNative(original)
         guard enqueueContextRetirement(original) else{throw PanelBridgeError.closed}
         if currentBinding==original{retireRequest(status:currentOwner?.kind == .assistant ? "Ready · not listening":"Listening")}
     }
@@ -749,12 +838,15 @@ private actor FixtureRecognizer: ActivityRecognizer {
             // request record. Keep the selected guide available to this request.
             if case .manual=ingress,let original=owner.presentation.currentBinding,original != binding{
                 owner.presentation.responsePreferences?.retireNative(original)
+                owner.presentation.learning?.retireNative(original)
             }
             try owner.presentation.responsePreferences?.freeze(binding)
+            try owner.presentation.learning?.freeze(binding,question:learningQuestion(ingress))
         }}
         catch{if owns(owner,allowRetired:true){failSession()};return}
         switch ingress {
         case .audio(let event):
+            owner.presentation.panel.latency.observeNative(event)
             if event.kind == .sessionStarted {
                 guard authority.snapshot()?.captureSessionID==event.captureSessionID else { return }
                 forwardedSessionID=event.captureSessionID;lastForwardedSequence=0
@@ -818,11 +910,13 @@ private actor FixtureRecognizer: ActivityRecognizer {
         },sendQuestion:{[weak self,weak owner] request,frames in
             guard let self,let owner,self.owns(owner,allowRetired:true),let helper=self.helper else{throw PanelBridgeError.closed}
             let binding=PanelRequestBinding(lease:request.lease,requestID:request.requestID,eventSequence:request.anchorEventSequence)
-            if self.authority.snapshot() != binding.lease{try helper.sendJSON(binding.retirementJSON());owner.presentation.responsePreferences?.retireNative(binding)}
+            if self.authority.snapshot() != binding.lease{try helper.sendJSON(binding.retirementJSON());owner.presentation.responsePreferences?.retireNative(binding);owner.presentation.learning?.retireNative(binding)}
             self.bind(binding)
             try owner.presentation.responsePreferences?.sendOffer(for:binding)
+            try owner.presentation.learning?.sendOffer(for:binding)
             for frame in frames{try helper.sendJSON(frame)}
-            try helper.sendJSON(request.encodedJSON())
+            let enqueueStarted=DispatchTime.now().uptimeNanoseconds
+            try helper.sendJSON(request.encodedJSON());owner.presentation.panel.latency.recordForwarded(binding:binding,at:enqueueStarted)
         },sendCancellation:{[weak self,weak owner] request in
             guard let self,let owner,self.owns(owner,allowRetired:true),let helper=self.helper else{throw PanelBridgeError.closed}
             try helper.sendJSON(request.encodedJSON())
@@ -858,16 +952,21 @@ private actor FixtureRecognizer: ActivityRecognizer {
     private func send(_ ingress:SessionIngress,context:[Data]) throws {
         guard let helper else { throw PanelBridgeError.closed }
         if let binding=ingress.binding {
-            if authority.snapshot() != binding.lease{try helper.sendJSON(binding.retirementJSON());currentOwner?.presentation.responsePreferences?.retireNative(binding)}
+            if authority.snapshot() != binding.lease{try helper.sendJSON(binding.retirementJSON());currentOwner?.presentation.responsePreferences?.retireNative(binding);currentOwner?.presentation.learning?.retireNative(binding)}
             bind(binding)
             try currentOwner?.presentation.responsePreferences?.sendOffer(for:binding)
+            try currentOwner?.presentation.learning?.sendOffer(for:binding)
         }
         for frame in context { try helper.sendJSON(frame) }
         switch ingress {
         case .audio(let event):
+            let enqueueStarted=DispatchTime.now().uptimeNanoseconds
             try helper.send(event);lastForwardedSequence=event.eventSequence
+            if let binding=ingress.binding{panel.latency.recordForwarded(binding:binding,at:enqueueStarted)}
             if event.kind != .eou { panel.observe(event) }
-        case .manual(let request):try helper.sendJSON(request.encodedJSON())
+        case .manual(let request):
+            let enqueueStarted=DispatchTime.now().uptimeNanoseconds
+            try helper.sendJSON(request.encodedJSON());if let binding=ingress.binding{panel.latency.recordForwarded(binding:binding,at:enqueueStarted)}
         }
         ingressEnqueued?(ingress)
     }
@@ -878,6 +977,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
         do{try bridge.retire(original)}catch{if owns(owner){failSession()};return}
         guard affected,let binding,owns(owner) else{return}
         if owner.presentation.panel.snapshot.responsePreferencesRevision==original.revision{
+            retireCardSurface()
             owner.presentation.panel.withholdGuideAnswer(for:binding,status:"Response guide changed. Ask again.")
         }else{
             owner.presentation.panel.showPendingStatus(for:binding,status:"Response guide changed. Ask again.")
@@ -887,8 +987,129 @@ private actor FixtureRecognizer: ActivityRecognizer {
         guard let revision=decision.responsePreferencesRevision else{return true}
         return owner.presentation.responsePreferences?.permits(binding,revision:revision)==true
     }
+    private func learningQuestion(_ ingress:SessionIngress)->String{
+        switch ingress{
+        case .manual(let request):return request.question
+        case .audio(let event):
+            if case .object(let fields)=event.payload["event"],case .string(let text)=fields["text"]{return text};return ""
+        }
+    }
+    private func handleHistorySourceDenial(_ notice:HistorySourceDenial){
+        if hasLearning{learning.handleHistorySourceDenial(notice)}
+        // Notes adds its independent original-source retirement here; this
+        // remains one owned fanout, never a readiness or membership publisher.
+    }
+    private func learningAllow(_ decision:SessionAnswerDecision,for binding:PanelRequestBinding,owner:ConversationOwner)->Bool{
+        guard let revision=decision.learningMemoryRevision else{return true}
+        return owner.presentation.learning?.permits(binding,revision:revision)==true
+    }
+    private func optionalPresentationAllows(_ decision:SessionAnswerDecision,for binding:PanelRequestBinding,owner:ConversationOwner)->Bool{
+        responsePreferencesAllow(decision,for:binding,owner:owner) && learningAllow(decision,for:binding,owner:owner)
+    }
+    private func retireLearningProjection(_ epoch:UUID){
+        guard let owner=currentOwner,owns(owner),let bridge=owner.presentation.learning else{return}
+        let binding=owner.presentation.currentBinding
+        let affected=binding.map{bridge.lifetime(for:$0)==epoch} ?? false
+        do{try bridge.retire(lifetime:epoch)}catch{if owns(owner){failSession()};return}
+        guard affected,let binding,owns(owner) else{return}
+        if owner.presentation.panel.snapshot.learningMemoryRevision==bridge.revision(for:binding){
+            retireCardSurface()
+            owner.presentation.panel.withholdGuideAnswer(for:binding,status:"Learning changed. Ask again.")
+        }else{owner.presentation.panel.showPendingStatus(for:binding,status:"Learning changed. Ask again.")}
+    }
+    private func withholdLearning(_ binding:PanelRequestBinding,owner:ConversationOwner){
+        guard owns(owner),owner.presentation.currentBinding==binding else{return}
+        retireCardSurface()
+        owner.presentation.panel.withholdGuideAnswer(for:binding,status:"Learning changed. Ask again.")
+    }
+    var activeLearningExplanation:String?{
+        guard let owner=currentOwner,let binding=owner.presentation.currentBinding,let revision=snapshot.learningMemoryRevision else{return nil}
+        return owner.presentation.learning?.explanation(for:binding,revision:revision)
+    }
+    private var retiredLatency:ResponseLatencyRecorder?
+    var responseLatencySamples:[ResponseLatencySample]{(currentOwner?.presentation.panel.latency ?? retiredLatency ?? idlePresentation.panel.latency).samples}
+    private func rememberLatency(_ owner:ConversationOwner){guard currentOwner === owner else{return};retiredLatency=owner.presentation.panel.latency}
+    var answerSurfaceIdentity:LearningAnswerSurfaceIdentity?{
+        guard let owner=currentOwner,let binding=owner.presentation.currentBinding,let card=snapshot.card,
+              owner.presentation.panel.snapshot.card==card,snapshot.replacement==owner.presentation.panel.snapshot.replacement else{return nil}
+        return LearningAnswerSurfaceIdentity(ownerID:owner.id,binding:binding,replacement:snapshot.replacement,card:card)
+    }
+    private weak var answerSurface:LearningAnswerSurfaceView?
+    private weak var answerClip:NSClipView?
+    private var answerSurfaceObservers:[NSObjectProtocol]=[]
+    private func clearAnswerSurface(){
+        for observer in answerSurfaceObservers{NotificationCenter.default.removeObserver(observer)}
+        answerSurfaceObservers=[];answerSurface=nil;answerClip=nil
+    }
+    private func retireCardSurface(){cardCommit=nil;surfaceObservation?.cancel();surfaceObservation=nil;clearAnswerSurface()}
+    func attachAnswerSurface(_ view:LearningAnswerSurfaceView){
+        guard view.window != nil else{if answerSurface === view{clearAnswerSurface()};return}
+        let clip=view.enclosingScrollView?.contentView
+        if answerSurface !== view || answerClip !== clip{
+            clearAnswerSurface();answerSurface=view;answerClip=clip
+            let center=NotificationCenter.default
+            func observe(_ name:Notification.Name,_ object:AnyObject){
+                answerSurfaceObservers.append(center.addObserver(forName:name,object:object,queue:.main){[weak self] _ in
+                    MainActor.assumeIsolated{self?.scheduleSurfaceObservation()}
+                })
+            }
+            observe(NSView.frameDidChangeNotification,view)
+            if let clip{clip.postsBoundsChangedNotifications=true;clip.postsFrameChangedNotifications=true;observe(NSView.boundsDidChangeNotification,clip);observe(NSView.frameDidChangeNotification,clip)}
+        }
+        // Attachment/layout may happen under a reentrant publication callback.
+        // It only schedules a later original-owner/native-lease recheck.
+        scheduleSurfaceObservation()
+    }
+    private struct CardCommit {
+        let id=UUID(),ownerID:UUID,binding:PanelRequestBinding,replacement:UInt64,card:SessionCard
+        let modelAvailableAt:UInt64
+        var learningObserved=false
+    }
+    private var cardCommit:CardCommit?,surfaceObservation:Task<Void,Never>?
+    private var windowVisibilityObserver:NSObjectProtocol?
+    /// Called only after the outer reducer accept returns, outside authority's
+    /// non-recursive lock and after Model's reentrant publication drain.
+    private func observeAcceptedCard(_ decision:SessionAnswerDecision,binding:PanelRequestBinding,owner:ConversationOwner){
+        guard decision.disposition=="answer",let card=decision.card,owns(owner),currentOwner === owner,
+              owner.presentation.currentBinding==binding,owner.authority.snapshot()==binding.lease,
+              snapshot.card==card,owner.presentation.panel.snapshot.card==card,
+              snapshot.replacement==owner.presentation.panel.snapshot.replacement else{return}
+        let now=DispatchTime.now().uptimeNanoseconds
+        let marker=CardCommit(ownerID:owner.id,binding:binding,replacement:snapshot.replacement,card:card,modelAvailableAt:now)
+        cardCommit=marker
+        owner.presentation.panel.latency.recordAvailable(binding:binding,replacement:marker.replacement,availableAt:now,visible:false)
+        scheduleSurfaceObservation(marker)
+    }
+    private func scheduleSurfaceObservation(_ marker:CardCommit?=nil){
+        guard let marker=marker ?? cardCommit else{return}
+        surfaceObservation?.cancel()
+        surfaceObservation=Task{[weak self] in
+            await Task.yield()
+            guard !Task.isCancelled,let self,!self.publishingPanelSnapshot,self.cardCommit?.id==marker.id,
+                  let owner=self.currentOwner,owner.id==marker.ownerID,self.owns(owner),
+                  owner.presentation.currentBinding==marker.binding,owner.authority.snapshot()==marker.binding.lease,
+                  self.snapshot.card==marker.card,owner.presentation.panel.snapshot.card==marker.card,
+                  self.snapshot.replacement==marker.replacement,owner.presentation.panel.snapshot.replacement==marker.replacement,
+                  let window=self.window,window.isVisible,!window.isMiniaturized,window.occlusionState.contains(.visible),
+                  let scroll=self.answerScrollView,scroll.window === window else{return}
+            let now=DispatchTime.now().uptimeNanoseconds
+            owner.presentation.panel.latency.recordAvailable(binding:marker.binding,replacement:marker.replacement,availableAt:now,visible:true)
+            guard let surface=self.answerSurface,surface.window === window,!surface.isHiddenOrHasHiddenAncestor,
+                  surface.identity==LearningAnswerSurfaceIdentity(ownerID:marker.ownerID,binding:marker.binding,replacement:marker.replacement,card:marker.card),
+                  surface.bounds.width>0,surface.bounds.height>0,
+                  surface.visibleRect.insetBy(dx:-0.5,dy:-0.5).contains(surface.bounds) else{return}
+            guard self.cardCommit?.learningObserved==false,owner.kind == .capture,!owner.presentation.explicitRequestIDs.contains(marker.binding.requestID) else{return}
+            // Typed requests remain labelled request data, never synthetic audio
+            // uptake. Collapsed detail contributes to identity, not uptake text.
+            let detail=marker.card.detail.map{"\($0.kind):\($0.language ?? "")\n\($0.text)"}
+            self.learning.session.available(binding:marker.binding,replacement:marker.replacement,lead:marker.card.lead,points:marker.card.points,
+                detail:detail,guideRevision:self.snapshot.responsePreferencesRevision,visible:true,at:now)
+            if self.cardCommit?.id==marker.id{self.cardCommit?.learningObserved=true}
+        }
+    }
     private func withholdResponsePreferences(_ binding:PanelRequestBinding,owner:ConversationOwner){
         guard owns(owner),owner.presentation.currentBinding==binding else{return}
+        retireCardSurface()
         owner.presentation.panel.withholdGuideAnswer(for:binding,status:"Response guide changed. Ask again.")
     }
     private func acceptFrame(_ data:Data,owner:ConversationOwner) throws {
@@ -899,7 +1120,9 @@ private actor FixtureRecognizer: ActivityRecognizer {
             decision.sessionID==binding.lease.captureSessionID,decision.epoch==binding.lease.sessionEpoch,
             decision.generation==binding.lease.presentationGeneration,decision.requestID==binding.requestID,
             decision.eventSequence==binding.eventSequence else { return }
+        if decision.disposition != "pending"{owner.presentation.panel.latency.recordHelperReceived(binding:binding,at:DispatchTime.now().uptimeNanoseconds)}
         guard responsePreferencesAllow(decision,for:binding,owner:owner) else{withholdResponsePreferences(binding,owner:owner);return}
+        guard learningAllow(decision,for:binding,owner:owner) else{withholdLearning(binding,owner:owner);return}
         if decision.disposition=="pending",decision.reason=="generating_with_task_context" {
             guard hasContextComposer,contextComposer.ownsCurrent(binding) else { retireDependentRequest(binding);return }
             taskContextUsed=true
@@ -909,19 +1132,21 @@ private actor FixtureRecognizer: ActivityRecognizer {
         if decision.disposition=="answer",let use=decision.taskContext {
             guard hasContextComposer,contextComposer.ownsContext(use,for:binding),use.imageDigest==nil || visual.mayOfferImages else { retireDependentRequest(binding);return }
             taskContextUsed=true;imageContextUsed=use.imageDigest != nil
-            publication.publish(binding,validate:{ [weak self,weak owner] in guard let self,let owner,self.owns(owner),self.responsePreferencesAllow(decision,for:binding,owner:owner) else{return false};return await self.contextComposer.validateForPublication(binding,requiringImageIdentity:use.imageDigest != nil) },owns:{ [weak self,weak owner] in
-                guard let self,let owner,self.owns(owner) else{return false};return self.contextComposer.ownsContext(use,for:binding) && (use.imageDigest==nil || self.visual.mayOfferImages) && self.responsePreferencesAllow(decision,for:binding,owner:owner)
+            publication.publish(binding,validate:{ [weak self,weak owner] in guard let self,let owner,self.owns(owner),self.optionalPresentationAllows(decision,for:binding,owner:owner) else{return false};return await self.contextComposer.validateForPublication(binding,requiringImageIdentity:use.imageDigest != nil) },owns:{ [weak self,weak owner] in
+                guard let self,let owner,self.owns(owner) else{return false};return self.contextComposer.ownsContext(use,for:binding) && (use.imageDigest==nil || self.visual.mayOfferImages) && self.optionalPresentationAllows(decision,for:binding,owner:owner)
             },commit:{ [weak self,weak owner] in
                 guard let self,let owner,self.owns(owner) else{return}
                 guard self.responsePreferencesAllow(decision,for:binding,owner:owner) else{self.withholdResponsePreferences(binding,owner:owner);return}
-                do { if try self.panel.accept(data) { self.acceptedQuestion=decision.question;self.contextStatus="Used "+use.source+(use.imageDigest != nil ? " · image and local OCR":use.provenance=="local_ocr" ? " · local OCR":" · selected text");self.revealManualAnswer(decision.requestID) } }
+                guard self.learningAllow(decision,for:binding,owner:owner) else{self.withholdLearning(binding,owner:owner);return}
+                do { if try self.panel.accept(data) { self.acceptedQuestion=decision.question;self.contextStatus="Used "+use.source+(use.imageDigest != nil ? " · image and local OCR":use.provenance=="local_ocr" ? " · local OCR":" · selected text");self.revealManualAnswer(decision.requestID);self.observeAcceptedCard(decision,binding:binding,owner:owner) } }
                 catch { self.failSession() }
             },rejected:{ [weak self,weak owner] in if let self,let owner,self.owns(owner){
-                if self.responsePreferencesAllow(decision,for:binding,owner:owner){self.retireDependentRequest(binding)}
+                if !self.learningAllow(decision,for:binding,owner:owner){self.withholdLearning(binding,owner:owner)}
+                else if self.responsePreferencesAllow(decision,for:binding,owner:owner){self.retireDependentRequest(binding)}
                 else{self.withholdResponsePreferences(binding,owner:owner)}
             } })
         } else {
-            if try panel.accept(data) { acceptedQuestion=decision.question.isEmpty ? nil:decision.question;if decision.disposition != "pending" { revealManualAnswer(decision.requestID) } }
+            if try panel.accept(data) { acceptedQuestion=decision.question.isEmpty ? nil:decision.question;if decision.disposition != "pending" { revealManualAnswer(decision.requestID);observeAcceptedCard(decision,binding:binding,owner:owner) } }
             if decision.disposition != "pending" { taskContextUsed=false;contextStatus="";if hasContextComposer { contextComposer.retire() } }
         }
     }
@@ -938,7 +1163,8 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     private func retireOptionalWork(notifyHelper:Bool=true) {
         let notified = !notifyHelper || !hasContextComposer || contextComposer.binding.map(enqueueContextRetirement) != false
-        if let binding=currentBinding{currentOwner?.presentation.responsePreferences?.retireNative(binding)}
+        if let binding=currentBinding{currentOwner?.presentation.responsePreferences?.retireNative(binding);currentOwner?.presentation.learning?.retireNative(binding)}
+        retireCardSurface()
         currentBinding=nil;acceptedQuestion=nil;terminalObserved=true;taskContextUsed=false;imageContextUsed=false;manualRequestToShow=nil
         publication.retire();if hasContextComposer { contextComposer.retire() };if hasSelectedText { selectedText.invalidate() }
         if notifyHelper && notified{forwarder?.cancelOptionalWork()}else{forwarder?.retire()}
@@ -1014,6 +1240,27 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     func retryPreparation()async{await start()}
     private func ownsStart(_ identity:UUID)->Bool{startIdentity==identity && !Task.isCancelled && !stopping}
+    private func restoreHistoryForStart(_ identity:UUID,sourceIsCurrent:@escaping @MainActor ()->Bool)async->Bool{
+        do{
+            if hasLearning{await learning.waitForQuiescence();guard ownsStart(identity),sourceIsCurrent() else{return false}}
+            let coordinator=history
+            let permit=try await coordinator.beginSession(intentID:identity,resuming:paused,isCurrent:{[weak self] in self?.ownsStart(identity)==true && sourceIsCurrent()})
+            guard ownsStart(identity),sourceIsCurrent(),!coordinator.isBusy,
+                  permit.map({coordinator.owns($0)}) ?? !coordinator.savingEnabled else{
+                if let permit{coordinator.retireCurrentSession();try? await coordinator.finishSession(permit,paused:false)}
+                return false
+            }
+            historyPermit=permit
+            _=try? await learning.restore()
+            return ownsStart(identity) && sourceIsCurrent() && (permit.map({coordinator.owns($0)}) ?? !coordinator.savingEnabled)
+        }catch{
+            if ownsStart(identity){
+                if case HistoryError.inUse=error{self.error="Local history is in use. Close or lock another Relay app, or turn saving off here before starting."}
+                else{self.error="Local history could not open. Open History to retry, or turn saving off and start again."}
+            }
+            return false
+        }
+    }
     private func restoreContextForStart(_ identity:UUID,sourceIsCurrent:@escaping @MainActor ()->Bool)async->Bool{
         let use=contextUse
         guard use.useInSessions else{return !use.isBusy && profileStorage?.busy != true && ownsStart(identity) && sourceIsCurrent()}
@@ -1041,6 +1288,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
             if !fixture && capture.phase != .idle { error="Waiting for capture to finish stopping.";return }
             if fixture {
                 guard await restoreContextForStart(identity,sourceIsCurrent:{true}) else{return}
+                guard await restoreHistoryForStart(identity,sourceIsCurrent:{true}) else{return}
                 let transport=try ensureHelper();try installCaptureOwner(transport);try startFixture();return
             }
             guard authorizedConversation else {
@@ -1072,6 +1320,10 @@ private actor FixtureRecognizer: ActivityRecognizer {
                 guard let self else{return false}
                 return self.authorizedConversation && self.microphoneEnabled==microphone && self.selectedBundleID==bundle
             }) else{return}
+            guard await restoreHistoryForStart(identity,sourceIsCurrent:{[weak self] in
+                guard let self else{return false}
+                return self.authorizedConversation && self.microphoneEnabled==microphone && self.selectedBundleID==bundle
+            }) else{return}
             let transport=try ensureHelper();try installCaptureOwner(transport);captureAttempted=true
             try await capture.start(configuration:configuration)
             guard ownsStart(identity) else{throw CancellationError()}
@@ -1088,8 +1340,15 @@ private actor FixtureRecognizer: ActivityRecognizer {
                     ((error as? SpeechSetupError)?.localizedDescription ?? SpeechSetupError.advancedOverrideInvalid.localizedDescription)
             }
         }
+        if !running,let permit=historyPermit,permit.intentID==identity{
+            history.retireCurrentSession();try? await history.finishSession(permit,paused:false)
+            if historyPermit === permit{historyPermit=nil}
+        }
     }
     private func startFixture() throws {
+        if let fixtureSessionStart{
+            try fixtureSessionStart(native);running=true;paused=false;refreshAssistantAfterStart();return
+        }
         let question:String
         if fixtureSuite=="personal-memory" {question="What did you personally do on your Fictional Northstar project?"}
         else{question=fixtureSuite=="coding" ? "Write a Python function that returns the first item or None for an empty list." : fixtureSuite=="case" ? "Case study: design a feature for nurse handoffs. What user needs would you clarify first?":"What is the difference between WHERE and HAVING?"}
@@ -1115,16 +1374,22 @@ private actor FixtureRecognizer: ActivityRecognizer {
     var currentSessionID:UUID?{authority.snapshot()?.captureSessionID ?? forwardedSessionID}
     var canStartSession:Bool {
         guard case .success=helperRuntime else{return false}
-        return !running && !starting && !stopping && !assistantClosing && !assistant.snapshot.isPreparing && !accountMutationOwned && teardown==nil && !speechSetup.snapshot.isBusy && !visual.isBusy && visual.status != .busy && profileStorage?.busy != true && !(hasContextUse && contextUse.isBusy) && !(hasResponsePreferences && responsePreferences.isBusy) && (fixture || capture.phase == .idle)
+        return !running && !starting && !stopping && !assistantClosing && !assistant.snapshot.isPreparing && !accountMutationOwned && teardown==nil && !speechSetup.snapshot.isBusy && !visual.isBusy && visual.status != .busy && profileStorage?.busy != true && !(hasContextUse && contextUse.isBusy) && !(hasHistory && history.isBusy) && !(hasResponsePreferences && responsePreferences.isBusy) && (fixture || capture.phase == .idle)
     }
     var canResume:Bool { paused && canStartSession }
-    func beginRetirement(end:Bool) {
+    var canEnableHistory:Bool{(!fixture || historyStorageFactory != nil) && !running && !starting && !stopping && !paused && !assistantActive && !assistantClosing && !assistant.snapshot.isPreparing && !accountMutationOwned && !speechSetup.snapshot.isBusy && !visual.isBusy && !(hasResponsePreferences && responsePreferences.isBusy)}
+    var canEnableLearning:Bool{canEnableHistory && (!fixture || (historyStorageFactory != nil && learningPreferencesOverride != nil))}
+    func beginRetirement(end:Bool,historyGap:HistoryGap?=nil) {
         denyAccountStart()
         endRequested = endRequested || end
         if end{paused=false}
         startIdentity=UUID();speechSetup.cancel();assistant.cancelPreparation()
         guard teardown==nil else{disableVisualInput();return}
         let oldOwner=currentOwner,oldHelper=helper,oldBinding=profileBinding
+        let oldHistory=hasHistory ? history:nil
+        let activity=assistant.transcript.snapshot
+        let unfinished=[activity.microphone,activity.selectedAudio].contains{value in switch value{case .speechDetected,.transcribing:true;default:false}}
+        let oldHistoryPermit=oldHistory?.retireCurrentSession(gap:historyGap ?? (unfinished ? .unfinishedSpeech:nil))
         let sessionID=oldOwner?.kind == .capture ? forwardedSessionID:nil
         let oldStart=startTask;oldStart?.cancel()
         // Source/assistant admission retires before cancellation can flush an
@@ -1140,6 +1405,8 @@ private actor FixtureRecognizer: ActivityRecognizer {
             if hasContextComposer,let old=contextComposer.binding{enqueueContextRetirement(old)}
             disableVisualInput();retireRequest(status:end ? "Stopped":"Paused · recent conversation will reset on resume")
         }
+        if hasLearning{if endRequested{learning.endSession()}else{learning.pauseSession()}}
+        retireCardSurface()
         running=false;assistantActive=false;paused = !end;stopping=true
         if end{assistant.transcript.end()}else{assistant.transcript.pause()}
         assistant.refresh()
@@ -1164,9 +1431,24 @@ private actor FixtureRecognizer: ActivityRecognizer {
                 self.endRequested=true;self.paused=false
                 self.error="The old helper did not acknowledge shutdown. Its profile was retired; reopen background to recover."
             }
+            if let oldHistory,let oldHistoryPermit{
+                do{
+                    try await oldHistory.finishSession(oldHistoryPermit,paused:!self.endRequested)
+                    // End may escalate a Pause while its actual history save is
+                    // in flight. Finish the SAME still-current private permit;
+                    // a concurrent Lock/replacement never regains ownership.
+                    if self.endRequested,oldHistory.owns(oldHistoryPermit),oldHistory.hasPausedSession{
+                        oldHistory.retireCurrentSession()
+                        try await oldHistory.finishSession(oldHistoryPermit,paused:false)
+                    }
+                }
+                catch{self.error="Local history could not finish saving. Open History to recover its saved prefix."}
+                if self.historyPermit === oldHistoryPermit{self.historyPermit=nil}
+            }
+            if self.hasLearning{await self.learning.waitForQuiescence()}
             if let oldOwner,self.currentOwner === oldOwner {
-                oldOwner.presentation.forwarder?.retire();oldOwner.presentation.composer?.retire();oldOwner.presentation.publication.retire();oldOwner.presentation.responsePreferences?.close()
-                self.owners.remove(oldOwner)
+                oldOwner.presentation.forwarder?.retire();oldOwner.presentation.composer?.retire();oldOwner.presentation.publication.retire();oldOwner.presentation.responsePreferences?.close();oldOwner.presentation.learning?.close()
+                self.rememberLatency(oldOwner);self.owners.remove(oldOwner)
             }
             if self.endRequested {
                 if let profile=self.profileStorage,profile.opened || profile.busy{await profile.close()}
@@ -1183,14 +1465,14 @@ private actor FixtureRecognizer: ActivityRecognizer {
         }
     }
     func stop() async { beginRetirement(end:true);await teardown?.value;await accountStartCancellation?.value }
-    func shutdown()async{await stop();await accountStorageController?.close()}
+    func shutdown()async{await stop();if hasLearning{await learning.waitForQuiescence()};if hasHistory{await history.closeForOwnerRetirement()};await accountStorageController?.close()}
     func failSession() {
         // Keep the same actual owner join/reap barrier as End. A failed source
         // or transport cannot be replaced merely because its output is hidden.
         helper?.stop() // Fence the child before any local image-retirement callback.
         visual.retireForHelperChange()
         helperIdentity=UUID();owners.activateHelper(helperIdentity)
-        beginRetirement(end:true)
+        beginRetirement(end:true,historyGap:.captureFailure)
         authority.stop();retireRequest(status:"Session unavailable")
         forwarder?.retire();forwarder=nil;running=false;paused=false
         error="The session ended. Restart after the previous session finishes."
@@ -1262,6 +1544,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     /// Navigation only. Showing the existing account controller performs no
     /// readiness or authorization; its explicit login action remains separate.
     func showAISettings(openWindow:()->Void){settingsSection = .ai;openWindow()}
+    func showLearningSettings(openWindow:()->Void){settingsSection = .learning;openWindow()}
     func performWindowAction(_ action:ControlAction) {
         do { try windowActions.perform(action) } catch { self.error=error.localizedDescription }
     }
@@ -1272,6 +1555,11 @@ private actor FixtureRecognizer: ActivityRecognizer {
         windowObserver=NotificationCenter.default.addObserver(forName:NSWindow.willCloseNotification,object:window,queue:.main) { [weak self] _ in
             MainActor.assumeIsolated { if let self { try? self.controls.setEnabled(false);self.beginRetirement(end:true) } }
         }
+        if let windowVisibilityObserver{NotificationCenter.default.removeObserver(windowVisibilityObserver)}
+        windowVisibilityObserver=NotificationCenter.default.addObserver(forName:NSWindow.didChangeOcclusionStateNotification,object:window,queue:.main){[weak self] _ in
+            MainActor.assumeIsolated{self?.scheduleSurfaceObservation()}
+        }
+        scheduleSurfaceObservation()
     }
     private func currentAnswerText()->String? {
         guard (running || assistantActive),!stopping,let binding=currentBinding,authority.snapshot()==binding.lease,let card=snapshot.card else{return nil}

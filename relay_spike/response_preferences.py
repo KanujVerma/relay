@@ -87,6 +87,13 @@ class HostResponsePreferences:
         if len(self._staged)>=8:raise WireError('preferences_slots')
         self._staged[key]=(value,time.monotonic_ns()+2_000_000_000);self._schedule();return True
 
+    def has_offer(self,native):
+        """Denial-only priority check; it never consumes or claims guide use."""
+        self._expire()
+        entry=self._staged.get(_key(native))
+        return (entry is not None and _revision(entry[0]) not in self._retired
+                and self.host.supplemental_request_current(native))
+
     def discard(self,native):
         self._staged.pop(_key(native),None);self._schedule()
 

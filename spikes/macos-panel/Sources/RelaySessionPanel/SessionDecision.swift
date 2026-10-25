@@ -28,6 +28,7 @@ public struct SessionAnswerDecision: Sendable {
     public let displayID:String?;public let question:String;public let answerID:String?;public let answerKind:String?;public let card:SessionCard?
     public let taskContext:TaskContextUse?
     public let responsePreferencesRevision:UUID?
+    public let learningMemoryRevision:UUID?
     public let timing:HelperDecisionTiming?
     public init(data:Data) throws {
         let node=try StrictJSON.decode(data)
@@ -53,18 +54,23 @@ public struct SessionAnswerDecision: Sendable {
         }
         if disposition != "answer" {
             guard o["answerID"]!.isNull,o["answerKind"]!.isNull,o["card"]!.isNull,o["provenance"]!.isNull else { throw PanelBridgeError.malformed }
-            answerID=nil;answerKind=nil;card=nil;taskContext=nil;responsePreferencesRevision=nil;return
+            answerID=nil;answerKind=nil;card=nil;taskContext=nil;responsePreferencesRevision=nil;learningMemoryRevision=nil;return
         }
         answerID=try o["answerID"]!.string(64);answerKind=try o["answerKind"]!.string();card=try SessionCard(o["card"]!)
         if answerKind=="reviewed_reference" {
-            taskContext=nil;responsePreferencesRevision=nil
+            taskContext=nil;responsePreferencesRevision=nil;learningMemoryRevision=nil
             let p=try o["provenance"]!.object(["referenceID","sourceRef"])
             _=try p["referenceID"]!.string(160);_=try p["sourceRef"]!.string(256)
         } else if answerKind=="generated_suggestion" {
             guard case .object(let p)=o["provenance"]! else { throw PanelBridgeError.malformed }
             if p["personal"] != nil {
                 taskContext=nil;responsePreferencesRevision=nil
-                guard try o["provenance"]!.object(["personal","contextRevision","facts","checks"])["personal"]!.boolean() else { throw PanelBridgeError.malformed }
+                var keys:Set<String>=["personal","contextRevision","facts","checks"]
+                if let revision=p["learningMemoryRevision"]{
+                    keys.insert("learningMemoryRevision")
+                    guard let value=UUID(uuidString:try revision.string(36)) else{throw PanelBridgeError.malformed};learningMemoryRevision=value
+                }else{learningMemoryRevision=nil}
+                guard try o["provenance"]!.object(keys)["personal"]!.boolean() else { throw PanelBridgeError.malformed }
                 _=try p["contextRevision"]!.string(256)
                 let facts=try p["facts"]!.array(2);guard !facts.isEmpty else { throw PanelBridgeError.malformed }
                 for fact in facts {
@@ -76,6 +82,10 @@ public struct SessionAnswerDecision: Sendable {
             } else {
                 var keys:Set<String>=["model","checks","independentlyReviewed"]
                 if p["taskContext"] != nil{keys.insert("taskContext")}
+                if let revision=p["learningMemoryRevision"]{
+                    keys.insert("learningMemoryRevision")
+                    guard let value=UUID(uuidString:try revision.string(36)) else{throw PanelBridgeError.malformed};learningMemoryRevision=value
+                }else{learningMemoryRevision=nil}
                 if let revision=p["responsePreferencesRevision"]{
                     keys.insert("responsePreferencesRevision")
                     guard let value=UUID(uuidString:try revision.string(36)) else{throw PanelBridgeError.malformed}

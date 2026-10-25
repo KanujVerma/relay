@@ -10,6 +10,10 @@ import RelaySessionPanel
 import RelayProfile
 @testable import RelayPanelSession
 
+@MainActor private final class PreferenceHistoryConsent:HistorySavingPreferences{var savingEnabled=false}
+private struct PreferenceHistoryKey:ProfileKeyProvider{
+    func key(createIfMissing:Bool)throws->Data{Data(repeating:113,count:32)}
+}
 @MainActor private final class PreferencePixels:ScreenFrameProvider {
     var holdNext=false,held:CheckedContinuation<Void,Never>?
     func release(){holdNext=false;let original=held;held=nil;original?.resume()}
@@ -57,6 +61,7 @@ private actor PreferenceOCR:ScreenTextRecognizer {
         }
     }
     func testOriginalGuideAndCanonicalImageAreActuallyUsed()async throws{try await exercise(.complete)}
+    func testHistoryObserverPreservesActualOriginalGuideImageAndAudioQuestion()async throws{try await exercise(.complete,historyEnabled:true)}
     func testGeneralDuringHeldImageEndRetiresGuideBeforeOriginalEOU()async throws{try await exercise(.general)}
     func testReplacementGuideCannotAttachToHeldOriginalButFreshHelpCanUseIt()async throws{try await exercise(.feature)}
     func testDeleteOriginalGuideDuringHeldImageEndRetiresBeforeEOU()async throws{try await exercise(.delete)}
@@ -67,7 +72,7 @@ private actor PreferenceOCR:ScreenTextRecognizer {
     func testPauseJoinsOriginalGuideAndImageWithoutPOST()async throws{try await exercise(.pause)}
     func testEndJoinsOriginalGuideAndImageWithoutPOST()async throws{try await exercise(.end)}
     func testImageDisablePreservesOriginalGuideForGenuineOCRFallback()async throws{try await exercise(.disable)}
-    private func exercise(_ action:Action)async throws {
+    private func exercise(_ action:Action,historyEnabled:Bool=false)async throws {
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("relay-staged-retirement-"+UUID().uuidString,isDirectory:true)
         try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
         defer{try? FileManager.default.removeItem(at:directory)}
@@ -83,12 +88,15 @@ private actor PreferenceOCR:ScreenTextRecognizer {
         screen.enable();screen.select(ScreenSource(windowID:1,bundleID:"com.example.synthetic",processID:42,label:"Synthetic task"))
         let acknowledgment=PreferenceEndAcknowledgment();var nativeEvents:[NativeSessionEvent]=[]
         let store=ApplicationPreferenceStorage(),receipts=ApplicationPreferenceReceipts()
+        let historyConsent=PreferenceHistoryConsent()
+        let historyStorage=HistoryVaultStorage(directory:directory.appendingPathComponent("Relay/History"),keys:PreferenceHistoryKey())
         let model=SessionApplicationModel(arguments:["relay","--fixture-suite","reviewed","--repository",root.path,"--python",launcher.path],contextCoordinator:screen,contextWriteAcknowledged:acknowledgment.wrote,ingressEnqueued:{ ingress in
             guard case .audio(let event)=ingress else{return}
             nativeEvents.append(event)
 
-        },responsePreferencesStorage:store,responsePreferencesReceipts:receipts)
+        },historyPreferences:historyConsent,historyStorageFactory:{historyStorage},responsePreferencesStorage:store,responsePreferencesReceipts:receipts)
         do {
+            if historyEnabled{try await model.history.enableSaving()}
             if action == .delete{try await model.responsePreferences.saveAndUse(ResponseGuide(name:"Synthetic guide",focus:.coding,guidance:"Prefer concise invariants."),expectedCatalogRevision:nil)}
             else{try await model.responsePreferences.useBuiltin(.coding)}
             let guide=try XCTUnwrap(model.responsePreferences.capture())
@@ -158,7 +166,18 @@ private actor PreferenceOCR:ScreenTextRecognizer {
             let eou=try XCTUnwrap(nativeEvents.first{$0.kind == .eou})
             XCTAssertEqual(PanelRequestBinding(eou),original)
             XCTAssertEqual(nativeEvents.map(\.eventSequence),Array(1...UInt64(nativeEvents.count)))
+            let record=historyEnabled ? model.history.snapshot.recordingID:nil
             await model.stop()
-        }catch{pixels.release();acknowledgment.release();await model.stop();throw error}
+            if historyEnabled{
+                try await model.history.openRecord(try XCTUnwrap(record))
+                let detail=try XCTUnwrap(model.history.snapshot.selected)
+                XCTAssertEqual(detail.captures.map(\.captureSessionID),[eou.captureSessionID])
+                XCTAssertEqual(detail.rows.count,1);XCTAssertEqual(detail.rows.first?.eventSequence.value,eou.eventSequence)
+                XCTAssertEqual(detail.rows.first?.source,.selectedAppAudio)
+                XCTAssertTrue(detail.captures.first?.stop?.quiesced==true);XCTAssertEqual(detail.record.state,.completed)
+                XCTAssertTrue(historyConsent.savingEnabled)
+                await model.shutdown()
+            }
+        }catch{pixels.release();acknowledgment.release();if historyEnabled{await model.shutdown()}else{await model.stop()};throw error}
     }
 }

@@ -1,6 +1,35 @@
 # Relay continuation handoff
 
-## Current override, 2026-10-24: accepted foundations and remaining product gates
+## Active goal override, 2026-10-24: finish the live app end to end
+
+The [active acceptance plan](docs/superpowers/plans/2026-10-24-finish-live-copilot.md) is still incomplete. The owner chose automatic tentative wording and response-length adjustments with visible why and undo. New résumé/career facts still require confirmation. Three GPT-6.1 Sol extra-high workers own speed (PR101), Learning (PR102) and meeting notes (PR103); Root reviews and integrates draft [PR71](https://github.com/KanujVerma/relay/pull/71). Frequent scoped verified commits/pushes are authorized. Main remains unmerged at eb28d1586e52b7f0fd2e3b15580ae08ff295872e; merge is separate.
+
+### Verified together at this checkpoint
+
+The combined source builds on **68af91d2a4336c9a24d093568784ccf165398f5b**, plus the scoped Learning Settings presentation/inert-render test and one-line normal-production assembly selection in the existing offline speech acceptance. Root independently ran **193 native cases: 191 passed, two explicit skips, zero failures**, in a 124.150-second command. The skips are the owned CF child-only witness and an existing opt-in History render. Root's complete Python suite collected **833 cases: 801 passed, 32 optional skips, zero failures**, in 11.483 seconds; existing SQLite ResourceWarnings remain.
+
+- **Learning foundation:** exact source 5ae9d8d supplies corrected matching/semantic continuity, checked CF preference receipts and protected schema3 examples/rules. Exact 05c2dbb, joined as e8b0cdc, binds it to actual private History ownership and native general/personal use provenance. The independent combined gate covers original source deletion/expiry, encrypted restart, consent versus ordinary-data revisions, pending controls, real End/write joining, later-session projection, metadata-only edits and default-off no-file/no-key behavior. The Settings section is peer-reviewed and compiled; its off-state render performs zero preference/source/navigation actions. Actual Model observation, later visible advice and Settings insertion remain pending.
+- **Meeting notes:** strict one-call backend 7429/bfa/82099, full original source and protected schema2/CAS are joined. Exact ce30af7, joined as 68af91d, owns native helper generation and a private original-IO completion receipt. The combined gate independently covers real held-partial-writer cancellation, actual scope close/reap, source retirement and replay denial. Completion does not itself grant a Store commit. Summary/decisions/next-steps/citations/editor/excerpt presentation is compiled and peer-reviewed. Original stale-save/replaced-editor failure is reproduced and corrected; all four fictional offscreen layouts were inspected. [Presentation contract](docs/evidence/reviews-2026-10-24/review-notes-presentation.md).
+- **Local speech:** the reviewed safe-prefix implementation is enabled in the actual normal capture assembly (exact bfc077a, joined as 05dd8b2); generic injected components retain closed-span behavior. Root ran the existing unchanged real public-WAVE → actual VAD/ASR → owned Python helper → answer reducer assertions through that assembly: one pass, zero skips, 6.353 seconds. The original input hash remained unchanged. This uses a synthetic model answer and proves reducer delivery, not actual visible-window usefulness or cloud latency. No new model download or physical capture.
+
+### Measured speed and its limits
+
+At exact 6672985, the one controlled paced two-source comparison had identical final text/cutoffs and no fallback. Median VAD-closure-to-ASR-final was 135.629 ms baseline versus 40.602 ms prefix, about 95 ms saved. Prefix accepted 35,840 of 40,064 span samples before closure. Peak RSS was 723,107,840 versus 701,988,864 bytes. One waveform/two measured trials per mode is not general interview latency evidence. [Sanitized measurements](docs/evidence/2026-10-24-asr-prefix-benchmark.md) retain exact observations and limitations. A bounded default-versus-Luna-none evaluation harness is prepared in the speed lane; no account execution or runtime effort-default change yet.
+
+### Remaining work and exact next action
+
+1. Memory owner: original actual Model API-red, then the shared outside-native-lock availability/request seam, actual visible suggestion → later original microphone reply → remote continuation → End → later-session advice; hidden-to-visible exposure, reentrant disable, default fixture isolation,12 consecutive Help and why/undo/reset Settings integration. Its current frozen actual History/provenance frontier is 05c2dbb.
+2. Notes owner: on the separate generated-notes-save branch, implement typed same-History-run saving with the pre-publication positive-outcome latch and generated-only read/edit/delete preserving schema3/manual/transcript/Learning. Then join actual Model/History UI and citation navigation after the Memory Model frontier is frozen. Shared Coordinator changes require explicit hunk ownership.
+3. Speed owner: actual Model timing/quality gates and the bounded eligible-account effort comparison, preserving all failures and no paid API fallback. The actual local speech regression is complete; do not rerun the performance comparison by default.
+4. Root: review/join those actual app paths, run the coherent full application/bundle/relocation/visible UX gates, then authorized real account/device/quality/useful-answer latency acceptance. The last verified b270 standalone app predates the new features. Do not claim a finished app, learning improvement, full Cluely parity or achieved live latency from component tests.
+
+### Resource and continuation rules
+
+[LOCAL_RESOURCE_BUDGET](docs/LOCAL_RESOURCE_BUDGET.md): one heavy local job globally, at most two requested compiler jobs, existing caches, at least 30 GiB free and at most 25 GiB Relay temporary allocation including reserve. Root's combined gate began at 23.380 GiB temporary / 45.912 GiB free with 1 GiB reserve. No new environment, model/archive download, cache clone or broad cleanup. Never restart a live job because its observation handle expired; check the owned process and receipt.
+
+The local controller continuation owns the current heavy-job queue. The combined Root job is terminal; Memory's actual app API-red is next. Public PR59 mirror is 8010f7e4ae3d9d09977a26be985d6fa39e3408e8 pinned to f57a484e5fe3e744fbcb032b86463d8f532901b7; refresh from this coherent published checkpoint. Exact f57 contract 40134837804 and converter 40134837854 succeeded; its macOS run 40134837831 was cancelled by newer publication. Do not call that native run green. Later sections are historical. Keep private inputs, credentials and raw environment logs out of GitHub.
+
+## Previous override, 2026-10-24: accepted foundations and remaining product gates
 
 The canonical branch is `build/copilot-integration-2026-10-23`, draft [PR71](https://github.com/KanujVerma/relay/pull/71). Current code checkpoint **24b528578d45224d36468429d95a0c1f57930e0d** adds a pure, unused generated-notes data validator to runtime **3de04192c728d38d170ef324bbf379e458901f0c**, whose complete response-preferences source matches independently accepted **b270297653f78201b56a7c5e57cc2efc322eef61**. Later documentation commits can advance HEAD. Last previously published primary was **0c87bae4c1d9c23662b262bf93608dc35901c8c4**; this checkpoint is intended to publish the accepted DATA module and the documentation together. Main remains unmerged **eb28d1586e52b7f0fd2e3b15580ae08ff295872e**. Recheck live Git before continuing.
 
@@ -138,3 +167,16 @@ New feature/generated-session-notes-data-2026-10-24 begins at published0c87bae4c
 ## Generated notes DATA checkpoint implemented, independent review next
 
 The new pure `session_notes_data.py` and20focused tests validate source/output/persisted provenance DATA only. API-first absent-module red, initial16green0.137s; separately red pre-decoder bounds/backwards-clock controls are now green. Final20pass0.697s with10second guard, including225Unicode/escaping pairs under two byte encodings, maximum1,024rows/256KiB control text/UInt64 IDs/eleven gaps, exact8KiB output and full derived membership. No existing runtime file/strict decoder changed. Three parsers return frozen records/tuples/bytes and safe errors, no source/admission authority, IO, configured model claim or save receipt. Root clarified wall-clock rollback: UTC syntax/origin nullability remain strict, actual receipt/revision/CAS owns ordering. New lane `docs/lanes/GENERATED_NOTES_DATA.md` records commands and exact limits. Next: root reviews this exact checkpoint; actual source/store/scope/provider/app work still waits accepted final History plus a separately authorized resource slot. DesignPR98 remains605; no private/account/capture/model/native/compiler/download/cache work occurred.
+
+
+## Notes backend review correction
+
+Frozen bfa85b2 is preserved. Two actual regressions reproduce false credential-thread quiescence and stale protected-generation completion. Notes-only token reads now join the actual existing owned thread and reread the actual protected grant after validated SSE, with original source/config checks and no retry. Both original reds are green;154affected Python cases pass/zero skips5.300s. This remains a backend component, not native completion/save or product acceptance. Next: strict native Notes wire, actual HelperTransport receipt/controller, genuine completed-operation save, Model/History UI and bundled synthetic gates.
+
+
+## Native Notes wire and anchored display checkpoint
+
+Strict notes response/result DATA and anchored read-only snapshot types now pass20focused native cases/zero skips5.583s after five missing-API reds. Snapshot actions carry the original epoch/record revision/operation and document identity; save-edit UI awaits its actual matching save. No parsed frame or presentation Boolean grants completion or persistence. Actual helper/controller/private completion, protected save bridge, app UI wiring and bundled Notes gate remain next; Store/Coordinator frontiers are unchanged. Heavy slot is released.
+
+
+Synthetic Notes backend test launcher is now available for actual held-writer native proofs. Explicit test-only flag/temp paths and fixture tail are required; actual Host/permit/SSE are reused with synthetic token+MockTransport, never account/network fallback. Six Python cases pass/zero skips1.135s. Native controller API-red fixtures remain the next queued heavy gate; no controller runtime implementation is claimed by this launcher.

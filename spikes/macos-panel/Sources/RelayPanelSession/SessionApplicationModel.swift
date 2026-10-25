@@ -633,11 +633,15 @@ private actor FixtureRecognizer: ActivityRecognizer {
         try Task.checkCancellation()
         if !fixture{try await responsePreferences.prepareForExplicitAction(intentID:intent,isCurrent:isCurrent)}
         guard canPrepareAssistant,isCurrent(),!Task.isCancelled else{throw CancellationError()}
-        if (try? await learning.needsRetainedSourcePreparation())==true{
+        do{try await learning.restore()}
+        catch{
             guard canPrepareAssistant,isCurrent(),!Task.isCancelled else{throw CancellationError()}
-            if history.savingEnabled{await history.waitForQuiescence();_=try? await history.openExisting()}
-            guard canPrepareAssistant,isCurrent(),!Task.isCancelled else{throw CancellationError()}
-            _=try? await learning.restore()
+            if (try? await learning.needsRetainedSourcePreparation())==true{
+                guard canPrepareAssistant,isCurrent(),!Task.isCancelled else{throw CancellationError()}
+                _=try? await history.prepareExistingLearningHistory()
+                guard canPrepareAssistant,isCurrent(),!Task.isCancelled else{throw CancellationError()}
+                _=try? await learning.restore()
+            }
         }
         guard canPrepareAssistant,isCurrent(),!Task.isCancelled else{throw CancellationError()}
         let use=contextUse,intendedUse=contextUse.useInSessions

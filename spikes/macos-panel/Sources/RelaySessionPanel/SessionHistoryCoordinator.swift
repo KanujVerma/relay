@@ -98,6 +98,15 @@ final class HistoryAdmission:@unchecked Sendable {
             guard let self else{throw HistoryError.closed};return try await self.mutateLearningArchive(mutation)
         },affiliation:{[weak self] observation in self?.learningAffiliation(observation)}),canEnable:canEnable,clock:clock)
     }
+    /// Optional recovery cannot replace an already owned workspace, including
+    /// when Learning's separate control receipt is stale. This returns no source
+    /// permission: the learner must still read through its actual private ports.
+    public func prepareExistingLearningHistory()async throws{
+        try Task.checkCancellation()
+        guard !opened else{return}
+        guard preferences.savingEnabled,!isBusy,current==nil,retirement==nil,exclusive==nil,!closeRequested else{throw HistoryError.unavailable}
+        try await openExisting()
+    }
     private var learningBaseCurrent:Bool{
         opened && state.phase == .ready && preferences.savingEnabled && retirement==nil && exclusive==nil && !closeRequested
     }

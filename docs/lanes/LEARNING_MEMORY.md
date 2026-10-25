@@ -102,4 +102,12 @@ Direct one-case replays of the exact compiled bundle separated the targets. Opti
 
 This work is being preserved on a separate WIP continuation branch. The verified PR102 branch stays at3882c76. [Continuation handoff](../handoffs/2026-10-24-learning-memory.md) records exact scope, results, pending fixes and the next action; it does not mark the feature accepted.
 
+## Continued actual target verification
+
+The active goal continued after that preserved handoff. Refined viewport staging now uses the accepted card and actual owned-window state, hidden expanded detail, measured document/clip dimensions and bounded own-view accessibility frames for the exact lead/points. The unchanged Model genuinely reproduced the two intended attribution failures after real clipping and later complete exposure; one named case/suite completed3.985s, command84.640s including compilation. The measured document was524points high and its clip298. No prerequisite failure was counted as the target red.
+
+An added original CF-mismatch case separately reproduced three ready-Notes-source preservation failures, one completed case0.575s/exit1. The scoped repair first attempts actual private Learning restore; malformed/stale optional controls cannot retain cached readiness. Recovery returns without mutation whenever History's private opened state already owns a workspace. Only an unopened idle saving-enabled nonretiring/nonexclusive owner may open an existing ledger. A subsequent real private restore and matching CF/store receipts still decide Learning readiness; the recovery method returns no source grant.
+
+The two unchanged actual cold cases now pass alongside three actual Learning History and eleven Notes Source cases:16collected/16passed/0skips/0failures, exit0/23.494s external. ModelSHA1ac3253cb6c69cb5785d2e03f698d2ec4ebba2b994f4606e9fcc2ea4c162fd4c and CoordinatorSHA5b755e05d1932d4ebb978ca25dafa53e9f67153dc8fc99a916f2466c4940f13e are frozen for this separate repair. Production lead/points geometry, test-host process isolation, timing storage cap, custom failure lifecycle and coherent final app acceptance remain pending.
+
 Run the frozen actual app candidate under the shared resource lease, then close cold application restart, source deletion/Lock, cancel and deterministic personal-presentation/current-guide acceptance gaps. Publish exact observed results and remaining root-owned real account/device/model-quality and latency gates. Main merge remains unauthorized.

@@ -1,6 +1,14 @@
 # Relay continuation handoff
 
-## Active goal override, 2026-10-24: finish the live app end to end
+## Owner stop checkpoint, 2026-10-24
+
+The owner requested a feature-progress/ETA report and work end. All workers are stopped; the objective is unfinished. Current clean runtime source is d40f7ba101c00c38d45e21c8240f5abc5536d8d3, published in draftPR71. The newer stock app contains the identical-draft guard:89.135s build,182,730,688bytes,100native audits, strict signatures, one full relocation, six stock plus three relocated helper checks and11actual packaged-feature cases all pass without skips/failures. Actual Home/General/AI Settings were inspected. [Exact current artifact and setup evidence](docs/evidence/2026-10-24-current-app-and-signing.md).
+
+**Current blocker:** normal Continue with ChatGPT fails at protected native key setup before any browser/inference. The app is ad-hoc signed without the provisioning-authorized entitlements required by its Data Protection Keychain. An isolated non-secret Add reproduces-34018; app raw OSStatus was not captured. One Apple Development identity exists, but no matching Mac profile was found. No store downgrade, key reset, profile issuance, device registration or developer-portal write has occurred. Generic XCTest hosts do not inherit the app's access group. On resume, first resolve the proper authorized macOS signing/profile and test-host route, then perform normal sign-in, actual model/speed/quality and permitted capture checks.
+
+Uncompiled test-only WIP is preserved outside canonical source: `test/protected-account-window-gate-2026-10-24` in work/relay-preferences-product-gate (new protected latency test plus witness change) and `test/generated-notes-real-account-2026-10-24` in work/relay-generated-session-notes (one explicit real-account Notes test). Their review patches/plans are in local coordination-2026-10-24; they are not verified or published runtime. The witness hunk needs adaptation to existing environmentOverrides/forceChild/pump. PR102 is independently accepted/draft at09137d6; no main merge. Preserve source, models, current app, private data and old witnesses; temporary storage is near its25GiB cap, so propose exact cleanup before adding more large outputs.
+
+## Goal scope and prior integration evidence
 
 The [active acceptance plan](docs/superpowers/plans/2026-10-24-finish-live-copilot.md) is still incomplete. The owner chose automatic tentative wording and response-length adjustments with visible why and undo. New résumé/career facts still require confirmation. Three GPT-6.1 Sol extra-high workers own speed (PR101), Learning (PR102) and meeting notes (PR103); Root reviews and integrates draft [PR71](https://github.com/KanujVerma/relay/pull/71). Frequent scoped verified commits/pushes are authorized. Main remains unmerged at eb28d1586e52b7f0fd2e3b15580ae08ff295872e; merge is separate.
 

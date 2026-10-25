@@ -90,10 +90,15 @@ own selection, private first-frame delivery and every fresh token check.
    needed, stop for that explicit owner operation. Record the selected model slug
    privately/sanitized, without exposing registration identity. A different
    normal selection is reported as selected, never silently replaced with Luna.
-2. Use General response guidance. Keep My Context use, Learning, saved History,
+2. Use General response guidance with My Context use, saved History,
    screen/image and selected-text use off for these synthetic inputs; preserve
-   the user's prior choices for restoration. Do not read their private sources.
-   Do not Start audio or grant recording permission. These are typed requests.
+   prior reversible choices for restoration. **Learning must already be off.**
+   Its existing Disable action clears saved learning examples/preferences, so
+   never toggle it off as a temporary benchmark setup or imply re-enabling will
+   restore those examples. If Learning is on, stop this setup and let Root
+   choose a separately approved configuration that preserves existing data.
+   Do not read private sources, Start audio or grant recording permission.
+   These are typed requests.
 3. Open the real answer window, keep it expanded, visible, non-miniaturized and
    unobscured, and show the answer viewport at its top. Use the actual accepted
    lead/points visibility plumbing. Never attach an unrelated empty scroll view

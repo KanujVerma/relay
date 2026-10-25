@@ -1,0 +1,38 @@
+{
+  "originHash" : "8892380c0ec208f602c84caf2faf7ce65e068a3fd60a0066126894afb8b6379d",
+  "pins" : [
+    {
+      "identity" : "fluidaudio",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/FluidInference/FluidAudio.git",
+      "state" : {
+        "revision" : "c79c4106b954f81205113c3343e5a7e59a1089b5"
+      }
+    },
+    {
+      "identity" : "grdb.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/groue/GRDB.swift.git",
+      "state" : {
+        "revision" : "b83108d10f42680d78f23fe4d4d80fc88dab3212"
+      }
+    },
+    {
+      "identity" : "keyboardshortcuts",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sindresorhus/KeyboardShortcuts",
+      "state" : {
+        "revision" : "772133d9dbe800fdac0473226822994c5c162c58"
+      }
+    },
+    {
+      "identity" : "tpcircularbuffer",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/michaeltyson/TPCircularBuffer.git",
+      "state" : {
+        "revision" : "cc520397504bb72bc6df79ff03eb72988a6dc50d"
+      }
+    }
+  ],
+  "version" : 3
+}

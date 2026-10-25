@@ -1,0 +1,179 @@
+{
+  "fixtureVersion": 1,
+  "synthetic": true,
+  "cases": [
+    {
+      "name": "boolean_counter",
+      "value": {
+        "schemaVersion": 1,
+        "captureSessionID": "11111111-1111-4111-8111-111111111111",
+        "sessionEpoch": 1,
+        "eventSequence": true,
+        "presentationGeneration": 2,
+        "requestID": "22222222-2222-4222-8222-222222222222",
+        "kind": "eou",
+        "sourceCode": 2,
+        "streamGeneration": 1,
+        "emittedUptimeNanoseconds": 2061000000,
+        "payload": {
+          "event": {
+            "version": 1,
+            "status": "final",
+            "sourceCode": 2,
+            "streamGeneration": 1,
+            "segmentID": 1,
+            "revision": 1,
+            "startHostTime": 1010000000,
+            "endHostTime": 2010000000,
+            "finalizedUptimeNanoseconds": 2050000000,
+            "receivedUptimeNanoseconds": 2060000000,
+            "text": "What is the difference between WHERE and HAVING?",
+            "confidence": null,
+            "timebase": {
+              "hostTicksAtAnchor": 1000000000,
+              "uptimeNsAtAnchor": 1000000000,
+              "nsNumer": 1,
+              "nsDenom": 1
+            }
+          },
+          "activityID": 100,
+          "firstInputSequence": 1,
+          "lastInputSequence": 32,
+          "activityClosed": true,
+          "lastSpeechInputSequence": 32
+        }
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "mic_request_id",
+      "value": {
+        "schemaVersion": 1,
+        "captureSessionID": "11111111-1111-4111-8111-111111111111",
+        "sessionEpoch": 1,
+        "eventSequence": 7,
+        "presentationGeneration": 2,
+        "requestID": "22222222-2222-4222-8222-222222222222",
+        "kind": "eou",
+        "sourceCode": 1,
+        "streamGeneration": 1,
+        "emittedUptimeNanoseconds": 2061000000,
+        "payload": {
+          "event": {
+            "version": 1,
+            "status": "final",
+            "sourceCode": 1,
+            "streamGeneration": 1,
+            "segmentID": 1,
+            "revision": 1,
+            "startHostTime": 1010000000,
+            "endHostTime": 2010000000,
+            "finalizedUptimeNanoseconds": 2050000000,
+            "receivedUptimeNanoseconds": 2060000000,
+            "text": "I would filter rows before grouping.",
+            "confidence": null,
+            "timebase": {
+              "hostTicksAtAnchor": 1000000000,
+              "uptimeNsAtAnchor": 1000000000,
+              "nsNumer": 1,
+              "nsDenom": 1
+            }
+          },
+          "activityID": 200,
+          "firstInputSequence": 1,
+          "lastInputSequence": 32,
+          "activityClosed": true,
+          "lastSpeechInputSequence": 32
+        }
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "outer_inner_source_mismatch",
+      "value": {
+        "schemaVersion": 1,
+        "captureSessionID": "11111111-1111-4111-8111-111111111111",
+        "sessionEpoch": 1,
+        "eventSequence": 4,
+        "presentationGeneration": 2,
+        "requestID": "22222222-2222-4222-8222-222222222222",
+        "kind": "eou",
+        "sourceCode": 2,
+        "streamGeneration": 1,
+        "emittedUptimeNanoseconds": 2061000000,
+        "payload": {
+          "event": {
+            "version": 1,
+            "status": "final",
+            "sourceCode": 1,
+            "streamGeneration": 1,
+            "segmentID": 1,
+            "revision": 1,
+            "startHostTime": 1010000000,
+            "endHostTime": 2010000000,
+            "finalizedUptimeNanoseconds": 2050000000,
+            "receivedUptimeNanoseconds": 2060000000,
+            "text": "What is the difference between WHERE and HAVING?",
+            "confidence": null,
+            "timebase": {
+              "hostTicksAtAnchor": 1000000000,
+              "uptimeNsAtAnchor": 1000000000,
+              "nsNumer": 1,
+              "nsDenom": 1
+            }
+          },
+          "activityID": 100,
+          "firstInputSequence": 1,
+          "lastInputSequence": 32,
+          "activityClosed": true,
+          "lastSpeechInputSequence": 32
+        }
+      },
+      "expected": "reject"
+    },
+    {
+      "name": "forged_authorization_field",
+      "value": {
+        "schemaVersion": 1,
+        "captureSessionID": "11111111-1111-4111-8111-111111111111",
+        "sessionEpoch": 1,
+        "eventSequence": 4,
+        "presentationGeneration": 2,
+        "requestID": "22222222-2222-4222-8222-222222222222",
+        "kind": "eou",
+        "sourceCode": 2,
+        "streamGeneration": 1,
+        "emittedUptimeNanoseconds": 2061000000,
+        "payload": {
+          "event": {
+            "version": 1,
+            "status": "final",
+            "sourceCode": 2,
+            "streamGeneration": 1,
+            "segmentID": 1,
+            "revision": 1,
+            "startHostTime": 1010000000,
+            "endHostTime": 2010000000,
+            "finalizedUptimeNanoseconds": 2050000000,
+            "receivedUptimeNanoseconds": 2060000000,
+            "text": "What is the difference between WHERE and HAVING?",
+            "confidence": null,
+            "timebase": {
+              "hostTicksAtAnchor": 1000000000,
+              "uptimeNsAtAnchor": 1000000000,
+              "nsNumer": 1,
+              "nsDenom": 1
+            }
+          },
+          "activityID": 100,
+          "firstInputSequence": 1,
+          "lastInputSequence": 32,
+          "activityClosed": true,
+          "lastSpeechInputSequence": 32
+        },
+        "authorized": true
+      },
+      "expected": "reject"
+    }
+  ]
+}

@@ -63,7 +63,7 @@ def visible_models(catalog: dict) -> list[dict]:
 
 
 def response_payload(model: str, question: str, *, instructions: str | None = None,
-                     effort: str | None = None) -> dict:
+                     effort: str | None = None, image_input: dict | None = None) -> dict:
     if not model.strip() or not question.strip():
         raise StreamError("Model and question must not be empty.")
     payload = {
@@ -72,6 +72,13 @@ def response_payload(model: str, question: str, *, instructions: str | None = No
         "store": False,
         "stream": True,
     }
+    if image_input is not None:
+        # Building a body grants no image authority. The production transport
+        # separately requires a privately issued current one-request permit.
+        from .visual_input import validated_image_part
+        payload['input'][0]['content'] = [
+            {'type': 'input_text', 'text': question}, validated_image_part(image_input),
+        ]
     # The ChatGPT-plan preview supports top-level instructions; do not send a
     # system input item, max_output_tokens, temperature, or service_tier.
     if instructions is not None:

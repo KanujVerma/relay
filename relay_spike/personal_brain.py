@@ -38,7 +38,7 @@ class InvalidState(BrainError):
 ACTORS = frozenset(("self", "teammate", "team", "unknown"))
 SOURCES = frozenset(("user_statement", "resume", "github", "drive",
                      "model_suggestion", "transcript"))
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE source (
@@ -117,6 +117,25 @@ CREATE TABLE candidate_evidence (
 );
 CREATE INDEX candidate_evidence_source_idx ON candidate_evidence(source_id);
 CREATE UNIQUE INDEX candidate_evidence_one_span_per_source ON candidate_evidence(source_id,span_start,span_end);
+"""
+
+RESUME_CONTEXT_SCHEMA = """
+CREATE TABLE candidate_resume_context (
+    fact_id TEXT PRIMARY KEY REFERENCES candidate_fact(id),
+    card_version INTEGER NOT NULL CHECK(card_version=2),
+    claim_kind TEXT NOT NULL CHECK(claim_kind IN
+      ('contribution','education','employment','project','listed_skill','certification','summary')),
+    context_json TEXT NOT NULL,
+    context_sha256 TEXT NOT NULL CHECK(length(context_sha256)=64),
+    approved_context_sha256 TEXT,
+    confirmation_event_id TEXT UNIQUE REFERENCES history_event(id),
+    CHECK((approved_context_sha256 IS NULL AND confirmation_event_id IS NULL) OR
+      (approved_context_sha256 IS NOT NULL AND approved_context_sha256=context_sha256 AND confirmation_event_id IS NOT NULL))
+);
+CREATE TRIGGER resume_context_redact AFTER UPDATE OF state,claim_text ON candidate_fact
+WHEN NEW.state IN ('rejected','superseded','revoked') OR NEW.claim_text IS NULL BEGIN
+    DELETE FROM candidate_resume_context WHERE fact_id=NEW.id;
+END;
 """
 
 
@@ -235,6 +254,20 @@ class BrainStore:
             except (sqlite3.Error, BrainError):
                 if self.db.in_transaction:
                     self.db.execute("ROLLBACK")
+                raise BrainError("Personal Brain migration failed.") from None
+            version = 2
+        if version == 2:
+            try:
+                self.db.execute('BEGIN IMMEDIATE')
+                table, trigger = RESUME_CONTEXT_SCHEMA.split('CREATE TRIGGER', 1)
+                self.db.execute(table)
+                self.db.execute('CREATE TRIGGER'+trigger)
+                if self.db.execute('PRAGMA foreign_key_check').fetchone() is not None:
+                    raise BrainError('Personal Brain foreign-key integrity check failed.')
+                self.db.execute('PRAGMA user_version=3')
+                self.db.execute('COMMIT')
+            except (sqlite3.Error, BrainError):
+                if self.db.in_transaction: self.db.execute("ROLLBACK")
                 raise BrainError("Personal Brain migration failed.") from None
         if self.db.execute("PRAGMA foreign_key_check").fetchone() is not None:
             raise BrainError("Personal Brain foreign-key integrity check failed.")
@@ -421,6 +454,7 @@ class BrainStore:
                      reviewed_actor: str | None = None,
                      reviewed_claim_key: str | None = None,
                      expected_snippet_sha256: str | None = None,
+                     expected_context_sha256: str | None = None,
                      reviewer_token: object | None = None) -> None:
         """Confirm explicitly, optionally superseding exactly one trusted claim.
 
@@ -432,6 +466,18 @@ class BrainStore:
             candidate = self._get("candidate_fact", fact_id)
             if candidate["state"] != "candidate":
                 raise InvalidState("Only pending candidate facts can be confirmed.")
+            context_row = self.db.execute(
+                "SELECT * FROM candidate_resume_context WHERE fact_id=?", (fact_id,)).fetchone()
+            if context_row is not None:
+                from .resume_structure import decode_context, digest
+                context = decode_context(context_row['context_json'])
+                from dataclasses import asdict
+                if (expected_context_sha256 != context_row['context_sha256'] or
+                        digest(asdict(context)) != context_row['context_sha256'] or
+                        context_row['approved_context_sha256'] is not None):
+                    raise MissingEvidence('Résumé entry needs its reviewed context receipt.')
+            elif expected_context_sha256 is not None:
+                raise MissingEvidence('Résumé context receipt has no matching candidate.')
             has_resume_evidence = self.db.execute(
                 "SELECT 1 FROM candidate_evidence WHERE fact_id=?", (fact_id,)
             ).fetchone() is not None
@@ -531,6 +577,9 @@ class BrainStore:
                 " VALUES (?,?,?,?)",
                 (fact_id, candidate["claim_key"], event_id, _now()),
             )
+            if context_row is not None:
+                self.db.execute("UPDATE candidate_resume_context SET approved_context_sha256=?,"
+                    "confirmation_event_id=? WHERE fact_id=?", (expected_context_sha256, event_id, fact_id))
             self.db.execute(
                 "UPDATE candidate_fact SET state='confirmed' WHERE id=?",
                 (fact_id,),

@@ -72,7 +72,7 @@
 ### Task 4: Joined integration and verification
 
 - [ ] Review each immutable lane diff independently; fixes return to original implementer and get scoped re-review.
-- [ ] Integrate reviewed lane commits into build/parallel-foundation-2026-10-23 without merging main; preserve source/test and scope history.
+- [ ] Integrate reviewed lane commits into build/copilot-integration-2026-10-23 without moving the frozen feature base or merging main; preserve source/test and scope history.
 - [ ] Run complete Python fixture/docs/tests, native session/profile/panel and affected ASR suites. Re-run only when changes/failures justify it.
 - [ ] Run a real local child helper with synthetic source/model/profile inputs through the actual native state path; separate visible-window and external hardware proof.
 - [ ] Commit the exact joined head, source evidence, lane state and next action to GitHub. Open/attach draft feature PRs against the build foundation, making parent dependencies explicit.

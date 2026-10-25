@@ -1,6 +1,6 @@
 # Parallel delivery plan
 
-Status 2026-10-23: approved goals, proposed implementation. No new native/session, expanded reviewed-answer or open-ended-answer feature code has been built in this planning effort. [HANDOFF](../HANDOFF.md) owns actual repository status.
+Status 2026-10-23: owner-approved implementation is underway. [BUILD_STATUS](BUILD_STATUS.md) records published lane heads and remaining gates; [BUILD_CONTRACT](BUILD_CONTRACT.md) is the frozen shared implementation contract. [HANDOFF](../HANDOFF.md) owns actual repository status.
 
 ## Approved target
 
@@ -8,7 +8,9 @@ One automatic permitted interview companion: listen throughout the conversation,
 
 ## Three worker slots and ownership
 
-The current environment supports three simultaneous workers plus the controller. Rotate a slot for fixes or independent review rather than creating a fourth concurrent writer. Each lane is one issue/branch/isolated checkout and reviewable PR. Implementation starts only after its concrete design is agreed.
+The current environment supports three simultaneous workers plus the controller. Rotate a slot for fixes or independent review rather than creating a fourth concurrent writer. Each lane is one issue/branch/isolated checkout and reviewable PR. The owner approved the three core features and directed implementation. Runtime changes still require verification and independent review.
+
+2026-10-24 resource correction: these are concurrent ownership slots, not permission for simultaneous compilers, environment installs or packaging. Follow [LOCAL_RESOURCE_BUDGET](LOCAL_RESOURCE_BUDGET.md): one heavy job at a time, reused bounded inputs/caches and a30GiB free-space floor. The owner resumed after the recorded disk recovery; do not automatically restart old interrupted commands.
 
 | Lane | Runnable end-to-end outcome | Exclusive write scope |
 | --- | --- | --- |
@@ -19,11 +21,22 @@ The current environment supports three simultaneous workers plus the controller.
 | Reviewed reference expansion, rotated slot | Reusable tested SQL/coding examples improve speed/quality inside the same engine | Catalog content and independent executable/labeled evaluation after a core lane frees capacity |
 | Controller | Joined integration and source-of-truth state | Shared schema/golden fixtures, manifest wiring, HANDOFF/ADRs/roadmap and review coordination |
 
-This is the controller's revised recommendation after the owner clarified the full conversational goal. It changes the earlier steady-state split that assigned two slots to separate answer paths while postponing personal context. Both answer paths remain in scope and use the same engine; separate user-visible modes or a fixed question bank are not the product. The earlier dedicated-reference-worker preference can be satisfied by rotating that work into the next free slot rather than displacing the personal-context foundation.
+The owner approved this revised core assignment after clarifying the full conversational goal. It changes the earlier steady-state split that assigned two slots to separate answer paths while postponing personal context. Both answer paths remain in scope and use the same engine; separate user-visible modes or a fixed question bank are not the product. The earlier dedicated-reference-worker preference can be satisfied by rotating that work into the next free slot rather than displacing the personal-context foundation.
 
 Three workers can build against agreed synthetic interfaces in parallel. Real private imports and capture remain gated by their explicit native permission, storage and source-approval implementation; the product requirement does not authorize loading private data into the current synthetic store. A finished worker becomes an independent reviewer. No simultaneous writers to the same shared source file.
 
-## Proposed architecture for discussion
+## Current end-to-end owners
+
+This table supersedes historical lane assignments above for the active feature work. Each worker uses GPT-6.1 Sol xhigh and an isolated checkout/branch. All three may build their complete feature through its app surface. Overlapping Model/transport changes stay on separate branches; root independently reviews and reconciles them into the controller checkout. Root does not serially take every app join away from a worker.
+
+| Worker | Feature and branch | Current review boundary |
+| --- | --- | --- |
+| research_visual_inputs | Frozenb270 standalone artifact and actual bundled response-guide gate | Sole initial heavy-job owner after resource-driver review. Reuse existing verified inputs/partial staging and retained root cache, two compiler jobs, no new environment/download. Sourceb270 frozen; tests separate. Completed300c artifact remains preserved. |
+| review_composition | AI notes design, `feature/generated-session-notes-design-2026-10-24` | Corrected preferencesb270 accepted/joined. Design7daf is being revised for complete saved-record coverage, exact bounded source/derived schemas and original source/worker/save ownership. No notes runtime before exact contract and final History dependency acceptance. |
+| compose_context_controls | Local history, PR93 `feature/local-session-history-2026-10-23` | Primitive194/timing772/scoped owner leased9 accepted. Preserved merge68ca imports accepted account/160/b270. Finish full app join and actual capture-stop-or-unknown metadata, then queued serial native gates. Source-only while artifact owns heavy slot. |
+| Root | Joined PR71, documentation, learning milestone and independent verification | Root-only integration. Review frozen source, notes architecture and lifecycle, queue shared heavy work, publish verified checkpoints. Cross-meeting learning remains a distinct required slice after its source/retention and evaluation contract. Main merge remains separate. |
+
+## Accepted implementation direction
 
 Keep native permission/capture/transcription/window ownership in Swift. Reuse Relay's existing Python question state, OAuth and QA through one local child helper, with bounded framed messages on inherited pipes. No new server or full application framework is needed for this transport. Compare any proposed dependency with the existing implementation before adding it.
 
@@ -69,3 +82,7 @@ Deferred breadth: bulk/new connectors, automatic biography promotion, a complete
 ## Evidence and continuation
 
 Use [UPSTREAM_REUSE](research/UPSTREAM_REUSE.md) for research evidence and [SLICES](SLICES.md) for the broader roadmap. Each slice must record exact base/head, scoped files, commands/results/skips, independent findings, implementation status and one next action. Keep a single canonical contract per shared interface; link to it instead of copying incompatible definitions into every lane document.
+
+## Additional owner requests
+
+The live flow must also support coding with an engineer (clarify, explain an approach, solve, discuss improvements) and feature case studies (users, requirements, behavior, trade-offs). Optional selected screen context is issue #64; shortcuts/app controls are issue #65; separate REA investigation is issue #66. [Cluely research](research/CLUELY_LESSONS.md) records evidence and limits. These additions use separate workers as the three available runtime slots free; current slot limits are an orchestration constraint, not a product architecture choice.

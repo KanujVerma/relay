@@ -130,4 +130,10 @@ The first process learns from four original available-suggestion/microphone/remo
 
 Test helper generalization preserves existing defaults and assertions; the original14-case replay will be combined with the remaining confirmed-personal/provenance acceptance. The provider completion is still explicitly fictional. Real account/model quality, physical device/useful-answer latency, final joined application/bundle and the remaining personal acceptance are not claimed from this result.
 
+## Identical draft replay correction
+
+The actual personal GUI baseline exposed a genuine typed-preparation issue: SwiftUI published the identical full draft again while preparation was held, and the unconditional draft observer treated it as an edit and cancelled the owned request before scope/answer emission. Content-free publication trace proved two identical values, the second while preparing. A minimal held-native-preparation regression reproduced four expected failures on unchanged code; the existing genuine changed-edit cancellation control passed.
+
+The scoped production repair is one guard before revision/retirement: an identical draft value returns without pretending a new edit occurred. Actual different edits still cancel, and the original preparation/reentry contracts remain unchanged. Focused gate17collected/17passed/0skips/0failures, exit0/15.438s, includes sixteen original typed/preparation cases plus the actual confirmed-personal GUI acceptance5.287s. ControllerSHAe348329e4f9f6793e5e7477d7c01e360f8dc7e3fe7d033c48651fa4bc8521612. The stock artifact predating this guard requires Root rebuild; no claim is made that its packaged bytes already contain the repair.
+
 Run the frozen actual app candidate under the shared resource lease, then close cold application restart, source deletion/Lock, cancel and deterministic personal-presentation/current-guide acceptance gaps. Publish exact observed results and remaining root-owned real account/device/model-quality and latency gates. Main merge remains unauthorized.

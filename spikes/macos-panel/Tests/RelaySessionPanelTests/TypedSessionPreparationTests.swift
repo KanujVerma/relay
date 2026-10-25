@@ -96,6 +96,16 @@ import RelayContextComposition
         XCTAssertEqual(fixture.sent.map(\.question),["New question."])
         XCTAssertFalse(fixture.originalCurrent[0]());XCTAssertFalse(model.snapshot.isPreparing)
     }
+    func testIdenticalBindingReplayPreservesHeldPreparationAndIssuesOnce()async throws{
+        let fixture=PreparationFixture(),model=fixture.model()
+        model.draft="Explain queues.";model.submitDraft();await eventually{fixture.preparing.entered}
+        XCTAssertTrue(fixture.originalCurrent[0]());XCTAssertTrue(fixture.sent.isEmpty)
+        model.draft="Explain queues."
+        XCTAssertTrue(fixture.originalCurrent[0](),"An identical Binding write is not a new edit")
+        fixture.preparing.release();await model.waitForPreparationQuiescence()
+        XCTAssertEqual(fixture.sent.map(\.question),["Explain queues."])
+        XCTAssertEqual(fixture.retireCount,0);XCTAssertTrue(model.draft.isEmpty)
+    }
     func testFailedOrCancelledSendAsNewKeepsOriginalUnavailableBasis()async throws {
         for cancel in [false,true] {
             let fixture=PreparationFixture(),model=fixture.model()

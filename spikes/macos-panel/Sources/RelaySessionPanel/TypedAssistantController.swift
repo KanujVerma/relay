@@ -25,6 +25,7 @@ public struct TypedAssistantSnapshot:Sendable {
 /// account, inference or publication authority. Construction performs no reads.
 @MainActor public final class TypedAssistantController:ObservableObject {
     @Published public var draft="" {didSet{
+        guard draft != oldValue else{return}
         draftRevision &+= 1
         if !restoring {
             retirePreparation()

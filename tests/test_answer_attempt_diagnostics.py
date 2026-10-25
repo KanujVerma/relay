@@ -229,3 +229,145 @@ class AnswerAttemptDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
         record = build_record(stream.last_timing, host_outcome='answer_emitted', validation_code='passed')
         record['unsafe'] = SECRET
         with self.assertRaises(ValueError): write_record(self.directory, record)
+
+    async def test_non_sse_v2_complete_json_shape_and_error_families(self):
+        payload = dict(object='response', status='completed', id=SECRET, output=[
+            dict(type='message', id=SECRET, content=[dict(type='output_text', text=SECRET), dict(type='refusal', refusal=SECRET)]),
+            dict(type='reasoning', id=SECRET, content=[dict(type='reasoning_text', text=SECRET)])])
+        stream = self.stream(httpx.Response(200, stream=httpx.ByteStream(json.dumps(payload).encode()),
+            headers={'content-type': 'application/json'}), sink=AnswerDiagnosticSink(self.directory))
+        _, out = await self.host(stream); value = self.latest()
+        self.assertEqual(value['schemaVersion'], 2); self.assertEqual(out[-1]['reasonCode'], 'answer_unavailable')
+        self.assertEqual(value['transport']['transportCode'], 'stream_invalid')
+        body = value['transport']['nonSse']; self.assertEqual(body['inspectionOutcome'], 'complete_json')
+        self.assertTrue(body['bodyComplete']); self.assertEqual(body['status'], 'completed'); self.assertEqual(body['object'], 'response')
+        self.assertEqual(body['outputCount'], 2); self.assertEqual(body['outputKindMask'], 3)
+        self.assertEqual(body['contentPartKindMask'], 7); self.assertTrue(body['refusalPresent'])
+        stream = self.stream(httpx.Response(200, stream=httpx.ByteStream(json.dumps(dict(type='response.completed', response=payload)).encode()),
+            headers={'content-type': 'application/json'}), sink=AnswerDiagnosticSink(self.directory))
+        await self.host(stream); body = self.latest()['transport']['nonSse']
+        self.assertEqual(body['rootEventCategory'], 'response.completed'); self.assertTrue(body['envelopePresent'])
+        self.assertEqual(body['status'], 'completed'); self.assertEqual(body['outputCount'], 2)
+        wrapped_error = dict(type='error', response=dict(object='response', status='failed'),
+            error=dict(type='invalid_request_error', code='chatpass_v2_scope_not_authorized', param='model', message=SECRET))
+        stream = self.stream(httpx.Response(200, stream=httpx.ByteStream(json.dumps(wrapped_error).encode()), headers={'content-type': 'application/json'}), sink=AnswerDiagnosticSink(self.directory))
+        await self.host(stream); value = self.latest()['transport']
+        self.assertEqual(value['nonSse']['rootEventCategory'], 'error'); self.assertTrue(value['nonSse']['errorPresent'])
+        self.assertEqual(value['nonSse']['errorTypeCategory'], 'invalid_request'); self.assertEqual(value['providerCode'], 'chatpass_v2_scope_not_authorized')
+        for error, expected in ((dict(type='authentication_error'), 'authentication'), (dict(type='invalid_request_error'), 'invalid_request'),
+                                (dict(type='rate_limit_error'), 'rate_limit'), (dict(type='permission_error'), 'permission'),
+                                (dict(type='server_error'), 'server'), ({}, 'missing'), (dict(type=SECRET), 'other'), ('invalid_grant', 'oauth')):
+            raw = dict(error=error, message=SECRET)
+            stream = self.stream(httpx.Response(200, stream=httpx.ByteStream(json.dumps(raw).encode()), headers={'content-type': 'application/json'}), sink=AnswerDiagnosticSink(self.directory))
+            await self.host(stream)
+            self.assertEqual(self.latest()['transport']['nonSse']['errorTypeCategory'], expected)
+
+    async def test_non_sse_mime_prefix_encoding_and_empty_categories_are_fixed(self):
+        class Unread(httpx.AsyncByteStream):
+            async def __aiter__(self): raise AssertionError('encoded body must not be read'); yield b''
+        cases = [('text/html', b'<!DOCTYPE html>'+SECRET.encode(), None, 'prefix_html', 'html'),
+                 (' text/event-stream', b'data: '+SECRET.encode()+b'\n\n', None, 'prefix_sse', 'sse'),
+                 ('text/plain', SECRET.encode(), None, 'invalid_json', 'plain'),
+                 (None, b'', None, 'empty', 'missing'),
+                 ('application/json', None, 'gzip', 'encoded_uninspected', 'json')]
+        for mime, raw, encoding, outcome, category in cases:
+            headers = {} if mime is None else {'content-type': mime}
+            if encoding: headers['content-encoding'] = encoding
+            stream = self.stream(httpx.Response(200, stream=Unread() if raw is None else httpx.ByteStream(raw), headers=headers), sink=AnswerDiagnosticSink(self.directory))
+            await self.host(stream); value = self.latest()['transport']
+            self.assertEqual(value['contentType'], category); self.assertEqual(value['nonSse']['inspectionOutcome'], outcome)
+            self.assertEqual(value['transportCode'], 'stream_invalid')
+            if mime == ' text/event-stream': self.assertFalse(value['sseHeaderPrefix']); self.assertTrue(value['nonSse']['ssePrefix'])
+
+    async def test_non_sse_never_eof_window_and_near_deadline_preserve_original_failure(self):
+        from relay_spike.answer_diagnostics import INSPECTION_DEADLINE
+        class NeverEOF(httpx.AsyncByteStream):
+            async def __aiter__(self): yield b'{' ; await asyncio.Event().wait()
+        stream = self.stream(httpx.Response(200, stream=NeverEOF(), headers={'content-type': 'application/json'}), sink=AnswerDiagnosticSink(self.directory))
+        _, out = await self.host(stream)
+        value = self.latest(); self.assertEqual(value['transport']['nonSse']['inspectionOutcome'], 'timeout')
+        self.assertEqual(value['transport']['transportCode'], 'stream_invalid'); self.assertEqual(value['hostOutcome'], 'abstain_emitted')
+        self.assertEqual(out[-1]['reasonCode'], 'answer_unavailable'); self.assertIsNone(INSPECTION_DEADLINE.get())
+        stream = self.stream(httpx.Response(200, stream=NeverEOF(), headers={'content-type': 'application/json'}), deadline=.03, sink=AnswerDiagnosticSink(self.directory))
+        await self.host(stream, deadline=.03)
+        value = self.latest(); self.assertEqual(value['transport']['nonSse']['inspectionOutcome'], 'no_time')
+        self.assertEqual(value['transport']['transportCode'], 'stream_invalid'); self.assertEqual(value['hostOutcome'], 'abstain_emitted')
+        self.assertIsNone(INSPECTION_DEADLINE.get())
+
+    async def test_non_sse_inspection_cancel_bounds_and_provider_fields_remain_diagnostic_only(self):
+        from relay_spike.answer_diagnostics import INSPECTION_DEADLINE
+        entered = asyncio.Event(); closed = []
+        class Held(httpx.AsyncByteStream):
+            async def __aiter__(self): entered.set(); await asyncio.Event().wait(); yield b''
+            async def aclose(self): closed.append(True)
+        stream = self.stream(httpx.Response(200, stream=Held(), headers={'content-type': 'application/json'}), sink=AnswerDiagnosticSink(self.directory))
+        token = INSPECTION_DEADLINE.set(asyncio.get_running_loop().time()+15)
+        try:
+            task = asyncio.create_task(stream.complete('synthetic', 'synthetic')); await entered.wait(); task.cancel()
+            with self.assertRaises(asyncio.CancelledError): await task
+        finally: INSPECTION_DEADLINE.reset(token)
+        self.assertTrue(closed); self.assertEqual(stream.last_timing.outcome, 'cancelled')
+        stream = self.stream(httpx.Response(200, stream=httpx.ByteStream(b'x'*65536), headers={'content-type': 'application/json'}), sink=AnswerDiagnosticSink(self.directory))
+        await self.host(stream); body = self.latest()['transport']['nonSse']
+        self.assertEqual(body['inspectionOutcome'], 'body_limit'); self.assertLessEqual(body['bytesAtStop'], 65536)
+        raw = json.dumps(dict(error=dict(code='subscription_sharing_unsupported_capability', param='input.image', message=SECRET))).encode()
+        stream = self.stream(httpx.Response(200, stream=httpx.ByteStream(raw), headers={'content-type': 'application/json'}), sink=AnswerDiagnosticSink(self.directory))
+        token = INSPECTION_DEADLINE.set(asyncio.get_running_loop().time()+15)
+        try:
+            with self.assertRaises(AnswerTransportError) as error: await stream.complete('synthetic', 'synthetic')
+        finally: INSPECTION_DEADLINE.reset(token)
+        self.assertEqual(error.exception.args, ('stream_invalid',)); self.assertIsNone(error.exception.provider_code); self.assertIsNone(error.exception.param_category)
+        self.assertEqual(stream.last_timing.diagnostic.providerCode, 'subscription_sharing_unsupported_capability')
+
+    async def test_non_sse_early_small_prefix_and_read_failure_are_not_full_body_claims(self):
+        for prefix, expected in ((b'data: ', 'prefix_sse'), (b'<html>', 'prefix_html')):
+            class Prefix(httpx.AsyncByteStream):
+                async def __aiter__(self): yield prefix; await asyncio.Event().wait()
+            stream = self.stream(httpx.Response(200, stream=Prefix(), headers={'content-type': 'text/plain'}), sink=AnswerDiagnosticSink(self.directory))
+            await self.host(stream); body = self.latest()['transport']['nonSse']
+            self.assertEqual(body['inspectionOutcome'], expected); self.assertFalse(body['bodyComplete'])
+        for error, expected in ((httpx.ReadError(SECRET), 'read_error'), (httpx.RemoteProtocolError(SECRET), 'truncated')):
+            class Broken(httpx.AsyncByteStream):
+                async def __aiter__(self): raise error; yield b''
+            stream = self.stream(httpx.Response(200, stream=Broken(), headers={'content-type': 'application/json'}), sink=AnswerDiagnosticSink(self.directory))
+            await self.host(stream)
+            self.assertEqual(self.latest()['transport']['nonSse']['inspectionOutcome'], expected)
+
+    async def test_inspection_internal_error_and_owner_cancel_reset_host_context(self):
+        from relay_spike.answer_diagnostics import INSPECTION_DEADLINE
+        stream = self.stream(httpx.Response(200, stream=httpx.ByteStream(b'{}'), headers={'content-type': 'application/json'}), sink=AnswerDiagnosticSink(self.directory))
+        with patch('relay_spike.oauth_answer_stream.inspect_non_sse', side_effect=RuntimeError(SECRET)):
+            await self.host(stream)
+        self.assertEqual(self.latest()['transport']['transportCode'], 'stream_invalid')
+        self.assertEqual(self.latest()['transport']['nonSse']['inspectionOutcome'], 'read_error')
+        entered = asyncio.Event(); observed = []; actual = AnswerDiagnosticSink(self.directory)
+        async def capture(timing, **fields): observed.append(INSPECTION_DEADLINE.get()); await actual(timing, **fields)
+        class Held(httpx.AsyncByteStream):
+            async def __aiter__(self): entered.set(); await asyncio.Event().wait(); yield b''
+        stream = self.stream(httpx.Response(200, stream=Held(), headers={'content-type': 'application/json'}), sink=capture)
+        out = []; host = SessionHost(complete=stream.complete, emit=out.append)
+        for item in (start(), speech(2), end(3), final(4, 'Explain event loops.')): await host.handle(item)
+        await entered.wait(); host.close(); await host.drain()
+        self.assertEqual(observed, [None]); self.assertIsNone(INSPECTION_DEADLINE.get())
+        self.assertEqual(self.latest()['hostOutcome'], 'cancelled')
+
+    async def test_v1_record_remains_immutable_and_v2_worst_case_stays_bounded(self):
+        legacy = b'{"schemaVersion":1,"synthetic":"preserved"}\n'
+        path = self.directory/FILENAME; path.write_bytes(legacy); path.chmod(0o600)
+        with self.assertRaises(ValueError): write_record(self.directory, json.loads(legacy))
+        self.assertEqual(path.read_bytes(), legacy)
+        stream = self.stream(self.response()); await stream.complete('synthetic', 'synthetic')
+        wide = replace(stream.last_timing, token_ready_ms=123456789.123456, client_ready_ms=123456789.123456,
+            request_started_ms=123456789.123456, response_headers_ms=123456789.123456, first_text_ms=123456789.123456,
+            response_completed_ms=123456789.123456, finished_ms=123456789.123456)
+        record = build_record(wide, host_outcome='abstain_emitted', validation_code='personal_or_authority_claim')
+        record['transport'].update(httpStatus=200, failureKind='http_connect_timeout', transportCode='missing_response_completed',
+            providerCode='subscription_sharing_unsupported_capability', paramCategory='service_tier', contentType='json',
+            lastEvent='response.reasoning_summary_part.added', itemKind='reasoning', itemStatusPresent=True, itemStatus='in_progress', partKind='reasoning_text')
+        record['transport']['nonSse'].update(inspectionOutcome='encoded_uninspected', bytesAtStop=65536, bodyComplete=True,
+            encodedBody='deflate', rootShape='object', status='in_progress', object='response', errorPresent=True,
+            errorTypeCategory='invalid_request', outputCount=65536, outputKindMask=15, contentPartKindMask=31,
+            refusalPresent=True, ssePrefix=False, rootEventCategory='response.reasoning_summary_part.added', envelopePresent=True)
+        record['attemptIndex']=2**64-1;record['outputBytes']=2**64-1
+        record['transport']['streamBytesAtStop']=2**64-1;record['transport']['eventCount']=2**64-1
+        self.assertEqual(record['schemaVersion'], 2); write_record(self.directory, record); self.latest()

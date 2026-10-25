@@ -2,6 +2,8 @@
 
 Base: `04fdee09f7541c52f9292fca2370b985c0233f9d`. Root observed normal Send reaching Thinking then Answer unavailable. The later25.99s read is not an actual request duration, and neither HTTP/provider outcome nor a model count is established by that UI label. This source-only component does not identify the real failure until a separate controlled run produces a fresh record.
 
+This is the original schema1 receipt. The later controller record confirms non-SSE rejection; the separately scoped [schema2 bounded inspection](2026-10-25-non-sse-diagnostics-v2.md) adds content-free MIME/body-shape observations while preserving that rejection. Original evidence remains unchanged.
+
 The existing immutable admitted-attempt timing now contains a frozen scalar observation: HTTP status, fixed failure/transport code, existing allowlisted provider code/parameter category, content-type category, last consumed event category, item kind/status presence/status category, part kind and received SSE byte/event counts. The event observation occurs immediately BEFORE assembler.feed; it never retains event dictionaries, IDs, text, reasoning or body. Unknown strings become other/null. This observes documented reasoning event shapes without accepting any new lifecycle.
 
 The original last_timing contract remains: busy/closed/budget/unissued permit rejection does not replace the previous admitted attempt. Host adoption requires both a new snapshot identity and private same-task weak binding. The weak reference is outside every dataclass/serialized record and does not retain the task or its request. Existing helper/native timing wire keys are unchanged; asdict/JSON benchmark callers remain compatible and content-free.

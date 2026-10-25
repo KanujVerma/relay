@@ -20,11 +20,11 @@ private final class LearningWindowExited:@unchecked Sendable {
 /// Isolates AppKit process/window lifecycle only. The actual original test body
 /// executes inside the named child and must produce its complete XCTest result.
 @MainActor enum LearningGUIWitness {
-    static func run(caseClass:XCTestCase.Type,method:String)async throws->Bool{
+    static func run(caseClass:XCTestCase.Type,method:String,environmentOverrides:[String:String]=[:],forceChild:Bool=false,pump:(@MainActor ()->Void)?=nil)async throws->Bool{
         let key="RELAY_LEARNING_WINDOW_CHILD",environment=ProcessInfo.processInfo.environment
         let marker="LEARNING_WINDOW_CHILD_STARTED "+method
-        if environment[key]==method{FileHandle.standardError.write(Data((marker+"\n").utf8));return false}
-        guard environment[key]==nil else{XCTFail("Unexpected owned window-test child selection");return true}
+        if !forceChild,environment[key]==method{FileHandle.standardError.write(Data((marker+"\n").utf8));return false}
+        guard environment[key]==nil || (forceChild && environment[key]==method) else{XCTFail("Unexpected owned window-test child selection");return true}
         let foreground=NSWorkspace.shared.frontmostApplication
         let child=Process(),exited=LearningWindowExited(),pipe=Pipe()
         let tail=LearningWindowTail(pipe.fileHandleForReading)
@@ -35,12 +35,12 @@ private final class LearningWindowExited:@unchecked Sendable {
         // not assume Foundation places every helper in the host's group.
         child.arguments=["-c","import os,sys\nif os.getpgrp()!=os.getpid(): os.setsid()\nif os.getpgrp()!=os.getpid(): raise RuntimeError('Owned test host group is not isolated')\nos.execv('/usr/bin/xcrun', ['xcrun','xctest',*sys.argv[1:]])",
             "-XCTest","RelaySessionApplicationTests.LearningApplicationTests/"+method,Bundle(for:caseClass).bundleURL.path]
-        var values=environment;values[key]=method;child.environment=values
+        var values=environment;values.merge(environmentOverrides){_,new in new};values[key]=method;child.environment=values
         child.standardOutput=pipe;child.standardError=pipe;child.terminationHandler={_ in exited.finish()}
         try child.run();try pipe.fileHandleForWriting.close()
         let reader=Task.detached(priority:.utility){tail.drain()}
         let group=child.processIdentifier,deadline=ContinuousClock.now+Duration.seconds(20)
-        while !exited.finished,ContinuousClock.now<deadline{try? await Task.sleep(for:.milliseconds(5))}
+        while !exited.finished,ContinuousClock.now<deadline{pump?();try? await Task.sleep(for:.milliseconds(5))}
         let timedOut = !exited.finished
         if timedOut{_=Darwin.kill(-group,SIGTERM)}
         for _ in 0..<200{if exited.finished{break};try? await Task.sleep(for:.milliseconds(5))}
@@ -55,7 +55,7 @@ private final class LearningWindowExited:@unchecked Sendable {
         await reader.value;try? pipe.fileHandleForReading.close()
         if let foreground,!foreground.isTerminated{
             if NSWorkspace.shared.frontmostApplication?.processIdentifier != foreground.processIdentifier{_=foreground.activate(options:[])}
-            for _ in 0..<50{if NSWorkspace.shared.frontmostApplication?.processIdentifier==foreground.processIdentifier{break};try? await Task.sleep(for:.milliseconds(10))}
+            for _ in 0..<50{if NSWorkspace.shared.frontmostApplication?.processIdentifier==foreground.processIdentifier{break};pump?();try? await Task.sleep(for:.milliseconds(10))}
             XCTAssertEqual(NSWorkspace.shared.frontmostApplication?.processIdentifier,foreground.processIdentifier)
         }
         let output=tail.text

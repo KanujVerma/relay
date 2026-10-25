@@ -18,7 +18,7 @@ import RelaySessionPanel
     func commit(_ control:LearningControlRecord)->LearningControlReceipt{receipt=LearningControlReceipt(revision:control.revision,enabled:control.enabled,pending:nil);return receipt}
 }
 @MainActor private final class AppLearningContextPreferences:SessionContextUsePreferences{var useInSessions=false}
-@MainActor private final class AppLearningProfileReceipt {
+@MainActor final class AppLearningProfileReceipt {
     var entered=false;private var held:CheckedContinuation<Void,Never>?
     func observe(_ data:Data)async{
         guard let value=try? JSONSerialization.jsonObject(with:data) as? [String:Any],value["command"] as? String=="select_begin" else{return}
@@ -26,7 +26,7 @@ import RelaySessionPanel
     }
     func release(){held?.resume();held=nil}
 }
-private final class AppLearningKey:ProfileKeyProvider,@unchecked Sendable {
+final class AppLearningKey:ProfileKeyProvider,@unchecked Sendable {
     private let lock=NSLock();private var count=0
     var calls:Int{lock.withLock{count}}
     func key(createIfMissing:Bool)throws->Data{lock.withLock{count+=1};return Data(repeating:131,count:32)}
@@ -50,7 +50,7 @@ private final class LearningPaintFinished:@unchecked Sendable {
     var finished:Bool{lock.withLock{value}}
     func finish(){lock.withLock{value=true}}
 }
-@MainActor private final class LearningAppConversation {
+@MainActor final class LearningAppConversation {
     static let question="Write a Python function that returns the first item or None for an empty list."
     // This fixture isolates concise wording. Stepwise wording has independent
     // derivation coverage; mixing both would make a one-rule Undo ambiguous.
@@ -87,16 +87,16 @@ private final class LearningPaintFinished:@unchecked Sendable {
     private static var finishedCocoaLaunch=false
     private weak var diagnosticModel:SessionApplicationModel?
     private weak var diagnosticSurface:NSWindow?
-    private static func pumpCocoaEvents(){
+    static func pumpCocoaEvents(){
         guard let application=NSApp else{return}
         for _ in 0..<32{guard let event=application.nextEvent(matching:.any,until:Date(),inMode:.default,dequeue:true) else{break};application.sendEvent(event)}
         application.updateWindows()
     }
     private var root:URL{URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()}
     private func quote(_ text:String)->String{"'"+text.replacingOccurrences(of:"'",with:"'\\''")+"'"}
-    private func rig(learning:Bool=true,question:String=LearningAppConversation.question,controlPreferences:AppLearningPreferences?=nil,profileReceipt:AppLearningProfileReceipt?=nil)throws->(SessionApplicationModel,LearningAppConversation,URL,AppLearningKey){
-        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("relay-learning-application-"+UUID().uuidString)
-        try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:false,attributes:[.posixPermissions:0o700])
+    func rig(learning:Bool=true,question:String=LearningAppConversation.question,controlPreferences:(any LearningControlPreferences)?=nil,profileReceipt:AppLearningProfileReceipt?=nil,directory existingDirectory:URL?=nil,historyPreferences:(any HistorySavingPreferences)?=nil)throws->(SessionApplicationModel,LearningAppConversation,URL,AppLearningKey){
+        let directory=existingDirectory ?? FileManager.default.temporaryDirectory.appendingPathComponent("relay-learning-application-"+UUID().uuidString)
+        if existingDirectory==nil{try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:false,attributes:[.posixPermissions:0o700])}
         let python=ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"] ?? "/usr/bin/python3"
         let launcher=directory.appendingPathComponent("synthetic-helper"),helper=root.appendingPathComponent("tests/support/learning_memory_helper.py"),log=directory.appendingPathComponent("calls.jsonl")
         let command="exec \(quote(python)) \(quote(helper.path)) --synthetic-learning-test --log "
@@ -105,7 +105,7 @@ private final class LearningPaintFinished:@unchecked Sendable {
         let script="#!/bin/sh\nif [ -e \(quote(log.path)) ]; then\n\(command)\(quote(directory.appendingPathComponent("calls-").path))$$.jsonl \"$@\"\nfi\n\(command)\(quote(log.path)) \"$@\"\n"
         try Data(script.utf8).write(to:launcher)
         try FileManager.default.setAttributes([.posixPermissions:0o700],ofItemAtPath:launcher.path)
-        let key=AppLearningKey(),history=AppLearningHistoryPreferences(),controls=controlPreferences ?? AppLearningPreferences(),conversation=LearningAppConversation(remoteQuestion:question)
+        let key=AppLearningKey(),history=historyPreferences ?? AppLearningHistoryPreferences(),controls=controlPreferences ?? AppLearningPreferences(),conversation=LearningAppConversation(remoteQuestion:question)
         let storage=HistoryVaultStorage(directory:directory.appendingPathComponent("Relay/History"),keys:key)
         let profileFactory:(@Sendable ()->ProfileVault)?
         let observer:(@MainActor (Data)async->Void)?
@@ -119,10 +119,10 @@ private final class LearningPaintFinished:@unchecked Sendable {
             contextPreferences:context,profileVaultFactory:profileFactory,profileResponseObserved:observer,
             historyPreferences:history,historyStorageFactory:{storage},learningPreferences:learning ? controls:nil,fixtureSessionStart:conversation.start)
         diagnosticModel=model
-        addTeardownBlock{await model.shutdown();try? FileManager.default.removeItem(at:directory)}
+        addTeardownBlock{await model.shutdown();if existingDirectory==nil{try? FileManager.default.removeItem(at:directory)}}
         return(model,conversation,directory,key)
     }
-    private func until(file:StaticString=#filePath,line:UInt=#line,_ condition:()->Bool)async throws{
+    func until(file:StaticString=#filePath,line:UInt=#line,_ condition:()->Bool)async throws{
         let deadline=ContinuousClock.now+Duration.seconds(8)
         while true{
             if diagnosticSurface != nil{
@@ -139,7 +139,7 @@ private final class LearningPaintFinished:@unchecked Sendable {
             try await Task.sleep(for:.milliseconds(3))
         }
     }
-    private func window(_ model:SessionApplicationModel,show:Bool=true)->NSWindow{
+    func window(_ model:SessionApplicationModel,show:Bool=true)->NSWindow{
         let application=NSApplication.shared,originalPolicy=application.activationPolicy(),frontmost=NSWorkspace.shared.frontmostApplication
         _=application.setActivationPolicy(.regular)
         if !Self.finishedCocoaLaunch{application.finishLaunching();Self.finishedCocoaLaunch=true}

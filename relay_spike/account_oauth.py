@@ -247,8 +247,21 @@ class AccountOAuthService:
         except Exception:
             diagnostic.fail('token_unavailable' if not token_ready else 'catalog_unavailable');raise
         finally:
-            try:self._catalog_diagnostic_writer(self.store.path.parent,diagnostic.record())
-            except Exception:pass
+            await self._finish_catalog_diagnostic(diagnostic)
+
+    async def _finish_catalog_diagnostic(self,diagnostic):
+        # Keep control/status responsive, but never leave an unjoined file worker.
+        try:
+            await owned_thread(self._catalog_diagnostic_writer,self.store.path.parent,diagnostic.record())
+        except asyncio.CancelledError:
+            if diagnostic.outcome!='cancelled':
+                diagnostic.outcome='cancelled'
+                # At most one latest-record correction after the original
+                # writer joins. A repeated cancel still joins this worker.
+                try:await owned_thread(self._catalog_diagnostic_writer,self.store.path.parent,diagnostic.record())
+                except (Exception,asyncio.CancelledError):pass
+            raise
+        except Exception:pass
 
     async def revoke(self,record):
         if not record.get('refresh_token'):return True

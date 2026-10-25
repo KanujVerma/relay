@@ -65,4 +65,4 @@ def write_catalog_diagnostic(directory, record):
     if len(encoded) > 1024: raise ValueError('catalog_diagnostic_budget')
     directory = Path(directory)
     storage.directory(directory, create=False)
-    storage.replace_bytes(directory / FILENAME, encoded)
+    storage.replace_bytes(directory / FILENAME, encoded, create_parent=False)

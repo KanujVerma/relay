@@ -5,7 +5,9 @@ import json
 import os
 from pathlib import Path
 import stat
+import shutil
 import tempfile
+import threading
 import time
 import unittest
 from unittest.mock import patch
@@ -14,6 +16,8 @@ import httpx
 from relay_spike import catalog_diagnostics
 from relay_spike.account_oauth import AccountOAuthService, AccountOAuthError
 from relay_spike.account_store import AccountCredentialStore, AccountStoreError
+from relay_spike.account_bridge import AccountBridge, AccountBootstrap
+from tests.test_account_bridge import request
 from tests.test_account_store import grant, KEY, NOW
 
 GENERATION = '00000000-0000-0000-0000-000000000001'
@@ -189,6 +193,68 @@ class CatalogDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
         (self.directory / catalog_diagnostics.FILENAME).symlink_to(victim)
         models = await self.service(httpx.Response(200, json={'models': [MODEL]})).catalog(self.identity, GENERATION)
         self.assertEqual(len(models), 1); self.assertEqual(victim.read_bytes(), RAW_SECRET.encode())
+
+    async def test_held_writer_keeps_control_responsive_and_cancel_waits_for_actual_join(self):
+        entered = threading.Event(); release = threading.Event(); returned = threading.Event(); watchdog_fired = threading.Event()
+        loop_thread = threading.get_ident(); writer_threads = []; written = []
+        def writer(directory, record):
+            writer_threads.append(threading.get_ident()); entered.set()
+            if not release.wait(3): raise AssertionError('bounded held-writer fixture timed out')
+            catalog_diagnostics.write_catalog_diagnostic(directory, record)
+            written.append(record['outcome']); returned.set()
+        def watchdog():
+            if not entered.wait(2) or not release.wait(1): watchdog_fired.set(); release.set()
+        safety = threading.Thread(target=watchdog); safety.start()
+        out = []
+        def factory(store):
+            store._now = lambda: NOW
+            return AccountOAuthService(store, catalog_diagnostic_writer=writer,
+                client_factory=lambda **kw: httpx.AsyncClient(transport=httpx.MockTransport(
+                    lambda _: httpx.Response(200, json={'models': [MODEL]})), **kw))
+        bridge = AccountBridge(AccountBootstrap('account_control', KEY, self.directory, None, GENERATION), emit=out.append, service_factory=factory)
+        try:
+            await bridge.start()
+            selection = request('select', registrationID=self.identity); await bridge.handle(selection)
+            self.assertTrue(await asyncio.to_thread(entered.wait, 2))
+            self.assertFalse(returned.is_set(), 'the control loop must run while the writer remains held')
+            self.assertFalse(watchdog_fired.is_set(), 'the safety release is not a responsiveness proof')
+            status = request('status'); await bridge.handle(status)
+            self.assertEqual(out[-1]['requestID'], status['requestID']); self.assertEqual(out[-1]['status'], 'busy')
+            cancellation = request('cancel', targetRequestID=selection['requestID']); await bridge.handle(cancellation)
+            for _ in range(3): await asyncio.sleep(0)
+            self.assertFalse(returned.is_set()); self.assertFalse(bridge._task.done())
+            self.assertFalse(any(row['requestID'] in (selection['requestID'], cancellation['requestID']) and row['resultRevision'] == 2 for row in out))
+            release.set(); await bridge.drain()
+            for identity in (selection['requestID'], cancellation['requestID']):
+                terminals = [row for row in out if row['requestID'] == identity and row['resultRevision'] == 2]
+                self.assertEqual(len(terminals), 1); self.assertEqual(terminals[0]['status'], 'cancelled')
+            self.assertTrue(all(identity != loop_thread for identity in writer_threads))
+            self.assertEqual(written, ['valid', 'cancelled']); self.assertEqual(self.latest()['outcome'], 'cancelled')
+        finally:
+            release.set(); await bridge.close(); safety.join(2)
+        self.assertFalse(safety.is_alive())
+
+    async def test_removed_validated_root_is_not_recreated_by_diagnostic_replace(self):
+        original = catalog_diagnostics.storage.directory; removed = []
+        def interleaved(path, *, create=False):
+            original(path, create=create)
+            if not create and not removed:
+                removed.append(True); shutil.rmtree(self.directory)
+        def writer(directory, record):
+            with patch.object(catalog_diagnostics.storage, 'directory', side_effect=interleaved):
+                catalog_diagnostics.write_catalog_diagnostic(directory, record)
+        models = await self.service(httpx.Response(200, json={'models': [MODEL]}), writer=writer).catalog(self.identity, GENERATION)
+        self.assertEqual(len(models), 1); self.assertEqual(removed, [True])
+        self.assertFalse(self.directory.exists(), 'a telemetry writer cannot recreate a removed Accounts root')
+
+    def test_existing_only_replace_does_not_change_default_creating_callers(self):
+        target = Path(self.folder.name) / 'default-owned' / 'value'
+        catalog_diagnostics.storage.replace_bytes(target, b'synthetic-public-bytes')
+        self.assertEqual(target.read_bytes(), b'synthetic-public-bytes')
+        absent = Path(self.folder.name) / 'absent-owned' / 'value'
+        with self.assertRaises(catalog_diagnostics.storage.ProtectedStorageError):
+            catalog_diagnostics.storage.replace_bytes(absent, b'synthetic-public-bytes', create_parent=False)
+        self.assertFalse(absent.parent.exists())
 
     def test_import_and_construction_are_inert_and_writer_rejects_nonfixed_payload(self):
         with (patch.object(catalog_diagnostics.storage, 'directory', side_effect=AssertionError('unexpected directory IO')),

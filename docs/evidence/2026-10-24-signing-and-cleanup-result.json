@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "d40f7ba101c00c38d45e21c8240f5abc5536d8d3",
+  "ownerApprovedTeamAndExactCleanup": true,
+  "cleanup": {
+    "deletedLabels": [
+      "b270-original",
+      "b270-relocated",
+      "fd7-original",
+      "fd7-relocated"
+    ],
+    "deletedCount": 4,
+    "publicInventorySHA256": "26f572eb3c2708adf65076fd8af7fd24759d97d169f65259d0f711dd029118bc",
+    "before": {
+      "tempGiB": 24.816,
+      "freeGiB": 34.12
+    },
+    "after": {
+      "tempGiB": 24.143,
+      "freeGiB": 34.631
+    },
+    "currentArtifactsPreserved": true
+  },
+  "signing": {
+    "nativeFilesAudited": 100,
+    "strictSignatures": true,
+    "singleApprovedGroup": true,
+    "fileBackedNativeSectionsUnchanged": true,
+    "unchangedHelperAndProvenance": true,
+    "changedFiles": [
+      "Contents/MacOS/relay-panel-session",
+      "Contents/_CodeSignature/CodeResources",
+      "Contents/embedded.provisionprofile"
+    ],
+    "afterHashes": {
+      "native": "fa07a485492e017c0c2db0111757eef8290df403c9a9ccc6c285c4ec8be4ae10",
+      "helper": "0a9a945caa396f00cf9dbdfd5fd092cb993feaf959b7a7d9cfcf25f77936806e",
+      "provenance": "25c2f46ecbf6622bd7c3d1802dc75cd734d3a7f0095bd30540653c9a4c35f0c1"
+    },
+    "profileSHA256": "e49ef5016e504c6102bc67103c092bcfcb4d8ae4e971baee88617a1a4f0d5def"
+  },
+  "signedProbe": {
+    "approvedExistingIdentityMatches": true,
+    "approvedTeamMatches": true,
+    "singleExpectedKeychainGroup": true,
+    "embeddedMacProfileAuthorizesGroup": true,
+    "actualProbeExitCode": 0,
+    "signedDeviceOnlyAddStatus": 0,
+    "ownedNonSecretTestItemCleanupStatus": 0,
+    "userCredentialNamespaceAccessed": false,
+    "userKeysReset": false
+  },
+  "normalApp": {
+    "ownerCompletedChatGPTSignIn": true,
+    "selectedAccountAndPlanEnabledObserved": true,
+    "verifiedUsableModelSelection": false,
+    "syntheticSQLSubmissions": 1,
+    "answerObserved": false,
+    "uiPreparationFailureObservedMs": 1405.147,
+    "isAnswerLatencyMeasurement": false,
+    "modelRequestCount": "unobserved",
+    "catalogRefreshInvoked": true,
+    "automaticModelStillNotObserved": true
+  },
+  "privateIdentityDeviceProfileOrCredentialContentsIncluded": false
+}

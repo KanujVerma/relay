@@ -185,3 +185,8 @@ Synthetic Notes backend test launcher is now available for actual held-writer na
 ## Notes product integration dependency boundary
 
 Exact accepted Memory Model frontier c5de3af is merged into the Notes product branch. Notes632 save bridge,042 generated-only deletion,4c4 App actions ande0 preparer/export remain the tested own components;9f adds only explicit held-response tests. Root independently verified these source components. The merge preserves incoming Memory Model/bridge/surface/geometry/recorder/lifecycle source unchanged and retains newer separately tested Notes receipt/deadline/fixture files where add/add history conflicts occurred. No integration/native gate or completed product is claimed by this dependency merge. Next: original actual Model API-red, narrow Notes hooks/History wiring and held Notes→reference Start proof, then final stock bundled acceptance.
+
+
+## Actual Notes Model/History checkpoint
+
+Notes is now wired through the actual shared Model and History section on accepted Memoryc5, preserving its fanout/surface/recorder logic. Real Model source/helper/same-run save/citation/private-draft Lock and held Notes→non-OAuth reference Start pass with actual close before capture.54collected52pass2explicit renderskips0failure30.478s, command60.012s. Local mutations, two-draft navigation and original target anchors remain. No real account/capture/model or final bundle claim. Next: deepen lifecycle/actual presentation checks and build/relocate the stock bundled Notes acceptance under the resource lease. Heavy released.

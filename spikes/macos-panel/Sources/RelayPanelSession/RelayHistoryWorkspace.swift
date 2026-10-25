@@ -9,6 +9,8 @@ import RelaySessionPanel
     @ObservedObject var model:SessionApplicationModel
     @ObservedObject private var history:SessionHistoryCoordinator
     @ObservedObject private var draft:HistoryNoteDraft
+    @ObservedObject private var generated:GeneratedMeetingNotesController
+    @ObservedObject private var generatedDraft:GeneratedMeetingNotesDraft
     private enum Navigation{case record(UUID),refresh}
     @State private var pendingNavigation:Navigation?
     @State private var confirmDiscard=false
@@ -18,7 +20,7 @@ import RelaySessionPanel
     @State private var confirmAll=false
     init(model:SessionApplicationModel){
         self.model=model;let coordinator=model.history;history=coordinator
-        draft=model.historyNoteDraft
+        draft=model.historyNoteDraft;generated=model.generatedMeetingNotes;generatedDraft=model.generatedMeetingNotesDraft
     }
     private var snapshot:HistoryWorkspaceSnapshot{history.snapshot}
     var body:some View{
@@ -42,11 +44,11 @@ import RelaySessionPanel
         .onChange(of:snapshot.selected?.record.revision){_,_ in _=model.stageHistoryNoteDraft()}
         .confirmationDialog("Discard unsaved note edits?",isPresented:$confirmDiscard){
             Button("Discard edits and continue",role:.destructive){
-                let next=pendingNavigation;pendingNavigation=nil;draft.discard()
+                let next=pendingNavigation;pendingNavigation=nil;draft.discard();generatedDraft.discard()
                 if let next{navigate(next)}
             }
             Button("Keep editing",role:.cancel){pendingNavigation=nil}
-        }message:{Text("Your current draft stays here unless you discard it. Closing this window keeps it; Lock clears it.") }
+        }message:{Text("Your current drafts stay here unless you discard them. Closing this window keeps both; Lock clears matching drafts.") }
         .confirmationDialog("Delete this saved session?",isPresented:$confirmDelete){
             Button("Delete session",role:.destructive){if let target=deleteTarget{deleteTarget=nil;perform{try await history.delete(target.id,expectedRevision:target.revision).value}}}
         }message:{Text("Its transcript and notes will be deleted from Relay. Exported copies are unchanged.")}
@@ -89,6 +91,7 @@ import RelaySessionPanel
     }
     @ViewBuilder private var detail:some View{
         if let detail=snapshot.selected{
+            ScrollViewReader{reader in
             ScrollView{
                 VStack(alignment:.leading,spacing:18){
                     HStack{Text(label(detail.record.state)).font(.system(size:12,weight:.medium)).foregroundStyle(RelayTheme.muted);Spacer();Menu("Export"){Button("Markdown…"){export(detail,format:.markdown)};Button("JSON…"){export(detail,format:.json)}}}.disabled(history.isBusy)
@@ -110,9 +113,18 @@ import RelaySessionPanel
                         Button("Review this session"){requestNavigation(.record(detail.record.id))}.buttonStyle(RelayQuietButtonStyle())
                     }
                     Divider().overlay(RelayTheme.line)
+                    GeneratedMeetingNotesSection(snapshot:generated.snapshot,
+                        generate:{target,selection in generated.generate(target,selection:selection)},
+                        cancel:generated.cancel,
+                        showCitation:{target,citation in perform{try await model.revealGeneratedMeetingNotesCitation(target,citation)}},
+                        saveEdits:generated.saveEdits,
+                        deleteGenerated:{target in perform{try await generated.deleteGenerated(target)}},
+                        availableRows:detail.rows,draft:generatedDraft)
+                    Divider().overlay(RelayTheme.line)
                     HStack{Text("Transcript").font(.system(size:15,weight:.semibold));Spacer();Text("\(detail.rows.count) of \(detail.totalRows) final passages").font(.system(size:11)).foregroundStyle(RelayTheme.muted)}
                     if detail.rows.isEmpty{Text("No final transcript text was saved.").font(.system(size:13)).foregroundStyle(RelayTheme.muted)}
-                    ForEach(detail.rows){row in VStack(alignment:.leading,spacing:6){Text(row.source.label).font(.system(size:11,weight:.semibold)).foregroundStyle(RelayTheme.muted);Text(row.text).font(.system(size:13)).lineSpacing(5).textSelection(.enabled)}.frame(maxWidth:.infinity,alignment:.leading).padding(.vertical,8)}
+                    ForEach(detail.rows){row in VStack(alignment:.leading,spacing:6){Text(row.source.label).font(.system(size:11,weight:.semibold)).foregroundStyle(RelayTheme.muted);Text(row.text).font(.system(size:13)).lineSpacing(5).textSelection(.enabled)}.frame(maxWidth:.infinity,alignment:.leading).padding(.vertical,8).id(row.id)
+                        .background(model.historyCitationRowID==row.id ? RelayTheme.raised:Color.clear,in:RoundedRectangle(cornerRadius:8))}
                     if detail.nextOffset != nil{Button("Load more transcript"){perform{try await history.loadMoreTranscript()}}.buttonStyle(RelayQuietButtonStyle()).disabled(history.isBusy)}
                     Divider().overlay(RelayTheme.line)
                     ForEach(detail.captures){capture in
@@ -124,20 +136,23 @@ import RelaySessionPanel
                     }
                     Button("Delete session…",role:.destructive){deleteTarget=(detail.record.id,detail.record.revision);confirmDelete=true}.font(.system(size:12)).padding(.top,12)
                 }.padding(28)
+            }.onChange(of:model.historyCitationRevision){_,_ in if let id=model.historyCitationRowID{reader.scrollTo(id,anchor:.center)}}
             }
         }else{VStack(spacing:12){Image(systemName:"text.alignleft").font(.system(size:28));Text("Choose a saved session");Text("Transcript text and your notes stay separate from My Context.").font(.system(size:12))}.foregroundStyle(RelayTheme.muted).padding(28)}
     }
     private func save(){perform{try await draft.save(using:history)}}
     private func requestNavigation(_ next:Navigation){
-        if draft.snapshot.isDirty{
-            if case .record(let id)=next,id==draft.snapshot.recordID,id==snapshot.selected?.record.id{return}
+        if draft.snapshot.isDirty || generatedDraft.snapshot.isDirty{
+            if case .record(let id)=next,id==snapshot.selected?.record.id,
+               (!draft.snapshot.isDirty || id==draft.snapshot.recordID),
+               (!generatedDraft.snapshot.isDirty || id==generatedDraft.snapshot.target?.recordID){return}
             pendingNavigation=next;confirmDiscard=true;return
         }
         navigate(next)
     }
     private func navigate(_ next:Navigation){
         perform{
-            switch next{case .record(let id):try await history.openRecord(id);case .refresh:try await history.openExisting()}
+            switch next{case .record(let id):try await model.openHistoryRecord(id);case .refresh:try await history.openExisting()}
             _=model.stageHistoryNoteDraft()
         }
     }

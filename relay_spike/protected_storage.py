@@ -64,8 +64,9 @@ def sync_parent(path,*,sync=None):
         finally:os.close(fd)
     except OSError:raise ProtectedStorageError('Could not durably sync credential rotation on this filesystem.') from None
 
-def replace_bytes(path,data,*,sync=None,sync_directory=None):
-    path=Path(path);directory(path.parent,create=True)
+def replace_bytes(path,data,*,sync=None,sync_directory=None,create_parent=True):
+    """Atomic replacement; existing-only callers never prepare a missing root."""
+    path=Path(path);directory(path.parent,create=create_parent)
     sync=sync or durable_sync;sync_directory=sync_directory or sync_parent
     try:
         try:_file(path.lstat(),2**31)

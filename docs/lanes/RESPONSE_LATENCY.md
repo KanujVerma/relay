@@ -294,10 +294,11 @@ provided 79,360 paced samples/source including the disclosed identical silence
 and 448 final-packet zeros. All 21 existing cache hashes remained valid. Fresh
 budget: 23.356 GiB temporary / 46.860 GiB free / 0.75 GiB reserve. No download,
 account, real driver/capture, app/window or usefulness measurement occurred.
-The factory is still closedSpan. Root independently read the measured receipt
-and approved only a next narrow actual-factory selection change/test; no real
-gate rerun or automatic activation occurred. Cloud-model latency remains the
-dominant separate end-to-end gate and 95 ms is not whole-app latency.
+At that measured checkpoint the factory was still closedSpan. Root independently
+read the receipt and approved the next narrow actual-factory selection
+change/test; no real gate rerun or automatic activation occurred. Cloud-model
+latency remains the dominant separate end-to-end gate and 95 ms is not whole-app
+latency.
 
 ## Normal local-source selection
 
@@ -318,6 +319,27 @@ reserve; reused bounded cache/jobs/deadline, lease released. This verifies the
 composition selection and original controls, not another real model run or
 hardware/account/window acceptance. Broader actual speech and the unchanged
 actual Model/account fixtures remain active final gates.
+
+The controller independently completed the broader actual speech regression at
+immutable [`7302dcf`](https://github.com/KanujVerma/relay/commit/7302dcfa51492d5b514289348038103199006f88).
+Its unchanged real-WAVE assertions pass through normal prefix assembly, actual
+native/helper and panel reducer in 6.353 s. Joined native command: 193 collected /
+191 passed / two skips, 124.150 s; joined Python: 833 / 801 passed / 32 skips,
+11.483 s. The author read those exact receipts/source; this is the controller's
+independent acceptance run. Synthetic answer transport and reducer acceptance
+remain distinct from displayed window, real capture, cloud latency and usefulness.
+
+The evaluation-only cloud-lever harness is now ready: `compare_effort_variants`
+holds compact prompts/inputs constant for omitted effort versus explicit Luna
+None, at most six declared attempts. It requires a dedicated explicit product
+stream, rejects unsupported combinations before credentials, retains every
+failure/QA outcome and restores original configuration even after cancellation.
+Five new offline cases cover identical payloads, rejection before token access,
+restoration/cancellation, no hidden failure fallback and hard caps. Combined
+focused verification passes 35 tests / zero skips / 0.307 s. The CLI still
+prints a plan only; no actual account request or runtime effort-default change
+has occurred. Effective server reasoning remains unobserved unless an actual
+echo becomes available; requested levels alone cannot establish it.
 
 No real account, Keychain, private source, audio/screen capture, cloud inference,
 download or full-app latency result is claimed. Product goals from speech-end

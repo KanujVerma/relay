@@ -1,5 +1,11 @@
 # Relay continuation handoff
 
+## Latest: live catalog succeeds; first generated answer still fails
+
+The corrected signed Release app from `04fdee0` now restores the normal account and selects Automatic GPT-6.1-Sol. The actual safe catalog record is HTTP200/653,033 decoded bytes/raw11/visible8/valid. One new synthetic SQL question reached Thinking, then Answer unavailable without a card. Exact provider latency, POST count and failure stage are unknown; there was no automatic retry. Root ended that test session and restored the prior My Context setting without reading or publishing private facts. [Exact runtime evidence and remaining gates](docs/evidence/2026-10-25-live-answer-readiness.md).
+
+All three GPT-6.1 Sol xhigh workers are active again: native helper/bootstrap investigation, Python transport diagnostics, and bounded app-hosted speed/Notes compile preparation. Root owns SessionHost integration and the UI. No heavy job or additional real request is authorized merely by a worker restart. Next: identify the failed stage before another controlled live request. The source correction and earlier checkpoints below retain their own attribution.
+
 ## Confirmed current catalog cause and scoped correction
 
 The signed36cfapp's one normal saved-connection Restore produced a fresh owner-only diagnostic:HTTP200,65,738decoded bytes at stop,body_limit; model fields were not parsed and total response size is unknown. This confirms the64KiB reader rejection without exposing provider body/identity or submitting a question. [Exact safe observation](docs/evidence/2026-10-25-live-catalog-bound-observation.json).

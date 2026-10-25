@@ -12,7 +12,8 @@ class SyntheticLearningCompletion:
         value=json.loads(prompt);learning=value.get('learning_memory') or {}
         adjustments=learning.get('adjustments',[])
         text=value['current_request'].lower()
-        coding='function' in text or 'code' in text
+        semantic=value.get('semantic_request','').lower()
+        coding='function' in text or 'code' in text or 'function' in semantic or 'code' in semantic
         if coding:
             lead='Check the input contract, then explain the empty-list case before returning the first item.'
             points=['Use an explicit guard for an empty list.','Keep the original item order.']

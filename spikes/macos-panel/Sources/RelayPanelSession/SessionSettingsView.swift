@@ -8,8 +8,8 @@ import RelaySessionCapture
 import RelayAccount
 
 enum RelaySettingsSection:String,CaseIterable,Sendable {
-    case general="General",screen="Screen context",ai="AI",history="History",responses="Responses",shortcuts="Shortcuts",advanced="Advanced"
-    var symbol:String{switch self{case .general:"slider.horizontal.3";case .screen:"rectangle.dashed";case .ai:"sparkles";case .history:"clock.arrow.circlepath";case .responses:"text.bubble";case .shortcuts:"keyboard";case .advanced:"wrench.and.screwdriver"}}
+    case general="General",screen="Screen context",ai="AI",history="History",learning="Learning",responses="Responses",shortcuts="Shortcuts",advanced="Advanced"
+    var symbol:String{switch self{case .general:"slider.horizontal.3";case .screen:"rectangle.dashed";case .ai:"sparkles";case .history:"clock.arrow.circlepath";case .learning:"arrow.trianglehead.2.clockwise";case .responses:"text.bubble";case .shortcuts:"keyboard";case .advanced:"wrench.and.screwdriver"}}
 }
 @MainActor struct SessionSettingsView:View {
     @ObservedObject var model:SessionApplicationModel
@@ -58,6 +58,8 @@ enum RelaySettingsSection:String,CaseIterable,Sendable {
             ControlsSettingsView(controller:model.controls).onAppear{model.restoreShortcuts()}.onChange(of:model.controls.shortcuts){_,_ in model.saveShortcuts()}.onDisappear{model.saveShortcuts()}
         case .history:
             HistorySettingsOptions(model:model)
+        case .learning:
+            LearningMemorySettingsSection(memory:model.learning,openHistory:{openWindow(id:"relay-history")})
         case .advanced:
             settingsTitle("Advanced speech files","Leave both paths empty to use automatic setup. Custom files require both folders and explicit permission to use their models.")
             VStack(alignment:.leading,spacing:12){TextField("ASR model folder",text:$model.asrFolder);Button("Choose speech folder"){selectingASR=true};TextField("Compiled VAD model",text:$model.vadFolder);Button("Choose detector"){selectingVAD=true};Toggle("I have permission to use these custom speech models",isOn:$model.modelLicensesAcknowledged)}.disabled(model.running || model.starting || model.stopping || setup.snapshot.isBusy)

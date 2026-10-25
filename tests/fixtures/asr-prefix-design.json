@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "scope": "design-only metadata oracle for pinned FluidAudio c79c4106b954f81205113c3343e5a7e59a1089b5",
+  "cases": [
+    {"id": "ordinary_closure", "groups": [["speech", 6], ["silence", 4]], "starts": [0], "ends": [26176]},
+    {"id": "long_hysteresis_candidate", "groups": [["speech", 4], ["silence", 1], ["band", 12], ["silence", 1]], "starts": [0], "ends": [17984]},
+    {"id": "speech_resumes_after_candidate", "groups": [["speech", 3], ["silence", 1], ["band", 8], ["speech", 4], ["silence", 4]], "starts": [0], "ends": [67136]},
+    {"id": "leading_padding", "groups": [["silence", 5], ["speech", 2], ["silence", 4]], "starts": [18880], "ends": [30272]},
+    {"id": "open_candidate_is_not_a_final", "groups": [["speech", 10], ["silence", 1], ["band", 40]], "starts": [0], "ends": [null]},
+    {"id": "successive_original_activities", "groups": [["speech", 3], ["silence", 4], ["speech", 2], ["silence", 4]], "starts": [0, 27072], "ends": [13888, 38464]}
+  ]
+}

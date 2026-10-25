@@ -1,0 +1,23 @@
+# Visual input lane handoff
+
+Issue [#73](https://github.com/KanujVerma/relay/issues/73). Branch `feature/verified-visual-input-2026-10-23`, isolated checkout `work/relay-build-visual`. Started from accepted answers `2e06c6d03e7606532c9cf16c961fd4841d327160`; imported accepted screen ancestry through `e3fcfbe3d7f6caa87e2ba3d95f0cb012fc1781ca` without modifying screen source. Root owns global HANDOFF/ADRs and final integration/review. No app/helper/router/source-core files belong to this lane.
+
+## Approved design and implemented port
+
+The root approved the narrow research-backed API before shared transport changes. [VISUAL_INPUT.md](../VISUAL_INPUT.md) defines exact consumer signatures, required host authority callbacks, bearer continuity, source/request/digest preservation and final native image gate. Controller-owned [research](https://github.com/KanujVerma/relay/blob/a18fb5d905b6298d04d981503eabe075ed3b332e/docs/research/VISUAL_INPUT.md) supplies official URLs, pinned OpenAI SDK/Codex source and license evidence. The implementation reuses HTTPX0.28.1, existing SSE/Responses assembly/body builder and unchanged screen PNG validation. No new dependency, SDK, framework, capture implementation, auth framework or benchmark was added.
+
+`VisualInputController` issues consent only from an explicit setup action and capability only after current account catalog + one synthetic PNG request has valid completed output matching its pixels. A private actual-bearer fingerprint binds the grant; any bearer change, including refresh, requires another explicit check. This proves exact tested grant continuity, not person identity or future entitlement.
+
+Private one-use permits require original request/producer ownership and actual current host callbacks, clear PNG bytes on completion/error/cancel/retirement and preserve owner/digest evidence for final publication. `complete(...,visual_attachment=None)` remains text-compatible. `used_image` is read-only transport state, not model/JSON authority. Async bearer revalidation plus sync producer/request checks are available before the later native pixel/lease gate. Unknown capability is off; no image or failed probe is retried automatically; no API-key billing fallback exists.
+
+## Verified checkpoint
+
+Baseline ordinary Python: **460 tests, 23 optional skips**, no failures. Initial visual tests failed because the module/API did not exist; subsequent malformed-SSE, large-catalog and callback-retirement cases were observed red before their fixes. Focused visual suite: **23 passed** with actual HTTPX0.28.1 and injected synthetic transports. Unchanged screen suite: **20 passed**. Existing actual localhost HTTPX completion/cancellation suite: **3 passed** outside the filesystem sandbox; the sandbox itself rejects localhost bind. No private credential/account/capture work was performed.
+
+Full Python+HTTPX suite: **503 tests, 21 optional converter skips**, no failures. Existing ResourceWarnings and expected negative CLI messages remain. EVALS: **26 synthetic questions**; documentation: **20 required files and local links**; diff whitespace check passed. These checks used only synthetic inputs. The ordinary interpreter lacks optional HTTPX; the reviewed existing `/private/tmp/relay-answers-venv/bin/python` reports HTTPX0.28.1 and ran the full socket-inclusive suite. No dependency was installed.
+
+The source commit follows this record; root will review the exact frozen head. Consume only the root-accepted answer-policy successor before joined integration. Root independent exact-head review, the final composition adapter/staging/UI, native pixel-recheck wiring, hosted CI and actual account/window acceptance remain separate.
+
+## Exact next action
+
+Composition issue [#72](https://github.com/KanujVerma/relay/issues/72) may implement its adapter against the frozen protocol after its text/control checkpoint. It must use actual provider-owned snapshot/request identity and public `ScreenImageAssembler` for bounded local staging. The new production route bypasses legacy `ImageInputPolicy`/`image_input`; no invented account ID or arbitrary Boolean grants authority. The private capability/request permit alone authorizes network input, with native canonical-pixel imageDigest separate from encoded-PNG SHA256. Root permits narrow read-only provider observation/ownership accessors if needed; this lane does not change screen source. Current screenshot assembly requires valid OCR; image-only capture remains unsupported. Do not call the production probe or capture during default tests or launch.

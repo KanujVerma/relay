@@ -33,3 +33,7 @@ Generic education platform, full CRM/job tracker, unsupported sentiment-based hi
 - Easy source/record deletion and credential revocation.
 - Track p50/p95 latency, unsupported-claim rate, question coverage, correction rate and memory accuracy on a manually reviewed evaluation set.
 - Each implementation slice has a small PR, reproducible checks and a current HANDOFF.md.
+
+## Clarification, 2026-10-23
+
+The intended experience is a single always-ready conversational copilot. After session setup, it listens to the interviewer and the user's replies, understands the current question and follow-ups, and automatically provides concise technical explanations or suggestions grounded in the user's real résumé/projects and job context. Both reusable reviewed material and on-demand generation serve this one experience. Source/review status must not require the user to choose an answer mode or approve each question. Verified personal grounding is part of the first useful integrated product. The controller's revised proposal is in the [parallel delivery plan](docs/PARALLEL_PLAN.md); architecture and acceptance still need agreement before new implementation.

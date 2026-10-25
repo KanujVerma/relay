@@ -1,0 +1,10 @@
+// swift-tools-version:6.1
+import PackageDescription
+let package = Package(
+    name: "HistoryStorageResearchProbe",
+    platforms: [.macOS(.v14)],
+    dependencies: [.package(path: "../GRDB")],
+    targets: [.executableTarget(name: "StorageProbe", dependencies: [
+        .product(name: "GRDB", package: "GRDB"),
+        .product(name: "GRDBSQLite", package: "GRDB")
+    ])])

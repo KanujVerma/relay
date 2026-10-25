@@ -1,0 +1,264 @@
+{
+  "baseline": {
+    "asrLoadMs": 1682,
+    "inputSHA": "98f0000e24688c1e665bd90de70d99b378b661bb749b483aeeed90cd5b2be9c7",
+    "inputSamples": 38912,
+    "mode": "baseline",
+    "peakRSSBytes": 723107840,
+    "runs": [
+      {
+        "lastPacketZeroPaddingSamples": 448,
+        "leadingSilenceSamples": 8000,
+        "pacedSamplesPerSource": 79360,
+        "spans": [
+          {
+            "activity": 1,
+            "endSample": 46656,
+            "source": 1,
+            "startSample": 6592,
+            "text": "how would you handle an empty python list"
+          },
+          {
+            "activity": 1,
+            "endSample": 46656,
+            "source": 2,
+            "startSample": 6592,
+            "text": "how would you handle an empty python list"
+          }
+        ],
+        "timings": [
+          {
+            "acceptedBeforeEnd": 0,
+            "activity": 1,
+            "inputSamples": 40064,
+            "legacyCalls": 1,
+            "nativeEndToFinalMs": 133.414333,
+            "remainingInputAtEnd": 40064,
+            "reportedBoundaryToFinalMs": 1240.013083,
+            "source": 1
+          },
+          {
+            "acceptedBeforeEnd": 0,
+            "activity": 1,
+            "inputSamples": 40064,
+            "legacyCalls": 1,
+            "nativeEndToFinalMs": 139.733083,
+            "remainingInputAtEnd": 40064,
+            "reportedBoundaryToFinalMs": 1246.74775,
+            "source": 2
+          }
+        ],
+        "trailingSilenceSamples": 32000
+      },
+      {
+        "lastPacketZeroPaddingSamples": 448,
+        "leadingSilenceSamples": 8000,
+        "pacedSamplesPerSource": 79360,
+        "spans": [
+          {
+            "activity": 1,
+            "endSample": 46656,
+            "source": 1,
+            "startSample": 6592,
+            "text": "how would you handle an empty python list"
+          },
+          {
+            "activity": 1,
+            "endSample": 46656,
+            "source": 2,
+            "startSample": 6592,
+            "text": "how would you handle an empty python list"
+          }
+        ],
+        "timings": [
+          {
+            "acceptedBeforeEnd": 0,
+            "activity": 1,
+            "inputSamples": 40064,
+            "legacyCalls": 1,
+            "nativeEndToFinalMs": 137.843708,
+            "remainingInputAtEnd": 40064,
+            "reportedBoundaryToFinalMs": 1228.744167,
+            "source": 1
+          },
+          {
+            "acceptedBeforeEnd": 0,
+            "activity": 1,
+            "inputSamples": 40064,
+            "legacyCalls": 1,
+            "nativeEndToFinalMs": 130.958666,
+            "remainingInputAtEnd": 40064,
+            "reportedBoundaryToFinalMs": 1221.825375,
+            "source": 2
+          }
+        ],
+        "trailingSilenceSamples": 32000
+      }
+    ],
+    "schemaVersion": 1,
+    "sourceCount": 2,
+    "warmups": 1
+  },
+  "conditionalSourceCommit": "18f982c672a1c4671203af86a1a2e659be6640e2",
+  "execution": {
+    "accountCalls": 0,
+    "actualGateRuns": 1,
+    "cacheValidatedBeforeAndAfter": true,
+    "childrenSequential": true,
+    "commandSeconds": 75.36,
+    "compilerJobs": 2,
+    "downloads": 0,
+    "externalDeadlineSeconds": 180,
+    "initialBudgetGiB": {
+      "free": 46.86,
+      "reserve": 0.75,
+      "temporary": 23.356
+    },
+    "newVADStateEachTrial": true,
+    "passed": 1,
+    "realASRManagersPerChild": 2,
+    "skipped": 0,
+    "sourceObservationsPerMode": 4,
+    "sourcesPerChild": 2,
+    "swiftExitCode": 0,
+    "testCount": 1,
+    "testSeconds": 41.097,
+    "trialsPerMode": 2,
+    "warmupsPerMode": 1
+  },
+  "limitations": [
+    "one unchanged fictional question",
+    "four correlated source observations per mode, no p95",
+    "acknowledged input is not completed encoder computation",
+    "reported VAD end is not manually annotated physical speech end",
+    "load times are process observations, not a controlled cold-load comparison",
+    "no full-app, real-account, hardware-capture, visible-window, usefulness or broad recognition-accuracy result"
+  ],
+  "normalFactoryActivated": false,
+  "prefix": {
+    "asrLoadMs": 486,
+    "inputSHA": "98f0000e24688c1e665bd90de70d99b378b661bb749b483aeeed90cd5b2be9c7",
+    "inputSamples": 38912,
+    "mode": "prefix",
+    "peakRSSBytes": 701988864,
+    "runs": [
+      {
+        "lastPacketZeroPaddingSamples": 448,
+        "leadingSilenceSamples": 8000,
+        "pacedSamplesPerSource": 79360,
+        "spans": [
+          {
+            "activity": 1,
+            "endSample": 46656,
+            "source": 1,
+            "startSample": 6592,
+            "text": "how would you handle an empty python list"
+          },
+          {
+            "activity": 1,
+            "endSample": 46656,
+            "source": 2,
+            "startSample": 6592,
+            "text": "how would you handle an empty python list"
+          }
+        ],
+        "timings": [
+          {
+            "acceptedBeforeEnd": 35840,
+            "activity": 1,
+            "inputSamples": 40064,
+            "legacyCalls": 0,
+            "nativeEndToFinalMs": 36.939583,
+            "remainingInputAtEnd": 4224,
+            "reportedBoundaryToFinalMs": 1138.415084,
+            "source": 1
+          },
+          {
+            "acceptedBeforeEnd": 35840,
+            "activity": 1,
+            "inputSamples": 40064,
+            "legacyCalls": 0,
+            "nativeEndToFinalMs": 46.616917,
+            "remainingInputAtEnd": 4224,
+            "reportedBoundaryToFinalMs": 1148.164292,
+            "source": 2
+          }
+        ],
+        "trailingSilenceSamples": 32000
+      },
+      {
+        "lastPacketZeroPaddingSamples": 448,
+        "leadingSilenceSamples": 8000,
+        "pacedSamplesPerSource": 79360,
+        "spans": [
+          {
+            "activity": 1,
+            "endSample": 46656,
+            "source": 1,
+            "startSample": 6592,
+            "text": "how would you handle an empty python list"
+          },
+          {
+            "activity": 1,
+            "endSample": 46656,
+            "source": 2,
+            "startSample": 6592,
+            "text": "how would you handle an empty python list"
+          }
+        ],
+        "timings": [
+          {
+            "acceptedBeforeEnd": 35840,
+            "activity": 1,
+            "inputSamples": 40064,
+            "legacyCalls": 0,
+            "nativeEndToFinalMs": 44.26375,
+            "remainingInputAtEnd": 4224,
+            "reportedBoundaryToFinalMs": 1136.2865,
+            "source": 1
+          },
+          {
+            "acceptedBeforeEnd": 35840,
+            "activity": 1,
+            "inputSamples": 40064,
+            "legacyCalls": 0,
+            "nativeEndToFinalMs": 35.676833,
+            "remainingInputAtEnd": 4224,
+            "reportedBoundaryToFinalMs": 1127.682542,
+            "source": 2
+          }
+        ],
+        "trailingSilenceSamples": 32000
+      }
+    ],
+    "schemaVersion": 1,
+    "sourceCount": 2,
+    "warmups": 1
+  },
+  "publicInputs": {
+    "channels": 1,
+    "decodedSamples": 38912,
+    "format": "Float32",
+    "modelManifest": "parakeet-eou320-silero621-v1",
+    "sampleRate": 16000,
+    "sdkRevision": "c79c4106b954f81205113c3343e5a7e59a1089b5",
+    "unchangedFile": true,
+    "verifiedModelBytes": 225301695,
+    "verifiedModelFiles": 21,
+    "waveSHA256": "98f0000e24688c1e665bd90de70d99b378b661bb749b483aeeed90cd5b2be9c7"
+  },
+  "schemaVersion": 1,
+  "scope": "actual paced local native VAD/ASR; excludes hardware capture, helper, cloud inference, app publication, window and usefulness",
+  "sourceCommit": "667298504d2dbb78e0ed3033b43ed61bf3c916f0",
+  "summary": {
+    "baselineMedianNativeClosureToFinalMs": 135.6290205,
+    "baselineMedianReportedBoundaryToFinalMs": 1234.378625,
+    "medianReductionPercent": 70.06417479804774,
+    "medianSavingMs": 95.027354,
+    "normalRateLocalFallbacks": 0,
+    "peakRSSDeltaBytes": -21118976,
+    "prefixMedianNativeClosureToFinalMs": 40.6016665,
+    "prefixMedianReportedBoundaryToFinalMs": 1137.350792,
+    "sameFullTextAndExactCutoffs": true
+  }
+}

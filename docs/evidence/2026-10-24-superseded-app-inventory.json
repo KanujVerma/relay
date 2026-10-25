@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "status": "proposal_only_no_deletion",
+  "artifactSourceCommits": [
+    "b270297653f78201b56a7c5e57cc2efc322eef61",
+    "fd7b283d34edfef2ecabab9cdbfbc74f71e121a1"
+  ],
+  "preservedCurrentArtifactSource": "d40f7ba101c00c38d45e21c8240f5abc5536d8d3",
+  "records": [
+    {
+      "label": "b270-original",
+      "sourceCommit": "b270297653f78201b56a7c5e57cc2efc322eef61",
+      "sourceDirty": false,
+      "allocatedBytes": 175607808,
+      "regularFileCount": 1209,
+      "logicalRegularBytes": 172823328,
+      "treeSHA256": "7f5d7a786f15aaf54fe58c6714617f8f6e8ffb6f83f6fc92590ae39bdbc5f8eb",
+      "componentSHA256": {
+        "native": "3d1901b92ec79cf72e4f465a4b372f0c56b030358666e032cde399052a8bcb7b",
+        "helper": "460e9f5e3929a1a0dd5b4dbb55ebbdfe26ea5f1523086d5f2c56d07d7b5b231c",
+        "provenance": "14d358afc9a87d59b773c7d2d5db1b6f21a1c96b49bcfaf396f019581fe8710e"
+      },
+      "strictSignatureVerification": true,
+      "runningConsumer": false,
+      "openHandles": false
+    },
+    {
+      "label": "b270-relocated",
+      "sourceCommit": "b270297653f78201b56a7c5e57cc2efc322eef61",
+      "sourceDirty": false,
+      "allocatedBytes": 175607808,
+      "regularFileCount": 1209,
+      "logicalRegularBytes": 172823328,
+      "treeSHA256": "7f5d7a786f15aaf54fe58c6714617f8f6e8ffb6f83f6fc92590ae39bdbc5f8eb",
+      "componentSHA256": {
+        "native": "3d1901b92ec79cf72e4f465a4b372f0c56b030358666e032cde399052a8bcb7b",
+        "helper": "460e9f5e3929a1a0dd5b4dbb55ebbdfe26ea5f1523086d5f2c56d07d7b5b231c",
+        "provenance": "14d358afc9a87d59b773c7d2d5db1b6f21a1c96b49bcfaf396f019581fe8710e"
+      },
+      "strictSignatureVerification": true,
+      "runningConsumer": false,
+      "openHandles": false
+    },
+    {
+      "label": "fd7-original",
+      "sourceCommit": "fd7b283d34edfef2ecabab9cdbfbc74f71e121a1",
+      "sourceDirty": false,
+      "allocatedBytes": 185528320,
+      "regularFileCount": 1212,
+      "logicalRegularBytes": 182730688,
+      "treeSHA256": "6fa8d487ea0e9ea2bfb368c3ff158ca719887ca6e6a960284abe1c700254bc21",
+      "componentSHA256": {
+        "native": "35ce5bb17182be10075114bcdc1d268512bb84ed38c6e0fed90016d4ec965cc9",
+        "helper": "17dc25d2a295c740ac631687eb1b44c363a49a54fae607daef99b0aa2699ce39",
+        "provenance": "b6da734ee8cbad8f2b5547c1852402dae0f7c0c8d0e5190c578aac2ea8254da0"
+      },
+      "strictSignatureVerification": true,
+      "runningConsumer": false,
+      "openHandles": false
+    },
+    {
+      "label": "fd7-relocated",
+      "sourceCommit": "fd7b283d34edfef2ecabab9cdbfbc74f71e121a1",
+      "sourceDirty": false,
+      "allocatedBytes": 185528320,
+      "regularFileCount": 1212,
+      "logicalRegularBytes": 182730688,
+      "treeSHA256": "6fa8d487ea0e9ea2bfb368c3ff158ca719887ca6e6a960284abe1c700254bc21",
+      "componentSHA256": {
+        "native": "35ce5bb17182be10075114bcdc1d268512bb84ed38c6e0fed90016d4ec965cc9",
+        "helper": "17dc25d2a295c740ac631687eb1b44c363a49a54fae607daef99b0aa2699ce39",
+        "provenance": "b6da734ee8cbad8f2b5547c1852402dae0f7c0c8d0e5190c578aac2ea8254da0"
+      },
+      "strictSignatureVerification": true,
+      "runningConsumer": false,
+      "openHandles": false
+    }
+  ],
+  "totalAllocatedBytes": 722272256,
+  "privateDataIncluded": false
+}

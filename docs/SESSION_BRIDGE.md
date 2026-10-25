@@ -35,6 +35,18 @@ Proposed `resultRevision`: optional pending 1, exactly one immutable terminal 2.
 
 Answer kinds are reviewed_reference and generated_suggestion. The reviewed catalog owns canonical content and its approved full match contract. A model cannot supply reviewed status, reference IDs, approval records or personal evidence. Generated provenance records actual completion/checks and explicit lack of independent review.
 
+The current source foundation also permits one same-version optional top-level
+`timing` member. Its exact keys, nullability, clock meanings and bounds live in
+[the build contract](BUILD_CONTRACT.md#optional-decision-timing-v1). It describes
+the original helper attempt and never changes native/semantic admission. In
+particular, helper receipt is the read of the chunk completing a frame, not
+native ASR's similarly named receive stamp or JSON decoder completion. Invalid
+optional timing is discarded while ordinary required protocol validation remains
+strict. First delta, provider completion, panel commit, actual post-drain Model
+availability and visible-window observation cannot be substituted for one
+another or for useful readable advice. The memory-only diagnostic recorder
+retains at most 32 rows and no question/answer/private-source content.
+
 Proposed card bounds: lead <=280 UTF-8 bytes, 0-2 points <=180 bytes each, optional detail `{kind:prose|code, language:null|python|sql, text}` <=4096 bytes. Reviewed entries require 1-2 points. Code detail permits LF/tab and preserves whitespace; other controls and overflow reject. Never truncate. The existing 500-byte native question bound remains separate from the larger transcript/context bounds; overflow clears with a fixed status instead of rewriting the semantic question.
 
 ## Display and cancellation contract

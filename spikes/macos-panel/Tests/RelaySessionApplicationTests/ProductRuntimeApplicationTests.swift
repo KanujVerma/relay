@@ -3,9 +3,11 @@ import XCTest
 import RelaySessionPanel
 import RelayControls
 import RelayProfile
+import RelayAccount
 @testable import RelayPanelSession
 
 @MainActor private final class BundledIdlePreferences:SessionContextUsePreferences{var useInSessions=false}
+private struct BundledIdleAccountKey:ProfileKeyProvider{func key(createIfMissing:Bool)throws->Data{Data(repeating:67,count:32)}}
 
 @MainActor final class ProductRuntimeApplicationTests:XCTestCase {
     func testOptInActualBundleIdleAskNeedsNoRepositoryPythonOrSpeechInputs()async throws {
@@ -13,9 +15,14 @@ import RelayProfile
             throw XCTSkip("Requires a bundle built from this idle source; no capture, account or developer fallback.")
         }
         let app=URL(fileURLWithPath:path,isDirectory:true)
-        let model=SessionApplicationModel(arguments:["Relay","--role","analytics"],contextPreferences:BundledIdlePreferences(),bundleURL:app,workingDirectory:URL(fileURLWithPath:"/"))
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("relay-bundled-idle-account-"+UUID().uuidString)
+        let ports=AccountApplicationPorts(storage:AccountStorage(sharedDirectory:directory.appendingPathComponent("Relay"),keys:BundledIdleAccountKey()),preferences:FixtureChatGPTPlanPreferences(),
+            control:{_,_ in XCTFail("Bundled local-reference Ask cannot open account control");throw AccountError.unavailable},
+            openBrowser:{_ in XCTFail("No browser in bundled local-reference Ask");return false},sessionArguments:{runtime,_ in runtime.arguments})
+        let model=SessionApplicationModel(arguments:["Relay","--role","analytics"],contextPreferences:BundledIdlePreferences(),accountPorts:ports,bundleURL:app,workingDirectory:URL(fileURLWithPath:"/"))
+        addTeardownBlock{try? FileManager.default.removeItem(at:directory)}
         addTeardownBlock{await model.stop()}
-        XCTAssertNil(model.error);XCTAssertFalse(model.authorizedConversation)
+        XCTAssertNil(model.error);XCTAssertFalse(model.authorizedConversation);XCTAssertFalse(model.oauth)
         model.microphoneEnabled=false
         let question="What is the difference between WHERE and HAVING?"
         model.assistant.draft=question;model.assistant.submitDraft()

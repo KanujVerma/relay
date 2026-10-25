@@ -37,6 +37,10 @@ import RelaySessionPanel
                 ForEach(memory.snapshot.rules){rule in ruleRow(rule)}
                 HStack{
                     Text("\(memory.snapshot.episodeCount) saved examples").font(.system(size:11)).foregroundStyle(RelayTheme.muted)
+                    if memory.snapshot.episodeCount>0{
+                        Button("Review saved examples"){selectedRuleID=nil;showExamples=true}
+                            .buttonStyle(.plain).font(.system(size:11)).foregroundStyle(RelayTheme.secondary)
+                    }
                     Spacer()
                     Button("Reset learned memory…"){
                         resetTarget=memory;showReset=true
@@ -91,11 +95,13 @@ import RelaySessionPanel
     }
     private var examples:some View{
         VStack(alignment:.leading,spacing:16){
-            Text("Why this preference?").font(.system(size:20,weight:.semibold))
+            Text(selectedRuleID==nil ? "Saved learning examples":"Why this preference?").font(.system(size:20,weight:.semibold))
             Text("These are source examples, not proof that you read a suggestion or that it improved the interview.")
                 .font(.system(size:12)).foregroundStyle(RelayTheme.muted)
-            if memory.snapshot.phase == .ready,let rule=memory.snapshot.rules.first(where:{$0.id==selectedRuleID}){
-                let supporting=Array(memory.retainedEpisodes.filter{rule.supportIDs.contains($0.id)}.prefix(8))
+            if memory.snapshot.phase == .ready{
+                let rule=memory.snapshot.rules.first(where:{$0.id==selectedRuleID})
+                let supporting=Array(memory.retainedEpisodes.filter{selectedRuleID==nil || rule?.supportIDs.contains($0.id)==true}.prefix(8))
+                if supporting.isEmpty{Text("These examples are no longer available.").font(.system(size:13))}
                 ScrollView{LazyVStack(alignment:.leading,spacing:18){
                     ForEach(supporting){episode in
                         VStack(alignment:.leading,spacing:10){
@@ -106,7 +112,7 @@ import RelaySessionPanel
                         }.padding(14).background(RelayTheme.raised,in:RoundedRectangle(cornerRadius:10))
                     }
                 }}
-                Text("Showing up to 8 supporting examples. These saved text examples do not confirm new personal facts.")
+                Text("Showing up to 8 saved examples. These text examples do not confirm new personal facts.")
                     .font(.system(size:11)).foregroundStyle(RelayTheme.muted)
             }else{Text("These examples are no longer available.").font(.system(size:13))}
             HStack{Spacer();Button("Close"){showExamples=false;selectedRuleID=nil}.buttonStyle(RelayQuietButtonStyle())}

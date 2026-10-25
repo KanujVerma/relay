@@ -450,6 +450,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
             // Close all old admission before the first await. Queued frames and
             // source events cannot cross into a replacement helper lifecycle.
             let oldOwner=currentOwner
+            if hasLearning{learning.endSession()}
             let oldHistory=hasHistory ? history:nil
             let oldHistoryPermit=oldHistory?.retireCurrentSession(gap:.captureFailure)
             oldOwner?.retireAdmission();assistant.cancelPreparation()
@@ -464,6 +465,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
             }
             await events.drain()
             if let oldHistory,let oldHistoryPermit{try? await oldHistory.finishSession(oldHistoryPermit,paused:false);if historyPermit === oldHistoryPermit{historyPermit=nil}}
+            if hasLearning{await learning.waitForQuiescence()}
             if let oldOwner{rememberLatency(oldOwner);owners.remove(oldOwner)}
         }
         await binding.shutdown()
@@ -537,6 +539,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
         if let windowObserver { NotificationCenter.default.removeObserver(windowObserver) }
         if let windowVisibilityObserver{NotificationCenter.default.removeObserver(windowVisibilityObserver)}
         surfaceObservation?.cancel()
+        clearAnswerSurface()
         if let helper { helper.stop();Task.detached { await helper.shutdownAndWait() } }
     }
     private static func argument(_ key:String,_ args:[String]) -> String? { guard let i=args.firstIndex(of:key),args.indices.contains(i+1) else { return nil };return args[i+1] }
@@ -574,6 +577,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
         owners.owns(owner) && helper === owner.helper && helperIdentity==owner.helperIdentity && (allowRetired || !owner.isRetired)
     }
     private func configure(_ owner:ConversationOwner){
+        retiredLatency=nil
         owner.presentation.responsePreferences=ResponsePreferencesRequestBridge(capture:{[weak self] in
             guard let self else{return nil};return self.responsePreferences.capture()
         },owns:{[weak self] value in self?.responsePreferences.owns(value)==true},send:{[weak self,weak owner] data in
@@ -973,6 +977,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
         do{try bridge.retire(original)}catch{if owns(owner){failSession()};return}
         guard affected,let binding,owns(owner) else{return}
         if owner.presentation.panel.snapshot.responsePreferencesRevision==original.revision{
+            retireCardSurface()
             owner.presentation.panel.withholdGuideAnswer(for:binding,status:"Response guide changed. Ask again.")
         }else{
             owner.presentation.panel.showPendingStatus(for:binding,status:"Response guide changed. Ask again.")
@@ -1008,20 +1013,53 @@ private actor FixtureRecognizer: ActivityRecognizer {
         do{try bridge.retire(lifetime:epoch)}catch{if owns(owner){failSession()};return}
         guard affected,let binding,owns(owner) else{return}
         if owner.presentation.panel.snapshot.learningMemoryRevision==bridge.revision(for:binding){
+            retireCardSurface()
             owner.presentation.panel.withholdGuideAnswer(for:binding,status:"Learning changed. Ask again.")
         }else{owner.presentation.panel.showPendingStatus(for:binding,status:"Learning changed. Ask again.")}
     }
     private func withholdLearning(_ binding:PanelRequestBinding,owner:ConversationOwner){
         guard owns(owner),owner.presentation.currentBinding==binding else{return}
+        retireCardSurface()
         owner.presentation.panel.withholdGuideAnswer(for:binding,status:"Learning changed. Ask again.")
     }
     var activeLearningExplanation:String?{
         guard let owner=currentOwner,let binding=owner.presentation.currentBinding,let revision=snapshot.learningMemoryRevision else{return nil}
         return owner.presentation.learning?.explanation(for:binding,revision:revision)
     }
-    private var retiredResponseLatencySamples:[ResponseLatencySample]=[]
-    var responseLatencySamples:[ResponseLatencySample]{Array((retiredResponseLatencySamples+display.panel.latency.samples).suffix(32))}
-    private func rememberLatency(_ owner:ConversationOwner){retiredResponseLatencySamples=Array((retiredResponseLatencySamples+owner.presentation.panel.latency.samples).suffix(32))}
+    private var retiredLatency:ResponseLatencyRecorder?
+    var responseLatencySamples:[ResponseLatencySample]{(currentOwner?.presentation.panel.latency ?? retiredLatency ?? idlePresentation.panel.latency).samples}
+    private func rememberLatency(_ owner:ConversationOwner){guard currentOwner === owner else{return};retiredLatency=owner.presentation.panel.latency}
+    var answerSurfaceIdentity:LearningAnswerSurfaceIdentity?{
+        guard let owner=currentOwner,let binding=owner.presentation.currentBinding,let card=snapshot.card,
+              owner.presentation.panel.snapshot.card==card,snapshot.replacement==owner.presentation.panel.snapshot.replacement else{return nil}
+        return LearningAnswerSurfaceIdentity(ownerID:owner.id,binding:binding,replacement:snapshot.replacement,card:card)
+    }
+    private weak var answerSurface:LearningAnswerSurfaceView?
+    private weak var answerClip:NSClipView?
+    private var answerSurfaceObservers:[NSObjectProtocol]=[]
+    private func clearAnswerSurface(){
+        for observer in answerSurfaceObservers{NotificationCenter.default.removeObserver(observer)}
+        answerSurfaceObservers=[];answerSurface=nil;answerClip=nil
+    }
+    private func retireCardSurface(){cardCommit=nil;surfaceObservation?.cancel();surfaceObservation=nil;clearAnswerSurface()}
+    func attachAnswerSurface(_ view:LearningAnswerSurfaceView){
+        guard view.window != nil else{if answerSurface === view{clearAnswerSurface()};return}
+        let clip=view.enclosingScrollView?.contentView
+        if answerSurface !== view || answerClip !== clip{
+            clearAnswerSurface();answerSurface=view;answerClip=clip
+            let center=NotificationCenter.default
+            func observe(_ name:Notification.Name,_ object:AnyObject){
+                answerSurfaceObservers.append(center.addObserver(forName:name,object:object,queue:.main){[weak self] _ in
+                    MainActor.assumeIsolated{self?.scheduleSurfaceObservation()}
+                })
+            }
+            observe(NSView.frameDidChangeNotification,view)
+            if let clip{clip.postsBoundsChangedNotifications=true;clip.postsFrameChangedNotifications=true;observe(NSView.boundsDidChangeNotification,clip);observe(NSView.frameDidChangeNotification,clip)}
+        }
+        // Attachment/layout may happen under a reentrant publication callback.
+        // It only schedules a later original-owner/native-lease recheck.
+        scheduleSurfaceObservation()
+    }
     private struct CardCommit {
         let id=UUID(),ownerID:UUID,binding:PanelRequestBinding,replacement:UInt64,card:SessionCard
         let modelAvailableAt:UInt64
@@ -1056,6 +1094,10 @@ private actor FixtureRecognizer: ActivityRecognizer {
                   let scroll=self.answerScrollView,scroll.window === window else{return}
             let now=DispatchTime.now().uptimeNanoseconds
             owner.presentation.panel.latency.recordAvailable(binding:marker.binding,replacement:marker.replacement,availableAt:now,visible:true)
+            guard let surface=self.answerSurface,surface.window === window,!surface.isHiddenOrHasHiddenAncestor,
+                  surface.identity==LearningAnswerSurfaceIdentity(ownerID:marker.ownerID,binding:marker.binding,replacement:marker.replacement,card:marker.card),
+                  surface.bounds.width>0,surface.bounds.height>0,
+                  surface.visibleRect.insetBy(dx:-0.5,dy:-0.5).contains(surface.bounds) else{return}
             guard self.cardCommit?.learningObserved==false,owner.kind == .capture,!owner.presentation.explicitRequestIDs.contains(marker.binding.requestID) else{return}
             // Typed requests remain labelled request data, never synthetic audio
             // uptake. Collapsed detail contributes to identity, not uptake text.
@@ -1067,6 +1109,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     }
     private func withholdResponsePreferences(_ binding:PanelRequestBinding,owner:ConversationOwner){
         guard owns(owner),owner.presentation.currentBinding==binding else{return}
+        retireCardSurface()
         owner.presentation.panel.withholdGuideAnswer(for:binding,status:"Response guide changed. Ask again.")
     }
     private func acceptFrame(_ data:Data,owner:ConversationOwner) throws {
@@ -1121,7 +1164,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
     private func retireOptionalWork(notifyHelper:Bool=true) {
         let notified = !notifyHelper || !hasContextComposer || contextComposer.binding.map(enqueueContextRetirement) != false
         if let binding=currentBinding{currentOwner?.presentation.responsePreferences?.retireNative(binding);currentOwner?.presentation.learning?.retireNative(binding)}
-        cardCommit=nil;surfaceObservation?.cancel();surfaceObservation=nil
+        retireCardSurface()
         currentBinding=nil;acceptedQuestion=nil;terminalObserved=true;taskContextUsed=false;imageContextUsed=false;manualRequestToShow=nil
         publication.retire();if hasContextComposer { contextComposer.retire() };if hasSelectedText { selectedText.invalidate() }
         if notifyHelper && notified{forwarder?.cancelOptionalWork()}else{forwarder?.retire()}
@@ -1363,7 +1406,7 @@ private actor FixtureRecognizer: ActivityRecognizer {
             disableVisualInput();retireRequest(status:end ? "Stopped":"Paused · recent conversation will reset on resume")
         }
         if hasLearning{if endRequested{learning.endSession()}else{learning.pauseSession()}}
-        cardCommit=nil;surfaceObservation?.cancel();surfaceObservation=nil
+        retireCardSurface()
         running=false;assistantActive=false;paused = !end;stopping=true
         if end{assistant.transcript.end()}else{assistant.transcript.pause()}
         assistant.refresh()

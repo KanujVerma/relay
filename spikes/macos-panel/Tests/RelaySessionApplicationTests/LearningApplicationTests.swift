@@ -17,6 +17,15 @@ import RelaySessionPanel
     func deny(_ pending:LearningPendingControl)->LearningControlReceipt{receipt=LearningControlReceipt(revision:pending.revision,enabled:false,pending:pending);return receipt}
     func commit(_ control:LearningControlRecord)->LearningControlReceipt{receipt=LearningControlReceipt(revision:control.revision,enabled:control.enabled,pending:nil);return receipt}
 }
+@MainActor private final class AppLearningContextPreferences:SessionContextUsePreferences{var useInSessions=false}
+@MainActor private final class AppLearningProfileReceipt {
+    var entered=false;private var held:CheckedContinuation<Void,Never>?
+    func observe(_ data:Data)async{
+        guard let value=try? JSONSerialization.jsonObject(with:data) as? [String:Any],value["command"] as? String=="select_begin" else{return}
+        entered=true;await withCheckedContinuation{held=$0}
+    }
+    func release(){held?.resume();held=nil}
+}
 private final class AppLearningKey:ProfileKeyProvider,@unchecked Sendable {
     private let lock=NSLock();private var count=0
     var calls:Int{lock.withLock{count}}
@@ -68,7 +77,8 @@ private final class LearningPaintFinished:@unchecked Sendable {
     @State private var expanded=true
     var body:some View{
         LiveSessionView(state:model.relayPresentation,question:model.snapshot.question,answer:model.relayAnswer,status:model.snapshot.status,
-            fixture:true,assistant:model.assistant,attachScroll:{window,scroll in model.attachWindow(window,scrollView:scroll)},
+            fixture:true,assistant:model.assistant,answerSurfaceIdentity:model.answerSurfaceIdentity,attachAnswerSurface:{[weak model] view in model?.attachAnswerSurface(view)},
+            attachScroll:{window,scroll in model.attachWindow(window,scrollView:scroll)},
             expanded:$expanded,detailExpanded:$model.expanded,onAction:{_ in})
     }
 }
@@ -84,7 +94,7 @@ private final class LearningPaintFinished:@unchecked Sendable {
     }
     private var root:URL{URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()}
     private func quote(_ text:String)->String{"'"+text.replacingOccurrences(of:"'",with:"'\\''")+"'"}
-    private func rig(learning:Bool=true,question:String=LearningAppConversation.question,controlPreferences:AppLearningPreferences?=nil)throws->(SessionApplicationModel,LearningAppConversation,URL,AppLearningKey){
+    private func rig(learning:Bool=true,question:String=LearningAppConversation.question,controlPreferences:AppLearningPreferences?=nil,profileReceipt:AppLearningProfileReceipt?=nil)throws->(SessionApplicationModel,LearningAppConversation,URL,AppLearningKey){
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("relay-learning-application-"+UUID().uuidString)
         try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:false,attributes:[.posixPermissions:0o700])
         let python=ProcessInfo.processInfo.environment["RELAY_TEST_PYTHON"] ?? "/usr/bin/python3"
@@ -97,7 +107,16 @@ private final class LearningPaintFinished:@unchecked Sendable {
         try FileManager.default.setAttributes([.posixPermissions:0o700],ofItemAtPath:launcher.path)
         let key=AppLearningKey(),history=AppLearningHistoryPreferences(),controls=controlPreferences ?? AppLearningPreferences(),conversation=LearningAppConversation(remoteQuestion:question)
         let storage=HistoryVaultStorage(directory:directory.appendingPathComponent("Relay/History"),keys:key)
+        let profileFactory:(@Sendable ()->ProfileVault)?
+        let observer:(@MainActor (Data)async->Void)?
+        let context:(any SessionContextUsePreferences)?
+        if let profileReceipt{
+            profileFactory={ProfileVault(directory:directory.appendingPathComponent("Profile"),keys:key)}
+            observer={data in await profileReceipt.observe(data)}
+            context=AppLearningContextPreferences()
+        }else{profileFactory=nil;observer=nil;context=nil}
         let model=SessionApplicationModel(arguments:["relay","--fixture-suite","coding","--role","developer","--repository",root.path,"--python",launcher.path],
+            contextPreferences:context,profileVaultFactory:profileFactory,profileResponseObserved:observer,
             historyPreferences:history,historyStorageFactory:{storage},learningPreferences:learning ? controls:nil,fixtureSessionStart:conversation.start)
         diagnosticModel=model
         addTeardownBlock{await model.shutdown();try? FileManager.default.removeItem(at:directory)}
@@ -169,6 +188,7 @@ private final class LearningPaintFinished:@unchecked Sendable {
         XCTAssertEqual(key.calls,0)
     }
     func testActualVisibleSuggestionOriginalMicContinuationEndAndLaterSessionChangeWithNoExtraCalls()async throws{
+        if try await LearningGUIWitness.run(caseClass:Self.self,method:"testActualVisibleSuggestionOriginalMicContinuationEndAndLaterSessionChangeWithNoExtraCalls"){return}
         let(model,conversation,directory,_)=try rig();let surface=window(model);surface.orderFront(nil)
         try await model.history.enableSaving();try await model.learning.enable()
         var baseline:String?
@@ -203,6 +223,7 @@ private final class LearningPaintFinished:@unchecked Sendable {
         XCTAssertFalse(entries.isEmpty);XCTAssertTrue(entries.allSatisfy{!$0.contains("first item or None")})
     }
     func testHiddenCommitThenActualWindowExposureUsesLaterOriginalMicAndNoDuplicateAvailability()async throws{
+        if try await LearningGUIWitness.run(caseClass:Self.self,method:"testHiddenCommitThenActualWindowExposureUsesLaterOriginalMicAndNoDuplicateAvailability"){return}
         let(model,conversation,_,_)=try rig();try await model.history.enableSaving();try await model.learning.enable()
         await model.start();try await conversation.speak(.remoteAudio,through:model)
         try await until{model.snapshot.card != nil && model.responseLatencySamples.last?.modelAvailableAt != nil}
@@ -220,6 +241,7 @@ private final class LearningPaintFinished:@unchecked Sendable {
         XCTAssertEqual(model.learning.session.episodes.count,1)
     }
     func testOffViewportLeadAndPointsCannotCreditEarlierMicBeforeActualScrollExposure()async throws{
+        if try await LearningGUIWitness.run(caseClass:Self.self,method:"testOffViewportLeadAndPointsCannotCreditEarlierMicBeforeActualScrollExposure"){return}
         let question=String((LearningAppConversation.question+" "+String(repeating:"WWWWW ",count:80)).prefix(490))
         let(model,conversation,_,_)=try rig(question:question)
         try await model.history.enableSaving();try await model.learning.enable();await model.start()
@@ -288,6 +310,22 @@ private final class LearningPaintFinished:@unchecked Sendable {
         model.assistant.draft="Explain bounded queues.";model.assistant.submitDraft();try await until{model.snapshot.card != nil && model.assistantActive}
         XCTAssertFalse(retired);XCTAssertTrue(model.history.ownsNotesSource(source));XCTAssertEqual(model.history.snapshot.epoch,workspace)
         XCTAssertNotEqual(model.learning.snapshot.phase,.ready);XCTAssertNil(model.snapshot.learningMemoryRevision)
+    }
+    func testActualProfileEmergencyEndRetiresLiveLearningBeforeHeldOriginalJoin()async throws{
+        let receipt=AppLearningProfileReceipt(),(model,conversation,_,_)=try rig(profileReceipt:receipt)
+        model.openMyContext();await model.contextUse.waitForQuiescence();XCTAssertTrue(model.profile.opened)
+        try await model.history.enableSaving();try await model.learning.enable();await model.start()
+        try await conversation.speak(.remoteAudio,through:model);try await until{model.snapshot.card != nil}
+        let original=try XCTUnwrap(model.learning.capture(question:"empty list")),profile=model.profile
+        XCTAssertTrue(original.payload.continuity.contains{$0.text.contains("empty list")})
+        let edit=Task{await profile.stageEnteredText("Fictional pending source.",purpose:"project",label:"Synthetic held source",role:model.role,project:"Fictional project")}
+        do{
+            try await until{receipt.entered};model.lockMyContext()
+            try await until{!model.running && profile.busy}
+            XCTAssertNil(model.learning.capture(question:"empty list"),"An actual forced helper end must retire its live semantic context before joining a held old profile request")
+            XCTAssertFalse(model.learning.owns(original));XCTAssertFalse(model.canStartSession)
+            receipt.release();await edit.value;await model.contextUse.waitForQuiescence()
+        }catch{receipt.release();await edit.value;throw error}
     }
     func testActualModelPublicationReentrantLearningDisableHasOwnedWatchdogAndNoAvailability()async throws{
         let key="RELAY_LEARNING_MODEL_PAINT_CHILD"

@@ -1,5 +1,7 @@
 # Learning Memory continuation
 
+> Historical snapshot preserved at97e684e. The goal continued: cold-source recovery, real lead/points geometry, isolated GUI witnesses, the32-row recorder bound and the actual custom profile-end retirement now pass a complete14-case app/recorder gate. The current evidence and remaining acceptance work are in [the lane record](../lanes/LEARNING_MEMORY.md#actual-surface-and-owned-end-component). The hashes and pending list below describe that earlier snapshot; read canonical Root status and the current lane record before acting. Whole-app restart/source-control/personal acceptance and independent joined verification remain unfinished.
+
 Date: 2026-10-24. Project: Relay. Branch: `wip/learning-memory-app-continuation-2026-10-24`.
 
 Latest source checkpoint: `a99082b6c66bf81bb5193382e9a93e4f10b49e25`, after the explicit app WIP `41dd14d`. This handoff is a subsequent documentation commit. The verified [PR102](https://github.com/KanujVerma/relay/pull/102) branch remains `3882c76e323e77c1bd180cb88063871a2dca4215`. Do not move that verified head or merge main merely because this WIP is published.

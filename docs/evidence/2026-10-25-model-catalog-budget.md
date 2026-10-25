@@ -1,0 +1,13 @@
+# Models-only successful-response budget
+
+Root's separately authorized fresh signed36cf catalog action returned HTTP200 and stopped at65,738 decoded bytes with body_limit, no declared content length and no decoded model counts. The exact-schema latest record was fresh and owner-only. This identifies the response-reader limit; it is not a full-body size, question retry or model-inference measurement. This lane did not access that account or read a raw provider body.
+
+The original source at6122 rejected a synthetic valid rich65,738-byte catalog with visible models before projection. That unchanged-case red completed0.051s. The targeted correction adds an explicit private _json max_bytes parameter, default65,536. Only catalog's models GET requests1,048,576bytes for HTTP200, matching the existing OAuthAnswerStream models-success policy. Non-200 responses still use65,536bytes. Diagnostic presence does not choose the budget.
+
+Token/discovery/JWKS parsing, duplicate/nonfinite/depth rejection,256raw/32visible rows, field validation, visible server order, complete native frame fit, current grant/provider/factory checks and inference behavior remain unchanged. Irrelevant rich metadata is parsed under the bounded models response but excluded from the projected model list and diagnostics. No model names, body, token or identity enter the diagnostic record.
+
+Verification: **96 synthetic tests passed, zero skips/failures,4.432s**. Five new budget cases cover the valid65,738-byte response, exact1MiB success/+1 rejection, unchanged64KiB token/discovery/JWKS/error controls, explicit budget versus diagnostic presence, strict JSON and row bounds, projected native-frame fit and diagnostic privacy. Existing diagnostic writer/cancel/root-removal, OAuth/control/factory, encrypted-store and mocked refresh/durability cases remain green. Existing mocked HTTPError fixture warnings are not live provider failures.
+
+The earlier catalog-specific65,536/65,537-byte and partial-body/cancel fixtures are transparently moved to the new models-success1MiB boundary. Their original policy/source/red history remains frozen in parent6122; default OAuth64KiB negative controls remain active. No invalid upper bound was removed or converted to success.
+
+No native build, signing, browser/Keychain/real-account, external network/model/capture, dependency download or app copy occurred. Root must independently replay/review before rebuilding the helper and making one separately authorized catalog-readiness check. This source result does not claim that the actual complete catalog fits every remaining bound or that a real question/model call has succeeded.

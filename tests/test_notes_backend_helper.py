@@ -12,13 +12,15 @@ from tests.test_session_notes_protocol import scope,transfer,chunk,end,generate
 
 
 class NotesBackendHelperTests(stdio_fixture.NotesStdioTests):
-    def _fixture(self,held=False):
+    def _fixture(self,held=False,response=False):
         folder=tempfile.TemporaryDirectory(prefix='relay-notes-fixture-');self.addCleanup(folder.cleanup)
         log=Path(folder.name)/'counts.jsonl';release=Path(folder.name)/'release'
         if not held:release.touch()
         root=Path(__file__).resolve().parents[1]
         args=[sys.executable,str(root/'tests/support/notes_backend_helper.py'),'--synthetic-notes-test',
-            '--log',str(log),'--release',str(release),'-m','relay_spike.session_host','--role','developer','--fixture-model']
+            '--log',str(log),'--release',str(release)]
+        if response:args.append('--hold-response')
+        args.extend(['-m','relay_spike.session_host','--role','developer','--fixture-model'])
         p=subprocess.Popen(args,cwd=root,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
         def stop():
             release.touch(exist_ok=True)
@@ -56,3 +58,15 @@ class NotesBackendHelperTests(stdio_fixture.NotesStdioTests):
         self.assertEqual(sum(x['event']=='model_post' for x in entries),1)
         self.assertTrue(all(set(x)<= {'event','kind'} for x in entries))
         self.assertFalse(any('token' in key or 'prompt' in key or 'image' in key for x in entries for key in x))
+
+    def test_actual_held_response_keeps_cancel_close_unjoined_until_release(self):
+        import select
+        p,log,release=self._fixture(held=True,response=True);opened,begin,_=self.staged(p)
+        self.send(p,generate(begin));self.assertEqual(self.read(p)['status'],'pending')
+        deadline=time.monotonic()+3
+        while 'model_held' not in log.read_text():
+            self.assertLess(time.monotonic(),deadline);time.sleep(.003)
+        self.send(p,generate(begin,'notes_cancel'));self.send(p,scope('close',scopeID=opened['scopeID']))
+        self.assertFalse(select.select([p.stdout],[],[],.03)[0])
+        release.touch();self.assertEqual(self.read(p)['status'],'cancelled');self.assertEqual(self.read(p)['status'],'closed')
+        self.assertIn('model_closed',log.read_text());self.assertEqual(log.read_text().count('model_post'),1)
